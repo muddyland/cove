@@ -12,6 +12,10 @@
           <option v-for="b in browsers" :key="b.id" :value="b.id">{{ b.name }}</option>
         </select>
       </div>
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="useTailscale" />
+        <span>Route through Tailscale</span>
+      </label>
       <div v-if="error" class="form-error">⚠ {{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -36,6 +40,7 @@ const open = defineModel<boolean>({ default: false })
 const images = ref<WorkspaceImage[]>([])
 const url = ref('')
 const browserId = ref<number | ''>('')
+const useTailscale = ref(false)
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -66,10 +71,12 @@ async function handleSubmit() {
       image_id: browserId.value as number,
       workspace_type: 'browser',
       target_url: url.value,
+      use_tailscale: useTailscale.value,
     })
     open.value = false
     ui.toast(`Opening ${deriveName(url.value)}…`, 'info')
     url.value = ''
+    useTailscale.value = false
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
@@ -82,4 +89,9 @@ async function handleSubmit() {
 <style scoped>
 .form { display: flex; flex-direction: column; gap: 16px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.checkbox-row {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 12px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
+}
+.checkbox-row input { width: auto; margin: 0; }
 </style>

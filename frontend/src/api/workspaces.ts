@@ -4,8 +4,13 @@ import type { Workspace } from '@/types'
 export const workspacesApi = {
   list: () => api.get<Workspace[]>('/workspaces'),
   get: (id: number) => api.get<Workspace>(`/workspaces/${id}`),
-  create: (payload: { name: string; image_id: number; workspace_type: string; target_url?: string }) =>
-    api.post<Workspace>('/workspaces', payload),
+  create: (payload: {
+    name: string
+    image_id: number
+    workspace_type: string
+    target_url?: string
+    use_tailscale?: boolean
+  }) => api.post<Workspace>('/workspaces', payload),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),
   start: (id: number) => api.post<Workspace>(`/workspaces/${id}/start`),
   remove: (id: number) => api.delete(`/workspaces/${id}`),

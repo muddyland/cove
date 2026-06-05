@@ -136,6 +136,34 @@ def test_ownership_enforced_other_user_cannot_get(client):
     assert resp.status_code == 403, resp.text
 
 
+def test_create_with_tailscale_without_config_400(client):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "ts-ws", "image_id": image_id, "use_tailscale": True},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "Tailscale not configured" in resp.text
+
+
+def test_create_with_tailscale_configured_accepted(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    # Configure Tailscale with a non-empty auth_key.
+    cfg = client.put("/api/users/me/tailscale", json={"auth_key": "tskey-abc"})
+    assert cfg.status_code == 200, cfg.text
+
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "ts-ws", "image_id": image_id, "use_tailscale": True},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["use_tailscale"] is True
+    fake_docker_manager.launch_workspace.assert_called_once_with(body["id"])
+
+
 def test_list_workspaces_scoped_to_owner(client):
     admin_token, _ = setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")

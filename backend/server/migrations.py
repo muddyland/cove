@@ -39,6 +39,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0005_workspace_image_url_env",
         "ALTER TABLE workspace_image ADD COLUMN url_env TEXT",
     ),
+    # workspace.use_tailscale: route this workspace through a Tailscale sidecar.
+    (
+        "0006_workspace_use_tailscale",
+        "ALTER TABLE workspace ADD COLUMN use_tailscale INTEGER NOT NULL DEFAULT 0",
+    ),
 ]
 
 

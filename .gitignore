@@ -4,5 +4,7 @@ __pycache__/
 .env
 node_modules/
 frontend/dist/
+frontend/dev-dist/
+*.tsbuildinfo
 .venv/
 *.egg-info/

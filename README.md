@@ -17,10 +17,27 @@ Cove lets you spin up full Linux desktops (XFCE, KDE, MATE, i3 on Ubuntu/Debian/
 - **Open-a-website flow** — paste a URL, pick a browser, and Cove boots a kiosk-style browser pointed at it (web-app delivery).
 - **Auto-populated catalog** — images are pulled from the [LinuxServer.io API](https://docs.linuxserver.io/API/) on first run and via a one-click admin sync.
 - **Authentication** — local accounts (bcrypt) *and* OIDC/Authentik SSO when configured.
+- **Per-user Tailscale routing** — opt a workspace into routing through a per-workspace Tailscale sidecar using your own preauth key, with exit-node selection, accept-routes/DNS, and a custom login (control) server.
+- **User preferences** — a self-service page to change your password and manage Tailscale settings.
+- **File browser** — browse, upload, download, and delete files in your workspace storage areas.
+- **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
+- **Installable PWA** — add Cove to your home screen / desktop; offline-aware app shell (the live stream and API are never cached).
 - **Security-first** — ForwardAuth-gated streams, per-workspace isolated Docker networks, a filtered Docker socket proxy, dropped capabilities, short-lived JWTs with refresh, audit logging, and optional at-rest DB encryption.
 - **Persistent storage** — per-workspace home directories that survive restarts.
 - **Admin UI** — manage users, images, live sessions, and the audit log.
 - **Cyberpunk UI** — neon theme with an optional CRT toggle.
+
+## Testing
+
+```bash
+# Backend (from backend/, in a venv): ruff + pytest
+ruff check server && pytest -q
+
+# Frontend (from frontend/): typecheck + Vitest
+npx vue-tsc --noEmit && npm test
+```
+
+CI runs lint, both test suites, a frontend build, and a Docker image build (see `.gitlab-ci.yml`).
 
 ## Architecture
 

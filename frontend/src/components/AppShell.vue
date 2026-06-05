@@ -10,6 +10,9 @@
         <RouterLink to="/" class="nav-link" :class="{ active: $route.path === '/' }">
           Dashboard
         </RouterLink>
+        <RouterLink to="/files" class="nav-link" :class="{ active: $route.path === '/files' }">
+          Files
+        </RouterLink>
         <template v-if="auth.isAdmin">
           <RouterLink to="/admin/sessions" class="nav-link" :class="{ active: $route.path === '/admin/sessions' }">
             Sessions
@@ -33,11 +36,11 @@
           :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
           @click="ui.toggleCrt()"
         >▦ CRT</button>
-        <div class="user-chip">
+        <RouterLink to="/preferences" class="user-chip" title="Preferences">
           <span class="user-dot" />
           <span class="username">{{ auth.user?.username }}</span>
           <span v-if="auth.user?.is_admin" class="admin-tag">ADMIN</span>
-        </div>
+        </RouterLink>
         <button class="logout-btn" @click="handleLogout">[ EXIT ]</button>
       </div>
     </header>
@@ -160,7 +163,12 @@ async function handleLogout() {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
+.user-chip:hover { border-color: var(--accent); }
+.user-chip.router-link-active { border-color: var(--accent); box-shadow: var(--glow-sm); }
 .user-dot {
   width: 6px;
   height: 6px;

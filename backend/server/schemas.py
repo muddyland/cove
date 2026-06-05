@@ -3,6 +3,9 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+# Sentinel used to distinguish an omitted field from one explicitly set to clear.
+_UNSET = "\x00__unset__\x00"
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 class AuthConfig(BaseModel):
@@ -81,6 +84,7 @@ class WorkspaceCreate(BaseModel):
     image_id: int
     workspace_type: str = "desktop"
     target_url: Optional[str] = None
+    use_tailscale: bool = False
 
 
 class WorkspaceOut(BaseModel):
@@ -95,6 +99,7 @@ class WorkspaceOut(BaseModel):
     image_id: int
     image_name: str
     target_url: Optional[str]
+    use_tailscale: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -118,6 +123,7 @@ class WorkspaceOut(BaseModel):
             image_id=ws.image_id,
             image_name=ws.image.name if ws.image else "",
             target_url=ws.target_url,
+            use_tailscale=ws.use_tailscale,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,
@@ -138,6 +144,42 @@ class AdminUserUpdate(BaseModel):
     username: Optional[str] = None
     is_admin: Optional[bool] = None
     password: Optional[str] = None
+
+
+# ── Tailscale ─────────────────────────────────────────────────────────────────
+
+class TailscaleConfigOut(BaseModel):
+    enabled: bool
+    has_auth_key: bool
+    login_server: Optional[str]
+    exit_node: Optional[str]
+    accept_routes: bool
+    accept_dns: bool
+
+
+class TailscaleConfigUpdate(BaseModel):
+    # auth_key uses a sentinel default: an omitted field leaves the stored key
+    # unchanged; an explicit "" (or null) clears it; a non-empty string replaces it.
+    auth_key: Optional[str] = _UNSET
+    login_server: Optional[str] = None
+    exit_node: Optional[str] = None
+    accept_routes: Optional[bool] = None
+    accept_dns: Optional[bool] = None
+    enabled: Optional[bool] = None
+
+
+# ── Files ─────────────────────────────────────────────────────────────────────
+
+class FileEntry(BaseModel):
+    name: str
+    type: str  # 'dir' | 'file'
+    size: int
+    modified: datetime
+
+
+class FileListing(BaseModel):
+    path: str
+    entries: list[FileEntry]
 
 
 # ── Audit ─────────────────────────────────────────────────────────────────────

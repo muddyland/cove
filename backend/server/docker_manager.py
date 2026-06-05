@@ -7,10 +7,11 @@ from threading import Lock
 
 import docker
 import docker.errors
+from sqlalchemy import select
 
 from server.config import get_settings
 from server.db import SessionLocal
-from server.models import Workspace, WorkspaceImage
+from server.models import UserTailscale, Workspace, WorkspaceImage
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +56,39 @@ class DockerManager:
             logger.info("Created volume %s", volume_name)
 
     @staticmethod
+    def _split_ref(ref: str) -> tuple[str, str | None]:
+        """Split an image reference into (repository, tag). A ':' only counts as a
+        tag separator when it's after the final '/' (so registry:port is safe)."""
+        last = ref.rsplit("/", 1)[-1]
+        if ":" in last:
+            repo, tag = ref.rsplit(":", 1)
+            return repo, tag
+        return ref, None
+
+    def _pull_image(self, ref: str) -> None:
+        """Always pull so a restarted workspace gets the latest image. Best-effort:
+        if the pull fails (e.g. offline) we fall back to any local copy."""
+        repo, tag = self._split_ref(ref)
+        try:
+            self._client.images.pull(repo, tag=tag)
+            logger.info("Pulled image %s", ref)
+        except docker.errors.APIError as exc:
+            logger.warning("Could not pull %s (%s); using local image if present", ref, exc)
+
+    @staticmethod
     def _ws_network_name(ws_id: int) -> str:
         """Name of the per-workspace isolated network."""
         return f"cove-ws-net-{ws_id}"
+
+    @staticmethod
+    def _ts_sidecar_name(ws_id: int) -> str:
+        """Name of the per-workspace Tailscale sidecar container."""
+        return f"cove-ts-{ws_id}"
+
+    @staticmethod
+    def _ts_volume_name(ws_id: int) -> str:
+        """Name of the per-workspace Tailscale state volume."""
+        return f"cove-ts-state-{ws_id}"
 
     def _ensure_ws_network(self, network_name: str) -> None:
         """Create the per-workspace bridge network if it does not exist."""
@@ -95,6 +126,25 @@ class DockerManager:
         try:
             net.remove()
         except docker.errors.APIError:
+            pass
+
+    def _cleanup_tailscale_sidecar(self, ws_id: int) -> None:
+        """Stop+remove the Tailscale sidecar and its state volume. Best-effort."""
+        sidecar_name = self._ts_sidecar_name(ws_id)
+        try:
+            sidecar = self._client.containers.get(sidecar_name)
+            try:
+                sidecar.stop(timeout=10)
+            except docker.errors.APIError:
+                pass
+            sidecar.remove(force=True)
+        except (docker.errors.NotFound, docker.errors.APIError):
+            pass
+
+        try:
+            vol = self._client.volumes.get(self._ts_volume_name(ws_id))
+            vol.remove(force=True)
+        except (docker.errors.NotFound, docker.errors.APIError):
             pass
 
     def _wait_for_ready(self, container, timeout: int = 120) -> bool:
@@ -189,26 +239,56 @@ class DockerManager:
                 except docker.errors.NotFound:
                     pass
 
-                container = self._client.containers.run(
-                    image.docker_image,
-                    name=container_name,
-                    detach=True,
-                    environment=env,
-                    volumes=volumes,
-                    labels=labels,
-                    network=net_name,
-                    shm_size="1g",
-                    security_opt=["no-new-privileges:true"],
-                    cap_drop=["ALL"],
-                    cap_add=[
-                        "CHOWN",
-                        "DAC_OVERRIDE",
-                        "FOWNER",
-                        "SETGID",
-                        "SETUID",
-                        "KILL",
-                    ],
-                )
+                # Always pull so a halted-then-restarted workspace gets the latest.
+                self._pull_image(image.docker_image)
+
+                if ws.use_tailscale:
+                    ts_cfg = db.scalar(
+                        select(UserTailscale).where(UserTailscale.user_id == ws.user_id)
+                    )
+                    self._launch_tailscale_sidecar(ws, image, net_name, labels, ts_cfg)
+                    # The workspace container shares the sidecar's netns. No own
+                    # network, no traefik labels (the sidecar carries routing).
+                    container = self._client.containers.run(
+                        image.docker_image,
+                        name=container_name,
+                        detach=True,
+                        environment=env,
+                        volumes=volumes,
+                        network_mode=f"container:{self._ts_sidecar_name(ws.id)}",
+                        shm_size="1g",
+                        security_opt=["no-new-privileges:true"],
+                        cap_drop=["ALL"],
+                        cap_add=[
+                            "CHOWN",
+                            "DAC_OVERRIDE",
+                            "FOWNER",
+                            "SETGID",
+                            "SETUID",
+                            "KILL",
+                        ],
+                    )
+                else:
+                    container = self._client.containers.run(
+                        image.docker_image,
+                        name=container_name,
+                        detach=True,
+                        environment=env,
+                        volumes=volumes,
+                        labels=labels,
+                        network=net_name,
+                        shm_size="1g",
+                        security_opt=["no-new-privileges:true"],
+                        cap_drop=["ALL"],
+                        cap_add=[
+                            "CHOWN",
+                            "DAC_OVERRIDE",
+                            "FOWNER",
+                            "SETGID",
+                            "SETUID",
+                            "KILL",
+                        ],
+                    )
                 logger.info("Started container %s for workspace %s", container.id[:12], ws_id)
 
                 # Connect Traefik to this isolated network so it can route to the
@@ -249,6 +329,8 @@ class DockerManager:
             ws = db.get(Workspace, ws_id)
             if not ws or not ws.container_id:
                 if ws:
+                    self._cleanup_tailscale_sidecar(ws.id)
+                    self._cleanup_ws_network(self._ws_network_name(ws.id))
                     ws.status = "stopped"
                     ws.stopped_at = datetime.now(timezone.utc)
                     db.commit()
@@ -262,6 +344,7 @@ class DockerManager:
             except docker.errors.APIError as exc:
                 logger.warning("Error stopping container %s: %s", ws.container_id[:12], exc)
 
+            self._cleanup_tailscale_sidecar(ws.id)
             self._cleanup_ws_network(self._ws_network_name(ws.id))
 
             ws.status = "stopped"
@@ -284,6 +367,7 @@ class DockerManager:
                     container.remove()
                 except (docker.errors.NotFound, docker.errors.APIError):
                     pass
+            self._cleanup_tailscale_sidecar(ws.id)
             self._cleanup_ws_network(self._ws_network_name(ws.id))
             db.delete(ws)
             db.commit()
@@ -315,6 +399,64 @@ class DockerManager:
             logger.warning("sync_workspace_statuses error: %s", exc)
         finally:
             db.close()
+
+    def _launch_tailscale_sidecar(
+        self,
+        ws: Workspace,
+        image: WorkspaceImage,
+        net_name: str,
+        labels: dict,
+        ts_cfg: "UserTailscale | None",
+    ) -> None:
+        """Launch the Tailscale sidecar that carries this workspace's netns + routing.
+
+        The sidecar holds the Traefik labels; the workspace container later joins
+        its network namespace via network_mode=container:<sidecar>.
+        """
+        sidecar_name = self._ts_sidecar_name(ws.id)
+        volume_name = self._ts_volume_name(ws.id)
+
+        # Remove any stale sidecar with the same name.
+        try:
+            old = self._client.containers.get(sidecar_name)
+            old.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
+        self._ensure_named_volume(volume_name)
+
+        auth_key = ts_cfg.auth_key if ts_cfg else None
+        extra_args: list[str] = []
+        if ts_cfg:
+            if ts_cfg.exit_node:
+                extra_args.append(f"--exit-node={ts_cfg.exit_node}")
+            if ts_cfg.accept_routes:
+                extra_args.append("--accept-routes")
+            extra_args.append(f"--accept-dns={'true' if ts_cfg.accept_dns else 'false'}")
+            if ts_cfg.login_server:
+                extra_args.append(f"--login-server={ts_cfg.login_server}")
+
+        environment = {
+            "TS_AUTHKEY": auth_key or "",
+            "TS_USERSPACE": "false",
+            "TS_STATE_DIR": "/var/lib/tailscale",
+            "TS_HOSTNAME": f"cove-{ws.id}",
+            "TS_EXTRA_ARGS": " ".join(extra_args),
+        }
+
+        self._pull_image("tailscale/tailscale:latest")
+        self._client.containers.run(
+            "tailscale/tailscale:latest",
+            name=sidecar_name,
+            detach=True,
+            environment=environment,
+            cap_add=["NET_ADMIN"],
+            devices=["/dev/net/tun:/dev/net/tun"],
+            volumes={volume_name: {"bind": "/var/lib/tailscale", "mode": "rw"}},
+            labels=labels,
+            network=net_name,
+        )
+        logger.info("Started Tailscale sidecar %s for workspace %s", sidecar_name, ws.id)
 
     @staticmethod
     def _build_traefik_labels(

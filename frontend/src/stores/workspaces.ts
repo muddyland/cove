@@ -35,7 +35,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  async function launch(payload: { name: string; image_id: number; workspace_type: string; target_url?: string }) {
+  async function launch(payload: { name: string; image_id: number; workspace_type: string; target_url?: string; use_tailscale?: boolean }) {
     const ws = await workspacesApi.create(payload)
     items.value.unshift(ws)
     schedulePoll()

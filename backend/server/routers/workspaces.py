@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import select
 
 from server.deps import CurrentUser, DbSession
-from server.models import Workspace, WorkspaceImage
+from server.models import UserTailscale, Workspace, WorkspaceImage
 from server.schemas import WorkspaceCreate, WorkspaceOut
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
@@ -61,12 +61,18 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     if image.image_type == "link" and not target_url:
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
 
+    if body.use_tailscale:
+        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == user.id))
+        if not ts or not ts.auth_key:
+            raise HTTPException(status_code=400, detail="Tailscale not configured")
+
     ws = Workspace(
         user_id=user.id,
         name=body.name,
         workspace_type=image.image_type,
         image_id=body.image_id,
         target_url=target_url,
+        use_tailscale=body.use_tailscale,
         status="creating",
     )
     db.add(ws)

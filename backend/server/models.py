@@ -59,6 +59,9 @@ class Workspace(Base):
     workspace_type: Mapped[str] = mapped_column(String(16), nullable=False, default="desktop")
     container_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     container_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    use_tailscale: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     image_id: Mapped[int] = mapped_column(Integer, ForeignKey("workspace_image.id"), nullable=False)
     target_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
@@ -69,6 +72,24 @@ class Workspace(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="workspaces")
     image: Mapped["WorkspaceImage"] = relationship("WorkspaceImage", back_populates="workspaces")
+
+
+class UserTailscale(Base):
+    __tablename__ = "user_tailscale"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id"), unique=True, nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auth_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    login_server: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    exit_node: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    accept_routes: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    accept_dns: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
 
 
 class AuditLog(Base):

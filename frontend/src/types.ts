@@ -46,6 +46,28 @@ export interface Workspace {
   started_at: string | null
   stopped_at: string | null
   error_message: string | null
+  use_tailscale: boolean
+}
+
+export interface TailscaleConfig {
+  enabled: boolean
+  has_auth_key: boolean
+  login_server: string | null
+  exit_node: string | null
+  accept_routes: boolean
+  accept_dns: boolean
+}
+
+export interface FileEntry {
+  name: string
+  type: 'dir' | 'file'
+  size: number
+  modified: string
+}
+
+export interface FileListing {
+  path: string
+  entries: FileEntry[]
 }
 
 export interface AuditEntry {

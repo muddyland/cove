@@ -100,6 +100,24 @@ COVE_OIDC_PROVIDER_NAME=Authentik        # button label
 
 In your IdP, set the redirect URI to `https://<your-domain>/api/auth/oidc/callback`.
 
+## 6b. Tailscale routing (per user)
+
+Each user configures Tailscale under **Preferences → Tailscale** (no global key needed):
+
+- **Auth key** — a Tailscale preauth key (stored against your account).
+- **Login server** — optional custom control server (e.g. a Headscale URL).
+- **Exit node**, **Accept routes**, **Accept DNS** — standard `tailscale up` options.
+
+Then tick **Route through Tailscale** when launching a workspace. Cove starts a dedicated `tailscale/tailscale` sidecar for that workspace, and the workspace shares the sidecar's network namespace — so its egress goes out via your tailnet (and exit node, if set). The host needs `/dev/net/tun` available to containers. Sidecars and their state are removed when the workspace is halted/removed.
+
+## 6c. File browser
+
+**Files** (in the top nav) lets each user browse, upload, download, and delete files within their own workspace storage area (`<storage>/<username>/workspace-*`). Access is confined to your directory; path traversal is rejected.
+
+## 6d. Container lifecycle
+
+Halting a workspace **removes** its container (and any Tailscale sidecar/network); starting it again **always pulls the latest image** first, so workspaces stay current. Persistent data in `/config` (your home dir) is untouched.
+
 ## 7. At-rest database encryption (optional)
 
 Set `COVE_DB_ENCRYPTION_KEY` to a strong secret to encrypt the SQLite database with SQLCipher. Keep the key safe — losing it means losing the database. (Leave unset to run with a plain SQLite file.)

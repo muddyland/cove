@@ -23,6 +23,10 @@
           :required="urlRequired"
         />
       </div>
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="form.use_tailscale" />
+        <span>Route through Tailscale</span>
+      </label>
       <div v-if="error" class="form-error">{{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -51,7 +55,7 @@ const store = useWorkspacesStore()
 const ui = useUiStore()
 const router = useRouter()
 
-const form = reactive({ name: '', image_id: '' as number | '', target_url: '' })
+const form = reactive({ name: '', image_id: '' as number | '', target_url: '', use_tailscale: false })
 
 const selectedImage = computed(() => images.value.find(i => i.id === form.image_id))
 const urlCapable = computed(() =>
@@ -72,12 +76,14 @@ async function handleSubmit() {
       image_id: form.image_id as number,
       workspace_type: selectedImage.value?.image_type ?? 'desktop',
       target_url: urlCapable.value && form.target_url ? form.target_url : undefined,
+      use_tailscale: form.use_tailscale,
     })
     open.value = false
     ui.toast(`Launching ${form.name}…`, 'info')
     form.name = ''
     form.image_id = ''
     form.target_url = ''
+    form.use_tailscale = false
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
@@ -90,4 +96,9 @@ async function handleSubmit() {
 <style scoped>
 .form { display: flex; flex-direction: column; gap: 16px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.checkbox-row {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 12px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
+}
+.checkbox-row input { width: auto; margin: 0; }
 </style>

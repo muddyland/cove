@@ -10,6 +10,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
+    "noEmit": true,
     "jsx": "preserve",
     "paths": {
       "@/*": ["./src/*"]
