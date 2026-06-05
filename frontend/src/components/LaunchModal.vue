@@ -65,9 +65,21 @@
 
           <div class="form-group">
             <label>proot-apps</label>
-            <input v-model="form.proot_apps" type="text" placeholder="firefox obs-studio" />
+            <input
+              v-model="form.proot_apps"
+              type="text"
+              placeholder="firefox blender bitwarden"
+              list="proot-apps-list"
+            />
+            <datalist id="proot-apps-list">
+              <option v-for="app in prootApps" :key="app" :value="app" />
+            </datalist>
             <p class="hint">
               Portable apps via LinuxServer <code>proot-apps</code> (desktop images).
+              <template v-if="prootApps.length">
+                {{ prootApps.length }} available — start typing to search (space-separated for
+                multiple).
+              </template>
             </p>
           </div>
         </div>
@@ -87,6 +99,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
 import { imagesApi } from '@/api/images'
+import { prootApi } from '@/api/proot'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
@@ -95,6 +108,7 @@ import type { WorkspaceImage } from '@/types'
 const open = defineModel<boolean>({ default: false })
 
 const images = ref<WorkspaceImage[]>([])
+const prootApps = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -122,6 +136,11 @@ const urlRequired = computed(() => selectedImage.value?.image_type === 'link')
 
 onMounted(async () => {
   images.value = await imagesApi.list()
+  try {
+    prootApps.value = (await prootApi.list()).apps
+  } catch {
+    /* catalog unavailable — field stays free-text */
+  }
 })
 
 async function handleSubmit() {

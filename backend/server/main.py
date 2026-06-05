@@ -14,7 +14,7 @@ from server import oidc as oidc_module
 from server.config import get_settings
 from server.migrations import run_migrations
 from server.models import AuditLog
-from server.routers import admin, auth, files, images, users, workspaces
+from server.routers import admin, auth, files, images, proot, users, workspaces
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(users.router)
     app.include_router(files.router)
+    app.include_router(proot.router)
 
     @app.get("/api/health")
     def health():
