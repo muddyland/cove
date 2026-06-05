@@ -51,8 +51,11 @@ services:
     env_file:
       - .env
 
-  # Optional wildcard certificate. Uncomment and set COVE_DOMAIN=example.com .
-  # cove:
-  #   labels:
-  #     - traefik.http.routers.cove.tls.domains[0].main=${COVE_DOMAIN}
-  #     - traefik.http.routers.cove.tls.domains[0].sans=*.${COVE_DOMAIN}
+  # Wildcard certificate for the apex + all workspace subdomains. Traefik obtains
+  # main + *.${COVE_DOMAIN} via DNS-01 once and serves it from its cert store for
+  # every {public_id}.${COVE_DOMAIN} workspace router (those set tls=true).
+  # Required when COVE_WORKSPACE_DOMAIN is set (per-workspace subdomain mode).
+  cove:
+    labels:
+      - traefik.http.routers.cove.tls.domains[0].main=${COVE_DOMAIN}
+      - traefik.http.routers.cove.tls.domains[0].sans=*.${COVE_DOMAIN}
