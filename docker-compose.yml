@@ -132,12 +132,12 @@ services:
       # SPA origin allowed to iframe cross-origin workspace streams (subdomain
       # mode). In prod this is set automatically to https://${COVE_DOMAIN}.
       - COVE_APP_ORIGIN=${COVE_APP_ORIGIN:-}
-      # OIDC (optional — remove if not using)
-      # - COVE_OIDC_ISSUER=https://auth.example.com/application/o/cove/
-      # - COVE_OIDC_CLIENT_ID=your-client-id
-      # - COVE_OIDC_CLIENT_SECRET=your-client-secret
-      # - COVE_OIDC_ADMIN_GROUP=cove-admins
-      # - COVE_OIDC_PROVIDER_NAME=Authentik
+      # OIDC (optional) — picked up from .env; empty values keep OIDC disabled.
+      - COVE_OIDC_ISSUER=${COVE_OIDC_ISSUER:-}
+      - COVE_OIDC_CLIENT_ID=${COVE_OIDC_CLIENT_ID:-}
+      - COVE_OIDC_CLIENT_SECRET=${COVE_OIDC_CLIENT_SECRET:-}
+      - COVE_OIDC_ADMIN_GROUP=${COVE_OIDC_ADMIN_GROUP:-}
+      - COVE_OIDC_PROVIDER_NAME=${COVE_OIDC_PROVIDER_NAME:-Authentik}
 
 networks:
   # Per-workspace networks are created at runtime by the backend; not declared here.
