@@ -27,6 +27,7 @@ const baseSettings: AppSettings = {
   tailscale_image: 'tailscale/tailscale:v1.74.0',
   workspace_lan_access: false,
   workspace_no_new_privileges: false,
+  workspace_max_runtime_hours: 24,
 }
 
 describe('AdminSettingsView', () => {
@@ -55,6 +56,7 @@ describe('AdminSettingsView', () => {
       tailscale_image: 'tailscale/tailscale:latest',
       workspace_lan_access: true,
       workspace_no_new_privileges: false,
+      workspace_max_runtime_hours: 24,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()

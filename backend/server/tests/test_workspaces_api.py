@@ -267,3 +267,31 @@ def test_list_workspaces_scoped_to_owner(client):
     resp = client.get("/api/workspaces", headers=auth_header(carol_token))
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_update_workspace(client):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": "orig", "image_id": image_id}).json()
+    resp = client.patch(
+        f"/api/workspaces/{ws['id']}",
+        json={"name": "renamed", "install_packages": "git vim", "allow_sudo": False},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "renamed"
+    assert body["install_packages"] == "git vim"
+    assert body["allow_sudo"] is False
+
+
+def test_update_workspace_ownership(client):
+    admin_token, _ = setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": "a", "image_id": image_id}).json()
+    create_user_via_admin(client, admin_token, "dave")
+    client.cookies.clear()
+    dave = login(client, "dave", "password123").json()["access_token"]
+    resp = client.patch(
+        f"/api/workspaces/{ws['id']}", json={"name": "hax"}, headers=auth_header(dave)
+    )
+    assert resp.status_code in (403, 404)

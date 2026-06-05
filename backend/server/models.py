@@ -41,6 +41,8 @@ class WorkspaceImage(Base):
     # For browser images: the env var used to pass a startup URL (e.g. CHROME_CLI).
     # NULL for non-browser images.
     url_env: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Project logo URL (from the LinuxServer API project_logo field), for display.
+    logo_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     workspaces: Mapped[list["Workspace"]] = relationship("Workspace", back_populates="image")

@@ -20,7 +20,12 @@
         </thead>
         <tbody>
           <tr v-for="img in images" :key="img.id">
-            <td>{{ img.name }}</td>
+            <td>
+              <span class="name-cell">
+                <img v-if="img.logo_url" :src="img.logo_url" class="img-logo" alt="" @error="hideLogo" />
+                {{ img.name }}
+              </span>
+            </td>
             <td><code>{{ img.docker_image }}</code></td>
             <td>{{ img.image_type }}</td>
             <td>
@@ -106,6 +111,10 @@ const syncing = ref(false)
 const formError = ref('')
 const form = reactive({ name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000 })
 
+function hideLogo(e: Event) {
+  ;(e.target as HTMLImageElement).style.display = 'none'
+}
+
 async function load() { images.value = await imagesApi.list() }
 onMounted(load)
 
@@ -164,6 +173,8 @@ async function handleDelete() {
 <style scoped>
 @import '@/styles/tables.css';
 .header-actions { display: flex; gap: 8px; }
+.name-cell { display: inline-flex; align-items: center; gap: 8px; }
+.img-logo { width: 20px; height: 20px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
 .status-dot { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; }
 .enabled { color: var(--green); text-shadow: 0 0 6px var(--green); }
 .disabled { color: var(--text-muted); }

@@ -42,6 +42,26 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return ws
   }
 
+  async function update(
+    id: number,
+    payload: {
+      name?: string
+      target_url?: string
+      use_tailscale?: boolean
+      ts_exit_node?: string
+      ts_accept_routes?: boolean
+      ts_accept_dns?: boolean
+      install_packages?: string
+      proot_apps?: string
+      allow_sudo?: boolean
+    },
+  ) {
+    const ws = await workspacesApi.update(id, payload)
+    const idx = items.value.findIndex(w => w.id === id)
+    if (idx !== -1) items.value[idx] = ws
+    return ws
+  }
+
   async function stop(id: number) {
     const ws = await workspacesApi.stop(id)
     const idx = items.value.findIndex(w => w.id === id)
@@ -68,5 +88,5 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  return { items, loading, fetch, launch, stop, start, remove, stopPolling }
+  return { items, loading, fetch, launch, update, stop, start, remove, stopPolling }
 })

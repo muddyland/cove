@@ -55,6 +55,7 @@ class ImageCreate(BaseModel):
     description: Optional[str] = None
     internal_port: int = 3000
     url_env: Optional[str] = None
+    logo_url: Optional[str] = None
 
 
 class ImageUpdate(BaseModel):
@@ -73,6 +74,7 @@ class ImageOut(BaseModel):
     enabled: bool
     internal_port: int = 3000
     url_env: Optional[str] = None
+    logo_url: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -96,6 +98,18 @@ class WorkspaceCreate(BaseModel):
     allow_sudo: bool = True
 
 
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = None
+    target_url: Optional[str] = None
+    use_tailscale: Optional[bool] = None
+    ts_exit_node: Optional[str] = None
+    ts_accept_routes: Optional[bool] = None
+    ts_accept_dns: Optional[bool] = None
+    install_packages: Optional[str] = None
+    proot_apps: Optional[str] = None
+    allow_sudo: Optional[bool] = None
+
+
 class WorkspaceOut(BaseModel):
     id: int
     public_id: str
@@ -107,6 +121,7 @@ class WorkspaceOut(BaseModel):
     container_name: Optional[str]
     image_id: int
     image_name: str
+    image_logo: Optional[str]
     target_url: Optional[str]
     use_tailscale: bool
     ts_exit_node: Optional[str]
@@ -146,6 +161,7 @@ class WorkspaceOut(BaseModel):
             container_name=ws.container_name,
             image_id=ws.image_id,
             image_name=ws.image.name if ws.image else "",
+            image_logo=ws.image.logo_url if ws.image else None,
             target_url=ws.target_url,
             use_tailscale=ws.use_tailscale,
             ts_exit_node=ws.ts_exit_node,
@@ -182,6 +198,7 @@ class AppSettingsOut(BaseModel):
     tailscale_image: str
     workspace_lan_access: bool
     workspace_no_new_privileges: bool
+    workspace_max_runtime_hours: int
 
 
 class EnvEntry(BaseModel):
@@ -197,6 +214,7 @@ class AppSettingsUpdate(BaseModel):
     tailscale_image: Optional[str] = None
     workspace_lan_access: Optional[bool] = None
     workspace_no_new_privileges: Optional[bool] = None
+    workspace_max_runtime_hours: Optional[int] = None
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

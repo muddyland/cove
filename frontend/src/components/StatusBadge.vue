@@ -1,10 +1,9 @@
 <template>
-  <span class="badge" :class="status"><component :is="icon" class="badge-icon" :size="11" />{{ label }}</span>
+  <span class="badge" :class="status">{{ label }}</span>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CircleDot, Circle, Loader, CircleAlert } from 'lucide-vue-next'
 import type { WorkspaceStatus } from '@/types'
 
 const props = defineProps<{ status: WorkspaceStatus }>()
@@ -16,14 +15,6 @@ const label = computed(() => ({
   stopped: 'Offline',
   error: 'Error',
 }[props.status] ?? props.status))
-
-const icon = computed(() => ({
-  creating: Loader,
-  running: CircleDot,
-  stopping: Loader,
-  stopped: Circle,
-  error: CircleAlert,
-}[props.status] ?? Circle))
 </script>
 
 <style scoped>
@@ -47,9 +38,6 @@ const icon = computed(() => ({
   border-radius: 50%;
   background: currentColor;
 }
-.badge-icon { flex-shrink: 0; }
-.creating .badge-icon, .stopping .badge-icon { animation: spin 1.2s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 .running  { color: var(--green); box-shadow: 0 0 6px rgba(0,255,157,0.3); }
 .running::before { box-shadow: 0 0 4px var(--green); animation: pulse 1.5s infinite; }

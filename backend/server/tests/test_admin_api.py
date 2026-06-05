@@ -17,6 +17,7 @@ def test_settings_defaults(client):
         "tailscale_image": "tailscale/tailscale:latest",
         "workspace_lan_access": False,
         "workspace_no_new_privileges": False,
+        "workspace_max_runtime_hours": 24,
     }
 
 
@@ -31,6 +32,7 @@ def test_settings_put_updates_both(client):
         "tailscale_image": "tailscale/tailscale:v1.2",
         "workspace_lan_access": True,
         "workspace_no_new_privileges": False,
+        "workspace_max_runtime_hours": 24,
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()
@@ -174,3 +176,10 @@ def test_admin_update_rejects_invalid_username(client):
         json={"username": "a/b"},
     )
     assert resp.status_code == 400, resp.text
+
+
+def test_settings_max_runtime_hours(client):
+    setup_admin(client)
+    assert client.get("/api/admin/settings").json()["workspace_max_runtime_hours"] == 24
+    client.put("/api/admin/settings", json={"workspace_max_runtime_hours": 8})
+    assert client.get("/api/admin/settings").json()["workspace_max_runtime_hours"] == 8

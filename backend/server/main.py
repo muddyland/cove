@@ -102,7 +102,9 @@ async def _status_monitor(dm):
     while True:
         try:
             await asyncio.sleep(10)
-            await asyncio.get_event_loop().run_in_executor(None, dm.sync_workspace_statuses)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, dm.sync_workspace_statuses)
+            await loop.run_in_executor(None, dm.enforce_runtime_limits)
         except asyncio.CancelledError:
             break
         except Exception as exc:

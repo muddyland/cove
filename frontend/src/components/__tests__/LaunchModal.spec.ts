@@ -33,6 +33,7 @@ const desktopImage: WorkspaceImage = {
   internal_port: 6901,
   url_env: null,
   enabled: true,
+  logo_url: null,
   created_at: '2026-01-01T00:00:00Z',
 }
 

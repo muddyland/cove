@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from threading import Lock
 
@@ -16,6 +16,7 @@ from server.models import UserTailscale, Workspace, WorkspaceImage
 from server.settings_store import (
     get_tailscale_image,
     get_workspace_lan_access,
+    get_workspace_max_runtime_hours,
     get_workspace_no_new_privileges,
 )
 
@@ -464,6 +465,41 @@ class DockerManager:
             logger.warning("sync_workspace_statuses error: %s", exc)
         finally:
             db.close()
+
+    def enforce_runtime_limits(self) -> None:
+        """Auto-stop running workspaces older than the configured max runtime."""
+        db = self._get_db()
+        try:
+            from sqlalchemy import select
+
+            hours = get_workspace_max_runtime_hours(db)
+            if hours <= 0:
+                return
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            running = db.scalars(
+                select(Workspace).where(Workspace.status == "running")
+            ).all()
+            expired_ids = []
+            for ws in running:
+                started = ws.started_at
+                if started is None:
+                    continue
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                if started < cutoff:
+                    expired_ids.append(ws.id)
+        except Exception as exc:
+            logger.warning("enforce_runtime_limits error: %s", exc)
+            return
+        finally:
+            db.close()
+
+        for ws_id in expired_ids:
+            logger.info("Auto-stopping workspace %s (exceeded %dh runtime)", ws_id, hours)
+            try:
+                self.stop_workspace(ws_id)
+            except Exception as exc:
+                logger.warning("Auto-stop of workspace %s failed: %s", ws_id, exc)
 
     def _apply_egress_guard(self, ws_id: int) -> None:
         """Apply WAN-only egress firewall rules inside the workspace netns.

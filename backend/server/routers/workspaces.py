@@ -6,7 +6,7 @@ from sqlalchemy import select
 from server.deps import CurrentUser, DbSession
 from server.models import UserTailscale, Workspace, WorkspaceImage
 from server.net import client_ip
-from server.schemas import WorkspaceCreate, WorkspaceOut
+from server.schemas import WorkspaceCreate, WorkspaceOut, WorkspaceUpdate
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -88,6 +88,35 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
 @router.get("/{ws_id}", response_model=WorkspaceOut)
 def get_workspace(ws_id: int, user: CurrentUser, db: DbSession):
     ws = _get_workspace_or_404(ws_id, user, db)
+    return WorkspaceOut.from_workspace(ws)
+
+
+@router.patch("/{ws_id}", response_model=WorkspaceOut)
+def update_workspace(
+    ws_id: int, body: WorkspaceUpdate, user: CurrentUser, db: DbSession, request: Request
+):
+    ws = _get_workspace_or_404(ws_id, user, db)
+    data = body.model_dump(exclude_unset=True)
+
+    if data.get("target_url"):
+        parsed = urlparse(data["target_url"])
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise HTTPException(status_code=400, detail="target_url must be a valid http/https URL")
+    if data.get("use_tailscale"):
+        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == ws.user_id))
+        if not ts or not ts.auth_key:
+            raise HTTPException(status_code=400, detail="Tailscale not configured")
+
+    nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps"}
+    for key, value in data.items():
+        if key == "name" and not (value or "").strip():
+            continue  # never blank the name
+        if key in nullable_text and isinstance(value, str) and value.strip() == "":
+            value = None
+        setattr(ws, key, value)
+    db.commit()
+    db.refresh(ws)
+    _audit(db, "workspace.update", detail=ws.public_id, user=user, request=request)
     return WorkspaceOut.from_workspace(ws)
 
 

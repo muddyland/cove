@@ -25,6 +25,7 @@ export interface WorkspaceImage {
   internal_port: number
   url_env: string | null
   enabled: boolean
+  logo_url: string | null
   created_at: string
 }
 
@@ -41,6 +42,7 @@ export interface Workspace {
   container_name: string | null
   image_id: number
   image_name: string
+  image_logo: string | null
   target_url: string | null
   stream_url: string | null
   created_at: string
@@ -78,6 +80,7 @@ export interface AppSettings {
   tailscale_image: string
   workspace_lan_access: boolean
   workspace_no_new_privileges: boolean
+  workspace_max_runtime_hours: number
 }
 
 export interface EnvEntry {

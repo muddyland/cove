@@ -70,6 +70,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0012_workspace_allow_sudo",
         "ALTER TABLE workspace ADD COLUMN allow_sudo INTEGER NOT NULL DEFAULT 1",
     ),
+    # workspace_image.logo_url (project logo from the LinuxServer API) for upgraders.
+    (
+        "0013_workspace_image_logo_url",
+        "ALTER TABLE workspace_image ADD COLUMN logo_url TEXT",
+    ),
 ]
 
 

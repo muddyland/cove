@@ -197,5 +197,11 @@ def update_app_settings(
             settings_store.KEY_WORKSPACE_NO_NEW_PRIVILEGES,
             "true" if body.workspace_no_new_privileges else "false",
         )
+    if body.workspace_max_runtime_hours is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_MAX_RUNTIME_HOURS,
+            str(max(0, body.workspace_max_runtime_hours)),
+        )
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

@@ -2,10 +2,24 @@
   <div class="card" :class="{ interactive: ws.status === 'running' }" @click="open">
     <div class="card-header">
       <div class="card-title">{{ ws.name }}</div>
-      <StatusBadge :status="ws.status" />
+      <div class="card-header-right" @click.stop>
+        <button class="edit-btn" type="button" title="Edit workspace" @click="showEdit = true">
+          <Pencil :size="14" />
+        </button>
+        <StatusBadge :status="ws.status" />
+      </div>
     </div>
     <div class="card-meta">
-      <span class="image-name">{{ ws.image_name }}</span>
+      <span class="image-name">
+        <img
+          v-if="ws.image_logo"
+          :src="ws.image_logo"
+          class="image-logo"
+          alt=""
+          @error="hideLogo"
+        />
+        {{ ws.image_name }}
+      </span>
       <span v-if="ws.target_url" class="target-url" :title="ws.target_url"><Globe :size="12" /> {{ truncateUrl(ws.target_url) }}</span>
     </div>
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
@@ -24,6 +38,7 @@
     :loading="removing"
     @confirm="handleRemove"
   />
+  <EditWorkspaceModal v-model="showEdit" :ws="ws" />
 </template>
 
 <script setup lang="ts">
@@ -34,7 +49,8 @@ import { useUiStore } from '@/stores/ui'
 import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
-import { Globe, Play, Power, Square, Trash2 } from 'lucide-vue-next'
+import EditWorkspaceModal from './EditWorkspaceModal.vue'
+import { Globe, Play, Power, Square, Trash2, Pencil } from 'lucide-vue-next'
 import type { Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
@@ -45,6 +61,11 @@ const router = useRouter()
 const acting = ref(false)
 const removing = ref(false)
 const showConfirm = ref(false)
+const showEdit = ref(false)
+
+function hideLogo(e: Event) {
+  ;(e.target as HTMLImageElement).style.display = 'none'
+}
 
 function truncateUrl(url: string) {
   try {
@@ -89,7 +110,7 @@ async function handleRemove() {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -116,16 +137,41 @@ async function handleRemove() {
   box-shadow: var(--glow-sm);
 }
 
-.card-header { display: flex; align-items: center; justify-content: space-between; }
+.card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .card-title {
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 13px;
   letter-spacing: 0.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.edit-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--glow-sm);
 }
 
-.card-meta { display: flex; flex-direction: column; gap: 3px; }
-.image-name { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+.card-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.image-name { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); display: inline-flex; align-items: center; gap: 6px; }
+.image-logo { width: 20px; height: 20px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
 .target-url { font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .target-url svg { flex-shrink: 0; }
 

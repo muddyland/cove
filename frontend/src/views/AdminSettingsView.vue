@@ -24,6 +24,19 @@
             </p>
           </div>
 
+          <div class="form-group">
+            <label>// max workspace runtime (hours)</label>
+            <input
+              v-model.number="form.workspace_max_runtime_hours"
+              type="number"
+              min="0"
+              placeholder="24"
+            />
+            <p class="hint">
+              Auto-stop running workspaces after this many hours. 0 = unlimited.
+            </p>
+          </div>
+
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_lan_access" />
             <span>Workspace LAN access</span>
@@ -105,6 +118,7 @@ const form = reactive({
   tailscale_image: '',
   workspace_lan_access: false,
   workspace_no_new_privileges: false,
+  workspace_max_runtime_hours: 24,
 })
 
 onMounted(async () => {
@@ -113,6 +127,7 @@ onMounted(async () => {
     form.tailscale_image = settings.tailscale_image
     form.workspace_lan_access = settings.workspace_lan_access
     form.workspace_no_new_privileges = settings.workspace_no_new_privileges
+    form.workspace_max_runtime_hours = settings.workspace_max_runtime_hours
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -137,10 +152,12 @@ async function handleSave() {
       tailscale_image: form.tailscale_image,
       workspace_lan_access: form.workspace_lan_access,
       workspace_no_new_privileges: form.workspace_no_new_privileges,
+      workspace_max_runtime_hours: form.workspace_max_runtime_hours,
     })
     form.tailscale_image = updated.tailscale_image
     form.workspace_lan_access = updated.workspace_lan_access
     form.workspace_no_new_privileges = updated.workspace_no_new_privileges
+    form.workspace_max_runtime_hours = updated.workspace_max_runtime_hours
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
     error.value = e.message

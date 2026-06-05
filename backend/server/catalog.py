@@ -65,6 +65,7 @@ def _build_specs(linuxserver_images: list[dict]) -> list[dict]:
                     "image_type": "desktop",
                     "internal_port": WEBTOP_PORT,
                     "url_env": None,
+                    "logo_url": img.get("project_logo"),
                     "description": img.get("description"),
                 }
             )
@@ -81,6 +82,7 @@ def _build_specs(linuxserver_images: list[dict]) -> list[dict]:
                 "image_type": "browser",
                 "internal_port": WEBTOP_PORT,
                 "url_env": url_env,
+                "logo_url": img.get("project_logo"),
                 "description": img.get("description"),
             }
         )
