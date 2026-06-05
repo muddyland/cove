@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -56,7 +57,11 @@ def _resolve_mount(username: str, ws_name: str, user_id: int) -> tuple[str, bool
 
 class DockerManager:
     def __init__(self):
-        self._client = docker.from_env()
+        # Honor DOCKER_API_VERSION so the client skips version negotiation through
+        # the socket proxy (which can otherwise fall back to an API version the
+        # daemon rejects). Falls back to default behavior when unset.
+        api_version = os.environ.get("DOCKER_API_VERSION")
+        self._client = docker.from_env(version=api_version) if api_version else docker.from_env()
         self._lock = Lock()
 
     def _get_db(self):

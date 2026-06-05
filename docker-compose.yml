@@ -15,6 +15,7 @@ services:
       - EVENTS=1
       - INFO=1
       - VERSION=1
+      - PING=1
       - POST=1
     networks:
       - cove-sockwrite
@@ -33,6 +34,7 @@ services:
       - EVENTS=1
       - INFO=1
       - VERSION=1
+      - PING=1
       # POST defaults to 0 → read-only.
     networks:
       - cove-net
@@ -52,6 +54,11 @@ services:
       - "${COVE_HTTP_PORT:-80}:80"
     networks:
       - cove-net
+    environment:
+      # Force the Docker API version so the client skips negotiation through the
+      # socket proxy (otherwise it can fall back to 1.24, which the daemon now
+      # rejects). 1.41 is supported by Docker 20.10+.
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.41}
     depends_on:
       - docker-socket-proxy-ro
 
@@ -105,6 +112,7 @@ services:
     environment:
       - COVE_DATA_DIR=/app/data
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.41}
       - COVE_TRAEFIK_NETWORK=cove-net
       - COVE_TRAEFIK_CONTAINER=cove-traefik
       - COVE_WORKSPACE_TZ=${TZ:-UTC}
