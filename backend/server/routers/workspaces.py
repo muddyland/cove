@@ -29,9 +29,9 @@ def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
 
 @router.get("", response_model=list[WorkspaceOut])
 def list_workspaces(user: CurrentUser, db: DbSession):
-    q = select(Workspace)
-    if not user.is_admin:
-        q = q.where(Workspace.user_id == user.id)
+    # The dashboard always shows only the caller's own workspaces — even for
+    # admins. Admins manage everyone's sessions via /api/admin/sessions.
+    q = select(Workspace).where(Workspace.user_id == user.id)
     workspaces = db.scalars(q.order_by(Workspace.created_at.desc())).all()
     return [WorkspaceOut.from_workspace(ws) for ws in workspaces]
 
