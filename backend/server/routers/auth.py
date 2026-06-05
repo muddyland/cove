@@ -50,6 +50,7 @@ def _set_auth_cookies(resp: Response, user: User) -> None:
     settings = get_settings()
     access = create_access_token(user.id, user.is_admin)
     refresh = create_refresh_token(user.id)
+    domain = settings.cookie_domain or None
     resp.set_cookie(
         settings.cookie_session_name,
         access,
@@ -57,6 +58,7 @@ def _set_auth_cookies(resp: Response, user: User) -> None:
         secure=settings.cookie_secure,
         samesite="lax",
         path="/",
+        domain=domain,
         max_age=settings.access_token_minutes * 60,
     )
     resp.set_cookie(
@@ -66,14 +68,16 @@ def _set_auth_cookies(resp: Response, user: User) -> None:
         secure=settings.cookie_secure,
         samesite="lax",
         path="/api/auth",
+        domain=domain,
         max_age=settings.refresh_token_days * 86400,
     )
 
 
 def _clear_auth_cookies(resp: Response) -> None:
     settings = get_settings()
-    resp.delete_cookie(settings.cookie_session_name, path="/")
-    resp.delete_cookie(settings.cookie_refresh_name, path="/api/auth")
+    domain = settings.cookie_domain or None
+    resp.delete_cookie(settings.cookie_session_name, path="/", domain=domain)
+    resp.delete_cookie(settings.cookie_refresh_name, path="/api/auth", domain=domain)
 
 
 def _check_rate_limit(ip: str) -> bool:
@@ -320,22 +324,39 @@ def forward_auth(request: Request, db: DbSession):
             return Response(status_code=401)
 
         uri = request.headers.get("X-Forwarded-Uri") or request.headers.get("X-Forwarded-Path")
-        if not uri:
+
+        public_id = None
+        detail = uri
+        # Subdomain mode: resolve from the original host's leading label.
+        if settings.workspace_domain:
+            host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
+            if host:
+                host = host.split(":", 1)[0]  # strip any :port
+                suffix = f".{settings.workspace_domain}"
+                if host.endswith(suffix):
+                    label = host[: -len(suffix)]
+                    if label and "." not in label:
+                        public_id = label
+                        detail = host
+
+        # Fall back to the subpath route on X-Forwarded-Uri.
+        if public_id is None and uri:
+            match = _STREAM_RE.match(uri)
+            if match:
+                public_id = match.group(1)
+
+        if not public_id:
             return Response(status_code=401)
-        match = _STREAM_RE.match(uri)
-        if not match:
-            return Response(status_code=401)
-        public_id = match.group(1)
 
         ws = db.scalar(select(Workspace).where(Workspace.public_id == public_id))
         if not ws:
-            _record_audit(db, "stream.deny", detail=uri, user=user, ip=client_ip(request))
+            _record_audit(db, "stream.deny", detail=detail, user=user, ip=client_ip(request))
             return Response(status_code=401)
 
         if ws.user_id == user.id or user.is_admin:
             return Response(status_code=200, headers={"X-Cove-User": user.username})
 
-        _record_audit(db, "stream.deny", detail=uri, user=user, ip=client_ip(request))
+        _record_audit(db, "stream.deny", detail=detail, user=user, ip=client_ip(request))
         return Response(status_code=401)
     except Exception:
         return Response(status_code=401)

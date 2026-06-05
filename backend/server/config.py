@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     cookie_session_name: str = "cove_session"
     cookie_refresh_name: str = "cove_refresh"
+    # When set, the session/refresh cookies use this Domain so they reach
+    # workspace subdomains (empty -> None -> host-only cookie).
+    cookie_domain: Optional[str] = None
+
+    # When set, workspace streams route at their own origin
+    # ``{public_id}.{workspace_domain}`` (subdomain mode). When unset, streams
+    # keep the subpath route ``/workspace/{public_id}/`` (empty -> None).
+    workspace_domain: Optional[str] = None
 
     traefik_network: str = "cove-net"
     traefik_container: str = "cove-traefik"
@@ -39,10 +47,25 @@ class Settings(BaseSettings):
     # Optional SQLCipher database encryption key (empty -> None)
     db_encryption_key: Optional[str] = None
 
-    @field_validator("storage_path", "db_encryption_key", mode="before")
+    @field_validator(
+        "storage_path",
+        "db_encryption_key",
+        "cookie_domain",
+        "workspace_domain",
+        mode="before",
+    )
     @classmethod
     def _empty_str_to_none(cls, v: object) -> object:
         return None if v == "" else v
+
+    @property
+    def subdomain_routing_enabled(self) -> bool:
+        """True when per-workspace subdomain routing is enabled."""
+        return bool(self.workspace_domain)
+
+    def workspace_host(self, public_id: str) -> str:
+        """The host a workspace stream is served at in subdomain mode."""
+        return f"{public_id}.{self.workspace_domain}"
 
     # OIDC — all optional; OIDC is disabled when issuer is unset
     oidc_issuer: Optional[str] = None

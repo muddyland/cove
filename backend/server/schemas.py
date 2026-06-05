@@ -110,7 +110,16 @@ class WorkspaceOut(BaseModel):
 
     @classmethod
     def from_workspace(cls, ws) -> "WorkspaceOut":
-        stream_url = f"/workspace/{ws.public_id}/" if ws.status == "running" else None
+        from server.config import get_settings
+
+        stream_url = None
+        if ws.status == "running":
+            settings = get_settings()
+            if settings.workspace_domain:
+                # Subdomain mode: protocol-relative absolute origin URL.
+                stream_url = f"//{settings.workspace_host(ws.public_id)}/"
+            else:
+                stream_url = f"/workspace/{ws.public_id}/"
         return cls(
             id=ws.id,
             public_id=ws.public_id,
@@ -151,6 +160,15 @@ class AdminUserUpdate(BaseModel):
 class AppSettingsOut(BaseModel):
     tailscale_image: str
     workspace_lan_access: bool
+
+
+class EnvEntry(BaseModel):
+    name: str
+    value: str
+
+
+class EnvSummaryOut(BaseModel):
+    entries: list[EnvEntry]
 
 
 class AppSettingsUpdate(BaseModel):

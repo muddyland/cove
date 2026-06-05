@@ -113,6 +113,14 @@ services:
       # Only Traefik can reach cove:8080 (cove-net), so trust its forwarded
       # headers; the app also reads the real client from the rightmost XFF hop.
       - FORWARDED_ALLOW_IPS=*
+      # Per-workspace subdomain isolation (optional). When COVE_WORKSPACE_DOMAIN
+      # is set, each workspace streams at {public_id}.{domain} (its own origin,
+      # so it can't read the SPA's token); unset → subpath /workspace/{id}/.
+      # Requires wildcard DNS + a wildcard TLS cert (see docker-compose.dns.yml)
+      # and COVE_COOKIE_DOMAIN set to a shared parent so the session cookie
+      # reaches the subdomains.
+      - COVE_WORKSPACE_DOMAIN=${COVE_WORKSPACE_DOMAIN:-}
+      - COVE_COOKIE_DOMAIN=${COVE_COOKIE_DOMAIN:-}
       # OIDC (optional — remove if not using)
       # - COVE_OIDC_ISSUER=https://auth.example.com/application/o/cove/
       # - COVE_OIDC_CLIENT_ID=your-client-id

@@ -40,6 +40,33 @@
           </div>
         </form>
       </section>
+
+      <section class="panel">
+        <h3>// ENVIRONMENT</h3>
+        <p class="hint env-note">
+          Read-only summary of configuration derived from environment variables. To change these,
+          update the environment and restart the server. Secrets are masked.
+        </p>
+        <div v-if="envLoading" class="loading">Loading…</div>
+        <div v-else-if="envError" class="form-error">⚠ {{ envError }}</div>
+        <div v-else-if="envEntries.length === 0" class="empty">NO ENVIRONMENT CONFIG</div>
+        <div v-else class="table-wrap">
+          <table class="env-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="entry in envEntries" :key="entry.name">
+                <td class="env-name">{{ entry.name }}</td>
+                <td class="env-value">{{ entry.value }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </AppShell>
 </template>
@@ -50,12 +77,17 @@ import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
+import type { EnvEntry } from '@/types'
 
 const ui = useUiStore()
 
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
+
+const envLoading = ref(true)
+const envError = ref('')
+const envEntries = ref<EnvEntry[]>([])
 
 const form = reactive({
   tailscale_image: '',
@@ -71,6 +103,15 @@ onMounted(async () => {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+
+  try {
+    const summary = await adminApi.env.get()
+    envEntries.value = summary.entries
+  } catch (e: any) {
+    envError.value = e.message
+  } finally {
+    envLoading.value = false
   }
 })
 
@@ -135,4 +176,10 @@ async function handleSave() {
   color: var(--accent);
 }
 .loading { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
+
+.env-note { margin: 0 0 16px; }
+.env-table td { font-family: var(--font-mono); font-size: 12px; vertical-align: top; }
+.env-name { color: var(--text-muted); white-space: nowrap; }
+.env-value { color: var(--text); word-break: break-all; }
+.env-table .empty { padding: 24px; }
 </style>

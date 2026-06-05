@@ -534,10 +534,36 @@ class DockerManager:
         """Build Traefik labels for a workspace container.
 
         Router/service/middleware names use the stable, label-safe integer id;
-        the public_id is only used in the user-facing route path.
+        the public_id is only used in the user-facing route path/host.
+
+        Subdomain mode (COVE_WORKSPACE_DOMAIN set): the app is served at ``/`` on
+        its own host ``{public_id}.{domain}`` — no stripprefix. Subpath mode
+        (unset): the current PathPrefix + stripprefix behavior is preserved.
         """
+        settings = get_settings()
         ws_id = ws.id
         name = f"cove-ws-{ws_id}"
+
+        if settings.workspace_domain:
+            host = settings.workspace_host(ws.public_id)
+            labels = {
+                "traefik.enable": "true",
+                f"traefik.http.routers.{name}.rule": f"Host(`{host}`)",
+                f"traefik.http.routers.{name}.entrypoints": "web,websecure",
+                f"traefik.http.routers.{name}.service": name,
+                f"traefik.http.services.{name}.loadbalancer.server.port": str(
+                    image.internal_port
+                ),
+                "traefik.docker.network": network_name,
+                f"traefik.http.routers.{name}.middlewares": "cove-auth@docker,cove-headers@docker",
+                "cove.workspace_id": str(ws_id),
+                "cove.user_id": str(ws.user_id),
+            }
+            # Only request TLS termination in prod/HTTPS deployments.
+            if settings.cookie_secure:
+                labels[f"traefik.http.routers.{name}.tls"] = "true"
+            return labels
+
         prefix = f"/workspace/{ws.public_id}"
         middlewares = f"cove-auth@docker,cove-headers@docker,{name}-strip"
         return {

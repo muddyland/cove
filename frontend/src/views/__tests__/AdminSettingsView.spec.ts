@@ -8,6 +8,9 @@ vi.mock('@/api/admin', () => ({
       get: vi.fn(),
       update: vi.fn(),
     },
+    env: {
+      get: vi.fn(),
+    },
   },
 }))
 
@@ -29,6 +32,8 @@ describe('AdminSettingsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
+    // Default the env summary so unrelated tests don't reject on mount.
+    vi.mocked(adminApi.env.get).mockResolvedValue({ entries: [] })
   })
 
   it('loads settings on mount and populates fields', async () => {
@@ -62,5 +67,28 @@ describe('AdminSettingsView', () => {
     const payload = vi.mocked(adminApi.settings.update).mock.calls[0][0]
     expect(payload.tailscale_image).toBe('tailscale/tailscale:latest')
     expect(payload.workspace_lan_access).toBe(true)
+  })
+
+  it('loads and renders the environment summary', async () => {
+    vi.mocked(adminApi.settings.get).mockResolvedValue(baseSettings)
+    vi.mocked(adminApi.env.get).mockResolvedValue({
+      entries: [
+        { name: 'COVE_BASE_DOMAIN', value: 'example.com' },
+        { name: 'COVE_SUBDOMAIN_MODE', value: 'true' },
+      ],
+    })
+    const wrapper = mount(AdminSettingsView)
+    await flushPromises()
+
+    expect(adminApi.env.get).toHaveBeenCalledOnce()
+    const text = wrapper.text()
+    expect(text).toContain('// ENVIRONMENT')
+    expect(text).toContain('COVE_BASE_DOMAIN')
+    expect(text).toContain('example.com')
+    expect(text).toContain('COVE_SUBDOMAIN_MODE')
+    expect(text).toContain('true')
+
+    const rows = wrapper.findAll('.env-table tbody tr')
+    expect(rows).toHaveLength(2)
   })
 })

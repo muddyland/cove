@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import select
 
 from server import settings_store
+from server.config import get_settings
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace
 from server.net import client_ip
@@ -13,6 +14,8 @@ from server.schemas import (
     AppSettingsOut,
     AppSettingsUpdate,
     AuditOut,
+    EnvEntry,
+    EnvSummaryOut,
     UserOut,
     WorkspaceOut,
 )
@@ -127,6 +130,46 @@ def list_audit(admin: AdminUser, db: DbSession):
     return db.scalars(
         select(AuditLog).order_by(AuditLog.ts.desc(), AuditLog.id.desc()).limit(200)
     ).all()
+
+
+@router.get("/env", response_model=EnvSummaryOut)
+def get_env_summary(admin: AdminUser):
+    """Non-sensitive, ordered summary of env-derived config for display.
+
+    Secrets (OIDC client_secret, DB encryption key value, JWT secret) are never
+    included — only presence is reported where relevant.
+    """
+    s = get_settings()
+
+    def _opt(v, fallback="(unset)") -> str:
+        return str(v) if v else fallback
+
+    entries = [
+        EnvEntry(
+            name="COVE_WORKSPACE_DOMAIN",
+            value=s.workspace_domain or "(unset — subpath routing)",
+        ),
+        EnvEntry(name="COVE_COOKIE_DOMAIN", value=_opt(s.cookie_domain)),
+        EnvEntry(name="COVE_COOKIE_SECURE", value=str(s.cookie_secure)),
+        EnvEntry(name="COVE_STORAGE_PATH", value=_opt(s.storage_path)),
+        EnvEntry(name="COVE_DATA_DIR", value=str(s.data_dir)),
+        EnvEntry(name="COVE_TRAEFIK_NETWORK", value=s.traefik_network),
+        EnvEntry(name="COVE_TRAEFIK_CONTAINER", value=s.traefik_container),
+        EnvEntry(name="COVE_ACCESS_TOKEN_MINUTES", value=str(s.access_token_minutes)),
+        EnvEntry(name="COVE_REFRESH_TOKEN_DAYS", value=str(s.refresh_token_days)),
+        EnvEntry(name="COVE_MAX_UPLOAD_MB", value=str(s.max_upload_mb)),
+        EnvEntry(name="COVE_WORKSPACE_TZ", value=s.workspace_tz),
+        EnvEntry(name="COVE_OIDC_ISSUER", value=_opt(s.oidc_issuer)),
+        EnvEntry(name="COVE_OIDC_PROVIDER_NAME", value=s.oidc_provider_name),
+        EnvEntry(name="COVE_OIDC_CLIENT_ID", value=_opt(s.oidc_client_id)),
+        EnvEntry(name="COVE_OIDC_ADMIN_GROUP", value=_opt(s.oidc_admin_group)),
+        EnvEntry(name="OIDC enabled", value=str(s.oidc_enabled)),
+        EnvEntry(
+            name="DB encryption",
+            value="configured" if s.db_encryption_key else "(unset)",
+        ),
+    ]
+    return EnvSummaryOut(entries=entries)
 
 
 @router.get("/settings", response_model=AppSettingsOut)

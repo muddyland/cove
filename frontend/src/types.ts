@@ -75,6 +75,15 @@ export interface AppSettings {
   workspace_lan_access: boolean
 }
 
+export interface EnvEntry {
+  name: string
+  value: string
+}
+
+export interface EnvSummary {
+  entries: EnvEntry[]
+}
+
 export interface AuditEntry {
   id: number
   ts: string

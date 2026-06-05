@@ -116,6 +116,28 @@ Each user configures Tailscale under **Preferences → Tailscale** (no global ke
 
 Then tick **Route through Tailscale** when launching a workspace. Cove starts a dedicated `tailscale/tailscale` sidecar for that workspace, and the workspace shares the sidecar's network namespace — so its egress goes out via your tailnet (and exit node, if set). The host needs `/dev/net/tun` available to containers. Sidecars and their state are removed when the workspace is halted/removed.
 
+## 6b2. Per-workspace subdomain isolation (optional)
+
+By default workspaces stream at a **subpath** (`/workspace/<id>/`) on the same
+origin as the control UI. For stronger isolation you can give each workspace its
+**own origin** so a workspace can never reach the SPA's session token:
+
+```ini
+# .env
+COVE_WORKSPACE_DOMAIN=cove.example.com   # workspaces at <public_id>.cove.example.com
+COVE_COOKIE_DOMAIN=cove.example.com      # so the session cookie reaches subdomains
+```
+
+This requires a **wildcard DNS record** (`*.cove.example.com`) and a **wildcard
+TLS certificate** — deploy with the DNS-01 override and uncomment the wildcard
+SAN labels in `docker-compose.dns.yml`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.dns.yml up -d
+```
+
+Leave both unset to keep the (simpler) subpath routing — no wildcard needed.
+
 ## 6c. File browser
 
 **Files** (in the top nav) lets each user browse, upload, download, and delete files within their own workspace storage area (`<storage>/<username>/workspace-*`). Access is confined to your directory; path traversal is rejected.
