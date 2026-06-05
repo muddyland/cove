@@ -41,6 +41,38 @@
           <span>Accept DNS</span>
         </label>
       </template>
+
+      <details class="advanced">
+        <summary>Advanced</summary>
+        <div class="advanced-body">
+          <label class="checkbox-row">
+            <input type="checkbox" v-model="form.allow_sudo" />
+            <span>Allow sudo</span>
+          </label>
+          <p class="hint">
+            Allow in-container <code>sudo</code>. Admins can force-disable sudo globally in
+            Settings, which overrides this choice.
+          </p>
+
+          <div class="form-group">
+            <label>Install packages</label>
+            <input v-model="form.install_packages" type="text" placeholder="git vim htop" />
+            <p class="hint">
+              Distro packages installed at launch via the LinuxServer
+              <code>universal-package-install</code> mod.
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label>proot-apps</label>
+            <input v-model="form.proot_apps" type="text" placeholder="firefox obs-studio" />
+            <p class="hint">
+              Portable apps via LinuxServer <code>proot-apps</code> (desktop images).
+            </p>
+          </div>
+        </div>
+      </details>
+
       <div v-if="error" class="form-error">{{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -77,6 +109,9 @@ const form = reactive({
   ts_exit_node: '',
   ts_accept_routes: true,
   ts_accept_dns: true,
+  allow_sudo: true,
+  install_packages: '',
+  proot_apps: '',
 })
 
 const selectedImage = computed(() => images.value.find(i => i.id === form.image_id))
@@ -106,6 +141,9 @@ async function handleSubmit() {
             ts_accept_dns: form.ts_accept_dns,
           }
         : {}),
+      allow_sudo: form.allow_sudo,
+      ...(form.install_packages.trim() ? { install_packages: form.install_packages.trim() } : {}),
+      ...(form.proot_apps.trim() ? { proot_apps: form.proot_apps.trim() } : {}),
     })
     open.value = false
     ui.toast(`Launching ${form.name}…`, 'info')
@@ -116,6 +154,9 @@ async function handleSubmit() {
     form.ts_exit_node = ''
     form.ts_accept_routes = true
     form.ts_accept_dns = true
+    form.allow_sudo = true
+    form.install_packages = ''
+    form.proot_apps = ''
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
@@ -134,4 +175,33 @@ async function handleSubmit() {
 }
 .checkbox-row input { width: auto; margin: 0; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
+.advanced {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  user-select: none;
+}
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+.hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+.hint code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+}
 </style>

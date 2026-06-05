@@ -13,6 +13,9 @@ export const workspacesApi = {
     ts_exit_node?: string
     ts_accept_routes?: boolean
     ts_accept_dns?: boolean
+    install_packages?: string
+    proot_apps?: string
+    allow_sudo?: boolean
   }) => api.post<Workspace>('/workspaces', payload),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),
   start: (id: number) => api.post<Workspace>(`/workspaces/${id}/start`),

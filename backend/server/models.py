@@ -72,6 +72,16 @@ class Workspace(Base):
     )
     image_id: Mapped[int] = mapped_column(Integer, ForeignKey("workspace_image.id"), nullable=False)
     target_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    # Per-workspace distro packages (universal-package-install Docker Mod), free
+    # text — pipe/comma/space separated package names.
+    install_packages: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Per-workspace proot-apps (installed via the bundled init script), free text.
+    proot_apps: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Whether in-container sudo is allowed. When False, the container gets the
+    # no-new-privileges flag which blocks setuid (sudo).
+    allow_sudo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

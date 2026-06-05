@@ -68,6 +68,9 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         ts_exit_node=body.ts_exit_node or None,
         ts_accept_routes=body.ts_accept_routes,
         ts_accept_dns=body.ts_accept_dns,
+        install_packages=body.install_packages or None,
+        proot_apps=body.proot_apps or None,
+        allow_sudo=body.allow_sudo,
         status="creating",
     )
     db.add(ws)

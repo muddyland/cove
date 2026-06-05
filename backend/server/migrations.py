@@ -57,6 +57,19 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0009_workspace_ts_accept_dns",
         "ALTER TABLE workspace ADD COLUMN ts_accept_dns INTEGER NOT NULL DEFAULT 1",
     ),
+    # Per-workspace package installation + sudo control.
+    (
+        "0010_workspace_install_packages",
+        "ALTER TABLE workspace ADD COLUMN install_packages TEXT",
+    ),
+    (
+        "0011_workspace_proot_apps",
+        "ALTER TABLE workspace ADD COLUMN proot_apps TEXT",
+    ),
+    (
+        "0012_workspace_allow_sudo",
+        "ALTER TABLE workspace ADD COLUMN allow_sudo INTEGER NOT NULL DEFAULT 1",
+    ),
 ]
 
 

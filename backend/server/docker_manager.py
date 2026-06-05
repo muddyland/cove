@@ -22,6 +22,7 @@ from server.settings_store import (
 logger = logging.getLogger(__name__)
 
 _LAUNCH_URL_SCRIPT_HOST_PATH = "/app/scripts/launch-url.sh"
+_PROOT_SCRIPT_HOST_PATH = "/app/scripts/install-proot-apps.sh"
 
 # Helper image used to apply egress firewall rules inside a workspace netns.
 # netshoot ships iptables; it runs briefly and is removed immediately.
@@ -40,6 +41,17 @@ _PRIVATE_RANGES = [
 def _sanitize(name: str) -> str:
     """Make a name safe for use as a directory component."""
     return re.sub(r"[^a-zA-Z0-9_-]", "-", name).strip("-").lower() or "workspace"
+
+
+def _split_packages(text: str | None) -> list[str]:
+    """Parse a free-text package list into a clean list of names.
+
+    Splits on commas and any whitespace, dropping empty tokens. Returns [] for
+    None/empty/whitespace-only input.
+    """
+    if not text:
+        return []
+    return [tok for tok in re.split(r"[,\s]+", text.strip()) if tok]
 
 
 def build_ts_extra_args(
@@ -280,6 +292,10 @@ class DockerManager:
                     "mode": "ro",
                 }
 
+            # Per-workspace package installation (applies to both launch paths).
+            self._apply_package_env(env, ws.install_packages)
+            self._apply_proot_apps(env, volumes, ws.proot_apps)
+
             labels = self._build_traefik_labels(ws, image, net_name)
 
             try:
@@ -294,13 +310,12 @@ class DockerManager:
                 self._pull_image(image.docker_image)
 
                 # Common container hardening. no-new-privileges blocks in-container
-                # sudo (setuid), which webtop/Kali desktops need, so it's opt-in.
-                hardening: dict = {
-                    "cap_drop": ["ALL"],
-                    "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "KILL"],
-                }
-                if get_workspace_no_new_privileges(db):
-                    hardening["security_opt"] = ["no-new-privileges:true"]
+                # sudo (setuid): applied when the admin setting forces it OR the
+                # workspace itself opts out of sudo.
+                hardening = self._build_hardening(
+                    no_new_privileges_setting=get_workspace_no_new_privileges(db),
+                    allow_sudo=ws.allow_sudo,
+                )
 
                 if ws.use_tailscale:
                     ts_cfg = db.scalar(
@@ -553,6 +568,53 @@ class DockerManager:
             network=net_name,
         )
         logger.info("Started Tailscale sidecar %s for workspace %s", sidecar_name, ws.id)
+
+    @staticmethod
+    def _build_hardening(*, no_new_privileges_setting: bool, allow_sudo: bool) -> dict:
+        """Build the container hardening kwargs (cap_drop/cap_add + security_opt).
+
+        no-new-privileges blocks in-container sudo (setuid). It is applied when the
+        admin global setting forces it OR when the workspace itself does not request
+        sudo. So: allow_sudo=True + setting False => sudo works; setting True =>
+        sudo always disabled regardless of the workspace.
+        """
+        hardening: dict = {
+            "cap_drop": ["ALL"],
+            "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "KILL"],
+        }
+        if no_new_privileges_setting or not allow_sudo:
+            hardening["security_opt"] = ["no-new-privileges:true"]
+        return hardening
+
+    @staticmethod
+    def _apply_package_env(env: dict, install_packages: str | None) -> None:
+        """Wire distro packages into ``env`` via the universal-package-install Mod.
+
+        Mutates ``env`` in place. No-op when there are no packages.
+        """
+        pkgs = _split_packages(install_packages)
+        if not pkgs:
+            return
+        mod = "linuxserver/mods:universal-package-install"
+        existing = env.get("DOCKER_MODS")
+        env["DOCKER_MODS"] = f"{existing}|{mod}" if existing else mod
+        env["INSTALL_PACKAGES"] = "|".join(pkgs)
+
+    @staticmethod
+    def _apply_proot_apps(env: dict, volumes: dict, proot_apps: str | None) -> None:
+        """Wire proot-apps into ``env``/``volumes``.
+
+        Sets PROOT_APPS (space-separated) and mounts the install init script.
+        Mutates both dicts in place. No-op when there are no apps.
+        """
+        apps = _split_packages(proot_apps)
+        if not apps:
+            return
+        env["PROOT_APPS"] = " ".join(apps)
+        volumes[_PROOT_SCRIPT_HOST_PATH] = {
+            "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
+            "mode": "ro",
+        }
 
     @staticmethod
     def _build_traefik_labels(

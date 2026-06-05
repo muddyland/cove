@@ -51,6 +51,9 @@ export interface Workspace {
   ts_exit_node: string | null
   ts_accept_routes: boolean
   ts_accept_dns: boolean
+  install_packages: string | null
+  proot_apps: string | null
+  allow_sudo: boolean
 }
 
 export interface TailscaleConfig {

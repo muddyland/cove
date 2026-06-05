@@ -90,6 +90,10 @@ class WorkspaceCreate(BaseModel):
     ts_exit_node: Optional[str] = None
     ts_accept_routes: bool = True
     ts_accept_dns: bool = True
+    # Per-workspace package installation + sudo control.
+    install_packages: Optional[str] = None
+    proot_apps: Optional[str] = None
+    allow_sudo: bool = True
 
 
 class WorkspaceOut(BaseModel):
@@ -108,6 +112,9 @@ class WorkspaceOut(BaseModel):
     ts_exit_node: Optional[str]
     ts_accept_routes: bool
     ts_accept_dns: bool
+    install_packages: Optional[str]
+    proot_apps: Optional[str]
+    allow_sudo: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -144,6 +151,9 @@ class WorkspaceOut(BaseModel):
             ts_exit_node=ws.ts_exit_node,
             ts_accept_routes=ws.ts_accept_routes,
             ts_accept_dns=ws.ts_accept_dns,
+            install_packages=ws.install_packages,
+            proot_apps=ws.proot_apps,
+            allow_sudo=ws.allow_sudo,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,

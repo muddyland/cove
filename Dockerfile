@@ -20,7 +20,7 @@ COPY backend/ .
 COPY --from=frontend-build /app/dist ./static
 COPY scripts/ ./scripts/
 
-RUN chmod +x ./scripts/launch-url.sh
+RUN chmod +x ./scripts/*.sh
 
 EXPOSE 8080
 

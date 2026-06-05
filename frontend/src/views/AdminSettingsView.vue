@@ -36,13 +36,14 @@
 
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_no_new_privileges" />
-            <span>Workspace no-new-privileges</span>
+            <span>Force-disable workspace sudo</span>
           </label>
           <p class="hint">
-            Extra hardening that blocks in-container privilege escalation. Leave
-            <strong>off</strong> (default) for desktop images that need <code>sudo</code>
-            (e.g. Kali, webtop) — turning it <strong>on</strong> breaks <code>sudo</code>/setuid
-            inside workspaces.
+            Global hardening override. When <strong>on</strong>, in-container
+            <code>sudo</code>/setuid is force-disabled for <strong>all</strong> workspaces,
+            overriding each workspace's per-launch "Allow sudo" choice. Leave
+            <strong>off</strong> (default) to let users decide per workspace — desktop images
+            such as Kali or webtop typically need <code>sudo</code>.
           </p>
 
           <div v-if="error" class="form-error">⚠ {{ error }}</div>

@@ -211,6 +211,49 @@ def test_create_workspace_ts_routing_defaults(client, fake_docker_manager):
     assert body["ts_accept_dns"] is True
 
 
+def test_create_persists_packages_and_sudo(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+
+    resp = client.post(
+        "/api/workspaces",
+        json={
+            "name": "pkg-ws",
+            "image_id": image_id,
+            "install_packages": "htop vim",
+            "proot_apps": "firefox, libreoffice",
+            "allow_sudo": False,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["install_packages"] == "htop vim"
+    assert body["proot_apps"] == "firefox, libreoffice"
+    assert body["allow_sudo"] is False
+
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, body["id"])
+        assert ws.install_packages == "htop vim"
+        assert ws.proot_apps == "firefox, libreoffice"
+        assert ws.allow_sudo is False
+    finally:
+        db.close()
+
+
+def test_create_packages_defaults(client, fake_docker_manager):
+    """Defaults: no packages/apps, sudo allowed."""
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+
+    resp = client.post("/api/workspaces", json={"name": "d", "image_id": image_id})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["install_packages"] is None
+    assert body["proot_apps"] is None
+    assert body["allow_sudo"] is True
+
+
 def test_list_workspaces_scoped_to_owner(client):
     admin_token, _ = setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")
