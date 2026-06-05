@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # keep the subpath route ``/workspace/{public_id}/`` (empty -> None).
     workspace_domain: Optional[str] = None
 
+    # Public origin of the SPA (e.g. https://cove.example.com). In subdomain
+    # mode the workspace iframe is cross-origin, so its responses must allow
+    # framing from this origin via CSP frame-ancestors (empty -> None -> 'self').
+    app_origin: Optional[str] = None
+
     traefik_network: str = "cove-net"
     traefik_container: str = "cove-traefik"
     workspace_puid: int = 1000
@@ -52,6 +57,7 @@ class Settings(BaseSettings):
         "db_encryption_key",
         "cookie_domain",
         "workspace_domain",
+        "app_origin",
         mode="before",
     )
     @classmethod

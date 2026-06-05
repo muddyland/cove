@@ -129,6 +129,9 @@ services:
       # reaches the subdomains.
       - COVE_WORKSPACE_DOMAIN=${COVE_WORKSPACE_DOMAIN:-}
       - COVE_COOKIE_DOMAIN=${COVE_COOKIE_DOMAIN:-}
+      # SPA origin allowed to iframe cross-origin workspace streams (subdomain
+      # mode). In prod this is set automatically to https://${COVE_DOMAIN}.
+      - COVE_APP_ORIGIN=${COVE_APP_ORIGIN:-}
       # OIDC (optional — remove if not using)
       # - COVE_OIDC_ISSUER=https://auth.example.com/application/o/cove/
       # - COVE_OIDC_CLIENT_ID=your-client-id

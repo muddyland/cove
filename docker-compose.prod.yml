@@ -42,6 +42,8 @@ services:
   cove:
     environment:
       - COVE_COOKIE_SECURE=true
+      # Allow the SPA to iframe cross-origin workspace streams (subdomain mode).
+      - COVE_APP_ORIGIN=https://${COVE_DOMAIN}
     labels:
       # Re-declare the cove router for HTTPS on the public domain.
       # Compose merges labels by full key, so these override the base values.

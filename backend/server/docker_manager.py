@@ -549,42 +549,45 @@ class DockerManager:
         ws_id = ws.id
         name = f"cove-ws-{ws_id}"
 
-        if settings.workspace_domain:
-            host = settings.workspace_host(ws.public_id)
-            labels = {
-                "traefik.enable": "true",
-                f"traefik.http.routers.{name}.rule": f"Host(`{host}`)",
-                f"traefik.http.routers.{name}.entrypoints": "web,websecure",
-                f"traefik.http.routers.{name}.service": name,
-                f"traefik.http.services.{name}.loadbalancer.server.port": str(
-                    image.internal_port
-                ),
-                "traefik.docker.network": network_name,
-                f"traefik.http.routers.{name}.middlewares": "cove-auth@docker,cove-headers@docker",
-                "cove.workspace_id": str(ws_id),
-                "cove.user_id": str(ws.user_id),
-            }
-            # Only request TLS termination in prod/HTTPS deployments.
-            if settings.cookie_secure:
-                labels[f"traefik.http.routers.{name}.tls"] = "true"
-            return labels
+        # Per-workspace headers middleware: the stream must be embeddable in the
+        # SPA's iframe. In subdomain mode the iframe is cross-origin, so we strip
+        # any upstream X-Frame-Options (which would block it) and instead allow
+        # framing only from the SPA origin via CSP frame-ancestors.
+        hdr = f"{name}-hdr"
+        frame_ancestors = "frame-ancestors 'self'"
+        if settings.app_origin:
+            frame_ancestors += f" {settings.app_origin}"
+        header_labels = {
+            f"traefik.http.middlewares.{hdr}.headers.customResponseHeaders.X-Frame-Options": "",
+            f"traefik.http.middlewares.{hdr}.headers.contentSecurityPolicy": frame_ancestors,
+            f"traefik.http.middlewares.{hdr}.headers.contentTypeNosniff": "true",
+        }
 
-        prefix = f"/workspace/{ws.public_id}"
-        middlewares = f"cove-auth@docker,cove-headers@docker,{name}-strip"
-        return {
+        base = {
             "traefik.enable": "true",
-            f"traefik.http.routers.{name}.rule": f"PathPrefix(`{prefix}/`)",
             f"traefik.http.routers.{name}.entrypoints": "web,websecure",
             f"traefik.http.routers.{name}.service": name,
-            f"traefik.http.services.{name}.loadbalancer.server.port": str(
-                image.internal_port
-            ),
+            f"traefik.http.services.{name}.loadbalancer.server.port": str(image.internal_port),
             "traefik.docker.network": network_name,
-            f"traefik.http.routers.{name}.middlewares": middlewares,
-            f"traefik.http.middlewares.{name}-strip.stripprefix.prefixes": prefix,
             "cove.workspace_id": str(ws_id),
             "cove.user_id": str(ws.user_id),
+            **header_labels,
         }
+
+        if settings.workspace_domain:
+            host = settings.workspace_host(ws.public_id)
+            base[f"traefik.http.routers.{name}.rule"] = f"Host(`{host}`)"
+            base[f"traefik.http.routers.{name}.middlewares"] = f"cove-auth@docker,{hdr}"
+            # Only request TLS termination in prod/HTTPS deployments.
+            if settings.cookie_secure:
+                base[f"traefik.http.routers.{name}.tls"] = "true"
+            return base
+
+        prefix = f"/workspace/{ws.public_id}"
+        base[f"traefik.http.routers.{name}.rule"] = f"PathPrefix(`{prefix}/`)"
+        base[f"traefik.http.routers.{name}.middlewares"] = f"cove-auth@docker,{hdr},{name}-strip"
+        base[f"traefik.http.middlewares.{name}-strip.stripprefix.prefixes"] = prefix
+        return base
 
 
 @lru_cache

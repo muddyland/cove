@@ -211,7 +211,11 @@ def test_traefik_labels_subdomain_mode(client, subdomain_env):
     name = f"cove-ws-{ws['id']}"
     host = f"{ws['public_id']}.{DOMAIN}"
     assert labels[f"traefik.http.routers.{name}.rule"] == f"Host(`{host}`)"
-    assert labels[f"traefik.http.routers.{name}.middlewares"] == "cove-auth@docker,cove-headers@docker"
+    # Per-workspace headers middleware (frame-ancestors) instead of cove-headers.
+    assert labels[f"traefik.http.routers.{name}.middlewares"] == f"cove-auth@docker,{name}-hdr"
+    # X-Frame-Options is stripped; CSP frame-ancestors allows the SPA to iframe it.
+    assert labels[f"traefik.http.middlewares.{name}-hdr.headers.customResponseHeaders.X-Frame-Options"] == ""
+    assert "frame-ancestors" in labels[f"traefik.http.middlewares.{name}-hdr.headers.contentSecurityPolicy"]
     # No stripprefix in subdomain mode.
     assert f"traefik.http.middlewares.{name}-strip.stripprefix.prefixes" not in labels
     assert labels["traefik.docker.network"] == "cove-net"
