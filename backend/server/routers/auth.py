@@ -104,12 +104,16 @@ def get_auth_config(db: DbSession):
     return AuthConfig(
         oidc_enabled=settings.oidc_enabled,
         oidc_provider_name=settings.oidc_provider_name,
-        needs_setup=_needs_setup(db),
+        # In OIDC-only mode there are no local users to set up.
+        needs_setup=_needs_setup(db) and not settings.oidc_only_active,
+        oidc_only=settings.oidc_only_active,
     )
 
 
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
 def setup(body: SetupRequest, request: Request, db: DbSession):
+    if get_settings().oidc_only_active:
+        raise HTTPException(status_code=403, detail="Local accounts are disabled (OIDC only)")
     if not _needs_setup(db):
         raise HTTPException(status_code=410, detail="Setup already complete")
     validate_username(body.username)
@@ -136,6 +140,8 @@ def setup(body: SetupRequest, request: Request, db: DbSession):
 
 @router.post("/login")
 def login(body: LoginRequest, request: Request, db: DbSession):
+    if get_settings().oidc_only_active:
+        raise HTTPException(status_code=403, detail="Local login is disabled (OIDC only)")
     ip = client_ip(request)
     if not _check_rate_limit(ip):
         raise HTTPException(status_code=429, detail="Too many login attempts")

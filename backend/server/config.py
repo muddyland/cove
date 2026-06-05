@@ -80,10 +80,18 @@ class Settings(BaseSettings):
     oidc_scopes: str = "openid email profile groups"
     oidc_admin_group: Optional[str] = None
     oidc_provider_name: str = "SSO"
+    # When true (and OIDC is configured), local username/password login + setup
+    # are disabled and the SPA goes straight to the IdP. Gated on oidc_enabled so
+    # a half-config can't lock everyone out — set COVE_OIDC_ONLY=false to recover.
+    oidc_only: bool = False
 
     @property
     def oidc_enabled(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret)
+
+    @property
+    def oidc_only_active(self) -> bool:
+        return self.oidc_only and self.oidc_enabled
 
     @property
     def secret_key_file(self) -> Path:

@@ -13,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   const needsSetup = computed(() => config.value?.needs_setup ?? false)
   const oidcEnabled = computed(() => config.value?.oidc_enabled ?? false)
   const oidcProviderName = computed(() => config.value?.oidc_provider_name ?? 'SSO')
+  const oidcOnly = computed(() => config.value?.oidc_only ?? false)
 
   function setToken(t: string) {
     token.value = t
@@ -74,7 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     user, token, config,
-    isAuthenticated, isAdmin, needsSetup, oidcEnabled, oidcProviderName,
+    isAuthenticated, isAdmin, needsSetup, oidcEnabled, oidcProviderName, oidcOnly,
     setToken, clear, loadConfig, init, login, setup, logout,
   }
 })

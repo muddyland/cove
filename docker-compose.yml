@@ -138,6 +138,9 @@ services:
       - COVE_OIDC_CLIENT_SECRET=${COVE_OIDC_CLIENT_SECRET:-}
       - COVE_OIDC_ADMIN_GROUP=${COVE_OIDC_ADMIN_GROUP:-}
       - COVE_OIDC_PROVIDER_NAME=${COVE_OIDC_PROVIDER_NAME:-Authentik}
+      # Set true to disable local username/password login + setup entirely and
+      # go straight to the IdP (only takes effect when OIDC is configured).
+      - COVE_OIDC_ONLY=${COVE_OIDC_ONLY:-false}
 
 networks:
   # Per-workspace networks are created at runtime by the backend; not declared here.

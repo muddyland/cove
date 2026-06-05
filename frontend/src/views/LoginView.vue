@@ -9,31 +9,36 @@
       <div class="auth-subtitle">// SECURE ACCESS TERMINAL</div>
 
       <a v-if="auth.oidcEnabled" :href="oidcLoginUrl" class="oidc-btn">
-        ⬡ AUTH VIA {{ auth.oidcProviderName.toUpperCase() }}
+        ⬡ {{ auth.oidcOnly ? 'CONTINUE TO' : 'AUTH VIA' }} {{ auth.oidcProviderName.toUpperCase() }}
       </a>
 
-      <div v-if="auth.oidcEnabled" class="divider"><span>— OR —</span></div>
+      <!-- OIDC-only mode: redirecting to the IdP; local form is hidden. -->
+      <div v-if="auth.oidcOnly" class="redirect-note">// redirecting to {{ auth.oidcProviderName }}…</div>
 
-      <form @submit.prevent="handleLogin" class="form">
-        <div class="form-group">
-          <label>// identifier</label>
-          <input v-model="username" required autocomplete="username" />
-        </div>
-        <div class="form-group">
-          <label>// passkey</label>
-          <input v-model="password" type="password" required autocomplete="current-password" />
-        </div>
-        <div v-if="error" class="form-error">⚠ {{ error }}</div>
-        <NeonButton type="submit" variant="primary" :loading="loading" style="width:100%">
-          AUTHENTICATE
-        </NeonButton>
-      </form>
+      <template v-else>
+        <div v-if="auth.oidcEnabled" class="divider"><span>— OR —</span></div>
+
+        <form @submit.prevent="handleLogin" class="form">
+          <div class="form-group">
+            <label>// identifier</label>
+            <input v-model="username" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label>// passkey</label>
+            <input v-model="password" type="password" required autocomplete="current-password" />
+          </div>
+          <div v-if="error" class="form-error">⚠ {{ error }}</div>
+          <NeonButton type="submit" variant="primary" :loading="loading" style="width:100%">
+            AUTHENTICATE
+          </NeonButton>
+        </form>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import NeonButton from '@/components/NeonButton.vue'
@@ -46,6 +51,14 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 const oidcLoginUrl = '/api/auth/oidc/login'
+
+onMounted(() => {
+  // OIDC-only: skip the page and go straight to the IdP. The button remains as a
+  // fallback if the redirect is blocked.
+  if (auth.oidcOnly && auth.oidcEnabled) {
+    window.location.href = oidcLoginUrl
+  }
+})
 
 async function handleLogin() {
   error.value = ''
@@ -128,6 +141,14 @@ async function handleLogin() {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 2px;
+  color: var(--text-muted);
+}
+
+.redirect-note {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
   color: var(--text-muted);
 }
 

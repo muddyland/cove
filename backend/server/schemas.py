@@ -12,6 +12,7 @@ class AuthConfig(BaseModel):
     oidc_enabled: bool
     oidc_provider_name: str
     needs_setup: bool
+    oidc_only: bool = False
 
 
 class SetupRequest(BaseModel):

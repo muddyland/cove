@@ -11,6 +11,7 @@ export interface AuthConfig {
   oidc_enabled: boolean
   oidc_provider_name: string
   needs_setup: boolean
+  oidc_only: boolean
 }
 
 export type ImageType = 'desktop' | 'browser' | 'link'

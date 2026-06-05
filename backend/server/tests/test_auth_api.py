@@ -108,3 +108,25 @@ def test_login_rate_limit_returns_429(client):
     # The next attempt (even with correct creds) is rate-limited.
     resp = login(client, "admin", "password123")
     assert resp.status_code == 429
+
+
+def test_oidc_only_disables_local_auth(client, monkeypatch):
+    """When COVE_OIDC_ONLY is set (with OIDC configured), local login + setup are
+    rejected and /config reports oidc_only=True."""
+    monkeypatch.setenv("COVE_OIDC_ISSUER", "https://idp.example.com/")
+    monkeypatch.setenv("COVE_OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("COVE_OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("COVE_OIDC_ONLY", "true")
+    get_settings.cache_clear()
+    try:
+        cfg = client.get("/api/auth/config").json()
+        assert cfg["oidc_only"] is True
+        assert cfg["needs_setup"] is False  # no local setup in OIDC-only mode
+        assert client.post(
+            "/api/auth/setup", json={"username": "admin", "password": "password123"}
+        ).status_code == 403
+        assert client.post(
+            "/api/auth/login", json={"username": "admin", "password": "password123"}
+        ).status_code == 403
+    finally:
+        get_settings.cache_clear()
