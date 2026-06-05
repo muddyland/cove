@@ -191,5 +191,11 @@ def update_app_settings(
             settings_store.KEY_WORKSPACE_LAN_ACCESS,
             "true" if body.workspace_lan_access else "false",
         )
+    if body.workspace_no_new_privileges is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_NO_NEW_PRIVILEGES,
+            "true" if body.workspace_no_new_privileges else "false",
+        )
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

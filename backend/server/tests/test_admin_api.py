@@ -16,6 +16,7 @@ def test_settings_defaults(client):
     assert resp.json() == {
         "tailscale_image": "tailscale/tailscale:latest",
         "workspace_lan_access": False,
+        "workspace_no_new_privileges": False,
     }
 
 
@@ -29,11 +30,19 @@ def test_settings_put_updates_both(client):
     assert resp.json() == {
         "tailscale_image": "tailscale/tailscale:v1.2",
         "workspace_lan_access": True,
+        "workspace_no_new_privileges": False,
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()
     assert got["tailscale_image"] == "tailscale/tailscale:v1.2"
     assert got["workspace_lan_access"] is True
+
+
+def test_settings_no_new_privileges_toggle(client):
+    setup_admin(client)
+    assert client.get("/api/admin/settings").json()["workspace_no_new_privileges"] is False
+    client.put("/api/admin/settings", json={"workspace_no_new_privileges": True})
+    assert client.get("/api/admin/settings").json()["workspace_no_new_privileges"] is True
 
 
 def test_settings_put_partial(client):

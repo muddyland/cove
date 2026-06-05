@@ -13,7 +13,11 @@ from sqlalchemy import select
 from server.config import get_settings
 from server.db import SessionLocal
 from server.models import UserTailscale, Workspace, WorkspaceImage
-from server.settings_store import get_tailscale_image, get_workspace_lan_access
+from server.settings_store import (
+    get_tailscale_image,
+    get_workspace_lan_access,
+    get_workspace_no_new_privileges,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -289,6 +293,15 @@ class DockerManager:
                 # Always pull so a halted-then-restarted workspace gets the latest.
                 self._pull_image(image.docker_image)
 
+                # Common container hardening. no-new-privileges blocks in-container
+                # sudo (setuid), which webtop/Kali desktops need, so it's opt-in.
+                hardening: dict = {
+                    "cap_drop": ["ALL"],
+                    "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "KILL"],
+                }
+                if get_workspace_no_new_privileges(db):
+                    hardening["security_opt"] = ["no-new-privileges:true"]
+
                 if ws.use_tailscale:
                     ts_cfg = db.scalar(
                         select(UserTailscale).where(UserTailscale.user_id == ws.user_id)
@@ -307,16 +320,7 @@ class DockerManager:
                         volumes=volumes,
                         network_mode=f"container:{self._ts_sidecar_name(ws.id)}",
                         shm_size="1g",
-                        security_opt=["no-new-privileges:true"],
-                        cap_drop=["ALL"],
-                        cap_add=[
-                            "CHOWN",
-                            "DAC_OVERRIDE",
-                            "FOWNER",
-                            "SETGID",
-                            "SETUID",
-                            "KILL",
-                        ],
+                        **hardening,
                     )
                 else:
                     container = self._client.containers.run(
@@ -328,16 +332,7 @@ class DockerManager:
                         labels=labels,
                         network=net_name,
                         shm_size="1g",
-                        security_opt=["no-new-privileges:true"],
-                        cap_drop=["ALL"],
-                        cap_add=[
-                            "CHOWN",
-                            "DAC_OVERRIDE",
-                            "FOWNER",
-                            "SETGID",
-                            "SETUID",
-                            "KILL",
-                        ],
+                        **hardening,
                     )
                 logger.info("Started container %s for workspace %s", container.id[:12], ws_id)
 

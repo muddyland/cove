@@ -34,6 +34,17 @@
             <strong>on</strong>, workspaces may reach hosts on your local network.
           </p>
 
+          <label class="checkbox-row">
+            <input type="checkbox" v-model="form.workspace_no_new_privileges" />
+            <span>Workspace no-new-privileges</span>
+          </label>
+          <p class="hint">
+            Extra hardening that blocks in-container privilege escalation. Leave
+            <strong>off</strong> (default) for desktop images that need <code>sudo</code>
+            (e.g. Kali, webtop) — turning it <strong>on</strong> breaks <code>sudo</code>/setuid
+            inside workspaces.
+          </p>
+
           <div v-if="error" class="form-error">⚠ {{ error }}</div>
           <div class="form-actions">
             <NeonButton type="submit" variant="primary" :loading="saving">Save Settings</NeonButton>
@@ -92,6 +103,7 @@ const envEntries = ref<EnvEntry[]>([])
 const form = reactive({
   tailscale_image: '',
   workspace_lan_access: false,
+  workspace_no_new_privileges: false,
 })
 
 onMounted(async () => {
@@ -99,6 +111,7 @@ onMounted(async () => {
     const settings = await adminApi.settings.get()
     form.tailscale_image = settings.tailscale_image
     form.workspace_lan_access = settings.workspace_lan_access
+    form.workspace_no_new_privileges = settings.workspace_no_new_privileges
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -122,9 +135,11 @@ async function handleSave() {
     const updated = await adminApi.settings.update({
       tailscale_image: form.tailscale_image,
       workspace_lan_access: form.workspace_lan_access,
+      workspace_no_new_privileges: form.workspace_no_new_privileges,
     })
     form.tailscale_image = updated.tailscale_image
     form.workspace_lan_access = updated.workspace_lan_access
+    form.workspace_no_new_privileges = updated.workspace_no_new_privileges
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
     error.value = e.message

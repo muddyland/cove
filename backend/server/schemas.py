@@ -171,6 +171,7 @@ class AdminUserUpdate(BaseModel):
 class AppSettingsOut(BaseModel):
     tailscale_image: str
     workspace_lan_access: bool
+    workspace_no_new_privileges: bool
 
 
 class EnvEntry(BaseModel):
@@ -185,6 +186,7 @@ class EnvSummaryOut(BaseModel):
 class AppSettingsUpdate(BaseModel):
     tailscale_image: Optional[str] = None
     workspace_lan_access: Optional[bool] = None
+    workspace_no_new_privileges: Optional[bool] = None
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

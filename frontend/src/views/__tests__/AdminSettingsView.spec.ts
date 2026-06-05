@@ -26,6 +26,7 @@ import type { AppSettings } from '@/types'
 const baseSettings: AppSettings = {
   tailscale_image: 'tailscale/tailscale:v1.74.0',
   workspace_lan_access: false,
+  workspace_no_new_privileges: false,
 }
 
 describe('AdminSettingsView', () => {
@@ -53,6 +54,7 @@ describe('AdminSettingsView', () => {
     vi.mocked(adminApi.settings.update).mockResolvedValue({
       tailscale_image: 'tailscale/tailscale:latest',
       workspace_lan_access: true,
+      workspace_no_new_privileges: false,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()

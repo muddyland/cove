@@ -74,6 +74,7 @@ export interface FileListing {
 export interface AppSettings {
   tailscale_image: string
   workspace_lan_access: boolean
+  workspace_no_new_privileges: boolean
 }
 
 export interface EnvEntry {
