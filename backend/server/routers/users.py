@@ -24,17 +24,11 @@ def _masked(ts: UserTailscale | None) -> TailscaleConfigOut:
             enabled=False,
             has_auth_key=False,
             login_server=None,
-            exit_node=None,
-            accept_routes=True,
-            accept_dns=True,
         )
     return TailscaleConfigOut(
         enabled=ts.enabled,
         has_auth_key=bool(ts.auth_key),
         login_server=ts.login_server,
-        exit_node=ts.exit_node,
-        accept_routes=ts.accept_routes,
-        accept_dns=ts.accept_dns,
     )
 
 
@@ -60,12 +54,6 @@ def update_my_tailscale(
 
     if body.login_server is not None:
         ts.login_server = body.login_server or None
-    if body.exit_node is not None:
-        ts.exit_node = body.exit_node or None
-    if body.accept_routes is not None:
-        ts.accept_routes = body.accept_routes
-    if body.accept_dns is not None:
-        ts.accept_dns = body.accept_dns
     if body.enabled is not None:
         ts.enabled = body.enabled
 

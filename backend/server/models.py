@@ -62,6 +62,14 @@ class Workspace(Base):
     use_tailscale: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Per-workspace Tailscale routing options (auth_key + login_server stay per-user).
+    ts_exit_node: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    ts_accept_routes: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    ts_accept_dns: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
     image_id: Mapped[int] = mapped_column(Integer, ForeignKey("workspace_image.id"), nullable=False)
     target_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
@@ -84,9 +92,8 @@ class UserTailscale(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auth_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     login_server: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    exit_node: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
-    accept_routes: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    accept_dns: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # NOTE: exit_node/accept_routes/accept_dns moved to the Workspace level. The
+    # legacy columns may still exist in old DBs but are no longer mapped/used.
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

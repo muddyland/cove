@@ -38,6 +38,34 @@ def _sanitize(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "-", name).strip("-").lower() or "workspace"
 
 
+def build_ts_extra_args(
+    *,
+    exit_node: str | None,
+    accept_routes: bool,
+    accept_dns: bool,
+    login_server: str | None,
+) -> list[str]:
+    """Build the ``tailscale up`` extra args from per-workspace routing options.
+
+    exit_node/accept_routes/accept_dns come from the Workspace; login_server
+    comes from the user's UserTailscale config.
+
+    When an exit node is set we also pass ``--exit-node-allow-lan-access``: without
+    it the container routes local-subnet replies through the tunnel, so Traefik
+    (on the local Docker network) can't reach the workspace's stream.
+    """
+    extra_args: list[str] = []
+    if exit_node:
+        extra_args.append(f"--exit-node={exit_node}")
+        extra_args.append("--exit-node-allow-lan-access")
+    if accept_routes:
+        extra_args.append("--accept-routes")
+    extra_args.append(f"--accept-dns={'true' if accept_dns else 'false'}")
+    if login_server:
+        extra_args.append(f"--login-server={login_server}")
+    return extra_args
+
+
 def _resolve_mount(username: str, ws_name: str, user_id: int) -> tuple[str, bool]:
     """Return (mount_source, is_bind_mount).
 
@@ -499,16 +527,15 @@ class DockerManager:
 
         self._ensure_named_volume(volume_name)
 
+        # auth_key + login_server are per-user; the routing options are per-workspace.
         auth_key = ts_cfg.auth_key if ts_cfg else None
-        extra_args: list[str] = []
-        if ts_cfg:
-            if ts_cfg.exit_node:
-                extra_args.append(f"--exit-node={ts_cfg.exit_node}")
-            if ts_cfg.accept_routes:
-                extra_args.append("--accept-routes")
-            extra_args.append(f"--accept-dns={'true' if ts_cfg.accept_dns else 'false'}")
-            if ts_cfg.login_server:
-                extra_args.append(f"--login-server={ts_cfg.login_server}")
+        login_server = ts_cfg.login_server if ts_cfg else None
+        extra_args = build_ts_extra_args(
+            exit_node=ws.ts_exit_node,
+            accept_routes=ws.ts_accept_routes,
+            accept_dns=ws.ts_accept_dns,
+            login_server=login_server,
+        )
 
         environment = {
             "TS_AUTHKEY": auth_key or "",

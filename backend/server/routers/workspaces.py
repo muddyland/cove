@@ -65,6 +65,9 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         image_id=body.image_id,
         target_url=target_url,
         use_tailscale=body.use_tailscale,
+        ts_exit_node=body.ts_exit_node or None,
+        ts_accept_routes=body.ts_accept_routes,
+        ts_accept_dns=body.ts_accept_dns,
         status="creating",
     )
     db.add(ws)

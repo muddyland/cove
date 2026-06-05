@@ -1,0 +1,91 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { flushPromises, mount } from '@vue/test-utils'
+import type { WorkspaceImage } from '@/types'
+
+vi.mock('@/api/images', () => ({
+  imagesApi: { list: vi.fn() },
+}))
+
+const launchMock = vi.fn()
+vi.mock('@/stores/workspaces', () => ({
+  useWorkspacesStore: () => ({ launch: launchMock }),
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
+// BaseModal just renders its default slot when open.
+vi.mock('@/components/BaseModal.vue', () => ({
+  default: { template: '<div><slot /></div>' },
+}))
+
+import { imagesApi } from '@/api/images'
+import LaunchModal from '@/components/LaunchModal.vue'
+
+const desktopImage: WorkspaceImage = {
+  id: 7,
+  name: 'Ubuntu Desktop',
+  docker_image: 'ubuntu:desktop',
+  image_type: 'desktop',
+  description: null,
+  internal_port: 6901,
+  url_env: null,
+  enabled: true,
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+describe('LaunchModal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+    vi.mocked(imagesApi.list).mockResolvedValue([desktopImage])
+    launchMock.mockResolvedValue({ id: 99 })
+  })
+
+  it('omits the ts_* fields when Tailscale routing is off', async () => {
+    const wrapper = mount(LaunchModal, { props: { modelValue: true } })
+    await flushPromises()
+
+    await wrapper.find('input').setValue('My Desktop')
+    await wrapper.find('select').setValue(7)
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(launchMock).toHaveBeenCalledOnce()
+    const payload = launchMock.mock.calls[0][0]
+    expect(payload.use_tailscale).toBe(false)
+    expect(payload).not.toHaveProperty('ts_exit_node')
+    expect(payload).not.toHaveProperty('ts_accept_routes')
+    expect(payload).not.toHaveProperty('ts_accept_dns')
+  })
+
+  it('includes ts_exit_node / ts_accept_routes / ts_accept_dns when Tailscale is enabled', async () => {
+    const wrapper = mount(LaunchModal, { props: { modelValue: true } })
+    await flushPromises()
+
+    await wrapper.find('input').setValue('My Desktop')
+    await wrapper.find('select').setValue(7)
+
+    // Enable Tailscale routing, which reveals the extra fields.
+    const tsToggle = wrapper.find('input[type="checkbox"]')
+    await tsToggle.setValue(true)
+
+    const exitNode = wrapper.find('input[type="text"]')
+    await exitNode.setValue('us-nyc-1')
+
+    // Untick "Accept DNS" (last revealed checkbox).
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[checkboxes.length - 1].setValue(false)
+
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    const payload = launchMock.mock.calls[0][0]
+    expect(payload.use_tailscale).toBe(true)
+    expect(payload.ts_exit_node).toBe('us-nyc-1')
+    expect(payload.ts_accept_routes).toBe(true)
+    expect(payload.ts_accept_dns).toBe(false)
+  })
+})

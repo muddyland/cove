@@ -164,6 +164,53 @@ def test_create_with_tailscale_configured_accepted(client, fake_docker_manager):
     fake_docker_manager.launch_workspace.assert_called_once_with(body["id"])
 
 
+def test_create_with_tailscale_persists_routing_options(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    cfg = client.put("/api/users/me/tailscale", json={"auth_key": "tskey-abc"})
+    assert cfg.status_code == 200, cfg.text
+
+    resp = client.post(
+        "/api/workspaces",
+        json={
+            "name": "ts-ws",
+            "image_id": image_id,
+            "use_tailscale": True,
+            "ts_exit_node": "100.64.0.1",
+            "ts_accept_routes": False,
+            "ts_accept_dns": False,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["ts_exit_node"] == "100.64.0.1"
+    assert body["ts_accept_routes"] is False
+    assert body["ts_accept_dns"] is False
+
+    # Persisted to the DB.
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, body["id"])
+        assert ws.ts_exit_node == "100.64.0.1"
+        assert ws.ts_accept_routes is False
+        assert ws.ts_accept_dns is False
+    finally:
+        db.close()
+
+
+def test_create_workspace_ts_routing_defaults(client, fake_docker_manager):
+    """Without explicit routing options the defaults are accept_routes/accept_dns on."""
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+
+    resp = client.post("/api/workspaces", json={"name": "d", "image_id": image_id})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["ts_exit_node"] is None
+    assert body["ts_accept_routes"] is True
+    assert body["ts_accept_dns"] is True
+
+
 def test_list_workspaces_scoped_to_owner(client):
     admin_token, _ = setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")

@@ -47,15 +47,15 @@ export interface Workspace {
   stopped_at: string | null
   error_message: string | null
   use_tailscale: boolean
+  ts_exit_node: string | null
+  ts_accept_routes: boolean
+  ts_accept_dns: boolean
 }
 
 export interface TailscaleConfig {
   enabled: boolean
   has_auth_key: boolean
   login_server: string | null
-  exit_node: string | null
-  accept_routes: boolean
-  accept_dns: boolean
 }
 
 export interface FileEntry {

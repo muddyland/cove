@@ -85,6 +85,10 @@ class WorkspaceCreate(BaseModel):
     workspace_type: str = "desktop"
     target_url: Optional[str] = None
     use_tailscale: bool = False
+    # Per-workspace Tailscale routing options (stored regardless of use_tailscale).
+    ts_exit_node: Optional[str] = None
+    ts_accept_routes: bool = True
+    ts_accept_dns: bool = True
 
 
 class WorkspaceOut(BaseModel):
@@ -100,6 +104,9 @@ class WorkspaceOut(BaseModel):
     image_name: str
     target_url: Optional[str]
     use_tailscale: bool
+    ts_exit_node: Optional[str]
+    ts_accept_routes: bool
+    ts_accept_dns: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -133,6 +140,9 @@ class WorkspaceOut(BaseModel):
             image_name=ws.image.name if ws.image else "",
             target_url=ws.target_url,
             use_tailscale=ws.use_tailscale,
+            ts_exit_node=ws.ts_exit_node,
+            ts_accept_routes=ws.ts_accept_routes,
+            ts_accept_dns=ws.ts_accept_dns,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,
@@ -182,9 +192,6 @@ class TailscaleConfigOut(BaseModel):
     enabled: bool
     has_auth_key: bool
     login_server: Optional[str]
-    exit_node: Optional[str]
-    accept_routes: bool
-    accept_dns: bool
 
 
 class TailscaleConfigUpdate(BaseModel):
@@ -192,9 +199,6 @@ class TailscaleConfigUpdate(BaseModel):
     # unchanged; an explicit "" (or null) clears it; a non-empty string replaces it.
     auth_key: Optional[str] = _UNSET
     login_server: Optional[str] = None
-    exit_node: Optional[str] = None
-    accept_routes: Optional[bool] = None
-    accept_dns: Optional[bool] = None
     enabled: Optional[bool] = None
 
 

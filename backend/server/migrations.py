@@ -44,6 +44,19 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0006_workspace_use_tailscale",
         "ALTER TABLE workspace ADD COLUMN use_tailscale INTEGER NOT NULL DEFAULT 0",
     ),
+    # Per-workspace Tailscale routing options (moved from user_tailscale).
+    (
+        "0007_workspace_ts_exit_node",
+        "ALTER TABLE workspace ADD COLUMN ts_exit_node TEXT",
+    ),
+    (
+        "0008_workspace_ts_accept_routes",
+        "ALTER TABLE workspace ADD COLUMN ts_accept_routes INTEGER NOT NULL DEFAULT 1",
+    ),
+    (
+        "0009_workspace_ts_accept_dns",
+        "ALTER TABLE workspace ADD COLUMN ts_accept_dns INTEGER NOT NULL DEFAULT 1",
+    ),
 ]
 
 

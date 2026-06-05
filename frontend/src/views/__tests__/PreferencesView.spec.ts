@@ -27,9 +27,6 @@ const baseConfig: TailscaleConfig = {
   enabled: true,
   has_auth_key: true,
   login_server: 'https://login.example.com',
-  exit_node: 'node-1',
-  accept_routes: true,
-  accept_dns: false,
 }
 
 describe('PreferencesView', () => {

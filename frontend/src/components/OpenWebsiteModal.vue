@@ -16,6 +16,20 @@
         <input type="checkbox" v-model="useTailscale" />
         <span>Route through Tailscale</span>
       </label>
+      <template v-if="useTailscale">
+        <div class="form-group ts-field">
+          <label>// exit node (optional)</label>
+          <input v-model="tsExitNode" type="text" placeholder="us-nyc-1 or 100.x.y.z" />
+        </div>
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="tsAcceptRoutes" />
+          <span>Accept routes</span>
+        </label>
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="tsAcceptDns" />
+          <span>Accept DNS</span>
+        </label>
+      </template>
       <div v-if="error" class="form-error">⚠ {{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -41,6 +55,9 @@ const images = ref<WorkspaceImage[]>([])
 const url = ref('')
 const browserId = ref<number | ''>('')
 const useTailscale = ref(false)
+const tsExitNode = ref('')
+const tsAcceptRoutes = ref(true)
+const tsAcceptDns = ref(true)
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -72,11 +89,21 @@ async function handleSubmit() {
       workspace_type: 'browser',
       target_url: url.value,
       use_tailscale: useTailscale.value,
+      ...(useTailscale.value
+        ? {
+            ts_exit_node: tsExitNode.value || undefined,
+            ts_accept_routes: tsAcceptRoutes.value,
+            ts_accept_dns: tsAcceptDns.value,
+          }
+        : {}),
     })
     open.value = false
     ui.toast(`Opening ${deriveName(url.value)}…`, 'info')
     url.value = ''
     useTailscale.value = false
+    tsExitNode.value = ''
+    tsAcceptRoutes.value = true
+    tsAcceptDns.value = true
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
@@ -94,4 +121,5 @@ async function handleSubmit() {
   font-size: 12px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
 }
 .checkbox-row input { width: auto; margin: 0; }
+.ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
 </style>

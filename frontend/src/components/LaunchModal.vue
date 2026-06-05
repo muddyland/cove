@@ -27,6 +27,20 @@
         <input type="checkbox" v-model="form.use_tailscale" />
         <span>Route through Tailscale</span>
       </label>
+      <template v-if="form.use_tailscale">
+        <div class="form-group ts-field">
+          <label>Exit node (optional)</label>
+          <input v-model="form.ts_exit_node" type="text" placeholder="us-nyc-1 or 100.x.y.z" />
+        </div>
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="form.ts_accept_routes" />
+          <span>Accept routes</span>
+        </label>
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="form.ts_accept_dns" />
+          <span>Accept DNS</span>
+        </label>
+      </template>
       <div v-if="error" class="form-error">{{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -55,7 +69,15 @@ const store = useWorkspacesStore()
 const ui = useUiStore()
 const router = useRouter()
 
-const form = reactive({ name: '', image_id: '' as number | '', target_url: '', use_tailscale: false })
+const form = reactive({
+  name: '',
+  image_id: '' as number | '',
+  target_url: '',
+  use_tailscale: false,
+  ts_exit_node: '',
+  ts_accept_routes: true,
+  ts_accept_dns: true,
+})
 
 const selectedImage = computed(() => images.value.find(i => i.id === form.image_id))
 const urlCapable = computed(() =>
@@ -77,6 +99,13 @@ async function handleSubmit() {
       workspace_type: selectedImage.value?.image_type ?? 'desktop',
       target_url: urlCapable.value && form.target_url ? form.target_url : undefined,
       use_tailscale: form.use_tailscale,
+      ...(form.use_tailscale
+        ? {
+            ts_exit_node: form.ts_exit_node || undefined,
+            ts_accept_routes: form.ts_accept_routes,
+            ts_accept_dns: form.ts_accept_dns,
+          }
+        : {}),
     })
     open.value = false
     ui.toast(`Launching ${form.name}…`, 'info')
@@ -84,6 +113,9 @@ async function handleSubmit() {
     form.image_id = ''
     form.target_url = ''
     form.use_tailscale = false
+    form.ts_exit_node = ''
+    form.ts_accept_routes = true
+    form.ts_accept_dns = true
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
@@ -101,4 +133,5 @@ async function handleSubmit() {
   font-size: 12px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
 }
 .checkbox-row input { width: auto; margin: 0; }
+.ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
 </style>

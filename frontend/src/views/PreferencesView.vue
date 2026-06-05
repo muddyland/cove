@@ -48,18 +48,10 @@
             <label>// login server (optional)</label>
             <input v-model="ts.login_server" type="url" placeholder="https://login.tailscale.com" />
           </div>
-          <div class="form-group">
-            <label>// exit node (optional)</label>
-            <input v-model="ts.exit_node" type="text" placeholder="100.x.y.z or node name" />
-          </div>
-          <label class="checkbox-row">
-            <input type="checkbox" v-model="ts.accept_routes" />
-            <span>Accept routes</span>
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" v-model="ts.accept_dns" />
-            <span>Accept DNS</span>
-          </label>
+          <p class="hint">
+            Per-connection options (exit node, accept routes, accept DNS) are now chosen
+            per workspace at launch time.
+          </p>
           <div v-if="tsError" class="form-error">⚠ {{ tsError }}</div>
           <div class="form-actions">
             <NeonButton type="submit" variant="primary" :loading="tsSaving">Save Tailscale</NeonButton>
@@ -118,9 +110,6 @@ const ts = reactive({
   enabled: false,
   auth_key: '',
   login_server: '' as string,
-  exit_node: '' as string,
-  accept_routes: false,
-  accept_dns: false,
 })
 
 onMounted(async () => {
@@ -128,9 +117,6 @@ onMounted(async () => {
     const cfg = await usersApi.getTailscale()
     ts.enabled = cfg.enabled
     ts.login_server = cfg.login_server ?? ''
-    ts.exit_node = cfg.exit_node ?? ''
-    ts.accept_routes = cfg.accept_routes
-    ts.accept_dns = cfg.accept_dns
     hasAuthKey.value = cfg.has_auth_key
   } catch (e: any) {
     tsError.value = e.message
@@ -146,9 +132,6 @@ async function handleTailscale() {
     const payload: Record<string, unknown> = {
       enabled: ts.enabled,
       login_server: ts.login_server || null,
-      exit_node: ts.exit_node || null,
-      accept_routes: ts.accept_routes,
-      accept_dns: ts.accept_dns,
     }
     if (ts.auth_key) payload.auth_key = ts.auth_key
     const cfg = await usersApi.updateTailscale(payload)
@@ -193,4 +176,11 @@ async function handleTailscale() {
 }
 .checkbox-row input { width: auto; margin: 0; }
 .loading { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
+.hint {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
 </style>
