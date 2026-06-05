@@ -88,3 +88,61 @@ def test_sync_requires_admin(client, monkeypatch):
     monkeypatch.setattr(images_router, "fetch_catalog", _fake_fetch_catalog)
     resp = client.post("/api/images/sync", headers=auth_header(user_token))
     assert resp.status_code == 403
+
+
+def test_sync_backfills_logo_on_existing_rows(client, monkeypatch):
+    """Re-sync refreshes upstream metadata (logo_url) on rows that predate it,
+    without clobbering admin edits."""
+    from sqlalchemy import select as _select
+
+    from server.db import SessionLocal
+    from server.models import WorkspaceImage
+
+    token, _ = setup_admin(client)
+
+    # Pre-existing row with no logo and an admin-renamed display name.
+    db = SessionLocal()
+    try:
+        db.add(
+            WorkspaceImage(
+                name="My Custom Name",
+                docker_image="lscr.io/linuxserver/webtop:latest",
+                image_type="desktop",
+                internal_port=3000,
+                logo_url=None,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    async def _fake_fetch_catalog():
+        return [
+            {
+                "name": "Webtop — Alpine XFCE",
+                "docker_image": "lscr.io/linuxserver/webtop:latest",
+                "image_type": "desktop",
+                "internal_port": 3000,
+                "url_env": None,
+                "logo_url": "https://logo.example/webtop.png",
+                "description": "desktop",
+            }
+        ]
+
+    monkeypatch.setattr(images_router, "fetch_catalog", _fake_fetch_catalog)
+    resp = client.post("/api/images/sync", headers=auth_header(token))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["added"] == 0
+    assert resp.json()["updated"] == 1
+
+    db = SessionLocal()
+    try:
+        row = db.scalar(
+            _select(WorkspaceImage).where(
+                WorkspaceImage.docker_image == "lscr.io/linuxserver/webtop:latest"
+            )
+        )
+        assert row.logo_url == "https://logo.example/webtop.png"
+        assert row.name == "My Custom Name"  # admin edit preserved
+    finally:
+        db.close()

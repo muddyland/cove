@@ -123,7 +123,7 @@ async function handleSync() {
   try {
     const res = await imagesApi.sync()
     await load()
-    ui.toast(`Synced — ${res.added} added (${res.total} total)`, 'success')
+    ui.toast(`Synced — ${res.added} added, ${res.updated} updated (${res.total} total)`, 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }
   finally { syncing.value = false }
 }

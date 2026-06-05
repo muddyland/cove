@@ -90,8 +90,10 @@ async def _seed_catalog_if_empty():
         if count and count > 0:
             return
         specs = await fetch_catalog()
-        added = upsert_catalog(db, specs)
-        logger.info("Seeded %d workspace images from LinuxServer on first run", added)
+        result = upsert_catalog(db, specs)
+        logger.info(
+            "Seeded %d workspace images from LinuxServer on first run", result["added"]
+        )
     except Exception as exc:
         logger.warning("Catalog auto-seed skipped: %s", exc)
     finally:

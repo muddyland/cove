@@ -8,5 +8,5 @@ export const imagesApi = {
   update: (id: number, payload: Partial<WorkspaceImage>) =>
     api.patch<WorkspaceImage>(`/images/${id}`, payload),
   remove: (id: number) => api.delete(`/images/${id}`),
-  sync: () => api.post<{ added: number; total: number }>('/images/sync'),
+  sync: () => api.post<{ added: number; updated: number; total: number }>('/images/sync'),
 }

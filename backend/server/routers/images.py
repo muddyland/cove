@@ -10,23 +10,37 @@ from server.schemas import ImageCreate, ImageOut, ImageUpdate
 router = APIRouter(prefix="/api/images", tags=["images"])
 
 
-def upsert_catalog(db: Session, specs: list[dict]) -> int:
-    """Insert any catalog specs whose docker_image isn't already present.
+def upsert_catalog(db: Session, specs: list[dict]) -> dict:
+    """Insert new catalog images and backfill upstream metadata on existing ones.
 
-    Matches on docker_image so admins' manual edits and disabled flags are
-    preserved across re-syncs. Returns the number of new rows added.
+    Matched on docker_image. New rows are inserted. For existing rows, only
+    upstream-sourced metadata (logo_url, description) is refreshed — admin edits
+    like name, enabled, internal_port and url_env are preserved. Returns
+    {"added": n, "updated": m}.
     """
-    existing = {row for row in db.scalars(select(WorkspaceImage.docker_image)).all()}
+    existing = {row.docker_image: row for row in db.scalars(select(WorkspaceImage)).all()}
     added = 0
+    updated = 0
     for spec in specs:
-        if spec["docker_image"] in existing:
+        row = existing.get(spec["docker_image"])
+        if row is None:
+            row = WorkspaceImage(**spec)
+            db.add(row)
+            existing[spec["docker_image"]] = row
+            added += 1
             continue
-        db.add(WorkspaceImage(**spec))
-        existing.add(spec["docker_image"])
-        added += 1
-    if added:
+        changed = False
+        if spec.get("logo_url") and row.logo_url != spec["logo_url"]:
+            row.logo_url = spec["logo_url"]
+            changed = True
+        if spec.get("description") and row.description != spec["description"]:
+            row.description = spec["description"]
+            changed = True
+        if changed:
+            updated += 1
+    if added or updated:
         db.commit()
-    return added
+    return {"added": added, "updated": updated}
 
 
 @router.get("", response_model=list[ImageOut])
@@ -44,9 +58,9 @@ async def sync_images(user: AdminUser, db: DbSession):
         specs = await fetch_catalog()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to reach LinuxServer API: {exc}")
-    added = upsert_catalog(db, specs)
+    result = upsert_catalog(db, specs)
     total = db.scalar(select(func.count()).select_from(WorkspaceImage))
-    return {"added": added, "total": total}
+    return {"added": result["added"], "updated": result["updated"], "total": total}
 
 
 @router.post("", response_model=ImageOut, status_code=status.HTTP_201_CREATED)
