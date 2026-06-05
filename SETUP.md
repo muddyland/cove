@@ -177,3 +177,21 @@ docker compose up --build -d         # rebuild & restart after updates
 | Workspace stuck on **Starting** | First pull of a large image; check `docker compose logs -f cove` and `docker images`. |
 | Login works but nothing happens | Ensure `COVE_COOKIE_SECURE=false` when testing over plain HTTP. |
 | `502` on a workspace stream | The container is still booting or unhealthy; wait, or check the container logs (`docker logs cove-ws-<id>`). |
+| **404 on everything + Traefik logs `client version 1.24 is too old`** | Very new Docker daemons (Engine 25+/API min ≥ 1.40) reject the API version Traefik probes with, so the Docker provider finds no routers. Re-enable the older API on the host daemon (see below). |
+
+### Docker daemon `client version 1.24 is too old`
+
+Recent Docker Engine raised its minimum API version, which breaks Traefik's
+Docker provider (it probes with `/v1.24/...`). Re-enable backward compatibility
+on the **host** daemon:
+
+```bash
+sudo mkdir -p /etc/systemd/system/docker.service.d
+printf '[Service]\nEnvironment=DOCKER_MIN_API_VERSION=1.24\n' \
+  | sudo tee /etc/systemd/system/docker.service.d/api-compat.conf
+sudo systemctl daemon-reload
+sudo systemctl restart docker      # briefly restarts all containers
+```
+
+After the daemon comes back, the Cove stack auto-restarts (restart: unless-stopped),
+Traefik discovers the routers, and ACME issues the certificate on first request.
