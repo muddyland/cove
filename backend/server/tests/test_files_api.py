@@ -111,3 +111,35 @@ def test_delete_root_rejected(client):
     _user_base()
     resp = client.delete("/api/files", params={"path": ""})
     assert resp.status_code == 400
+
+
+def test_upload_over_limit_returns_413(client, monkeypatch):
+    setup_admin(client)
+    base = _user_base()
+    # Force a tiny limit: 1 MiB. Patch the cached settings instance attribute.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "max_upload_mb", 1)
+    # 2 MiB payload exceeds the 1 MiB cap.
+    payload = b"x" * (2 * 1024 * 1024)
+    resp = client.post(
+        "/api/files/upload",
+        data={"path": ""},
+        files={"file": ("big.bin", io.BytesIO(payload), "application/octet-stream")},
+    )
+    assert resp.status_code == 413, resp.text
+    # The partial file must have been removed.
+    assert not (base / "big.bin").exists()
+
+
+def test_upload_under_limit_ok(client, monkeypatch):
+    setup_admin(client)
+    _user_base()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "max_upload_mb", 1)
+    payload = b"y" * (512 * 1024)  # 0.5 MiB
+    resp = client.post(
+        "/api/files/upload",
+        data={"path": ""},
+        files={"file": ("ok.bin", io.BytesIO(payload), "application/octet-stream")},
+    )
+    assert resp.status_code == 201, resp.text

@@ -12,10 +12,24 @@ from sqlalchemy import select
 from server.config import get_settings
 from server.db import SessionLocal
 from server.models import UserTailscale, Workspace, WorkspaceImage
+from server.settings_store import get_tailscale_image, get_workspace_lan_access
 
 logger = logging.getLogger(__name__)
 
 _LAUNCH_URL_SCRIPT_HOST_PATH = "/app/scripts/launch-url.sh"
+
+# Helper image used to apply egress firewall rules inside a workspace netns.
+# netshoot ships iptables; it runs briefly and is removed immediately.
+EGRESS_GUARD_IMAGE = "nicolaka/netshoot:latest"
+
+# Private/link-local/CGNAT ranges blocked for WAN-only workspaces (by destination).
+_PRIVATE_RANGES = [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16",
+    "100.64.0.0/10",
+]
 
 
 def _sanitize(name: str) -> str:
@@ -246,7 +260,10 @@ class DockerManager:
                     ts_cfg = db.scalar(
                         select(UserTailscale).where(UserTailscale.user_id == ws.user_id)
                     )
-                    self._launch_tailscale_sidecar(ws, image, net_name, labels, ts_cfg)
+                    ts_image = get_tailscale_image(db)
+                    self._launch_tailscale_sidecar(
+                        ws, image, net_name, labels, ts_cfg, ts_image
+                    )
                     # The workspace container shares the sidecar's netns. No own
                     # network, no traefik labels (the sidecar carries routing).
                     container = self._client.containers.run(
@@ -303,6 +320,11 @@ class DockerManager:
                 ws.container_name = container_name
                 ws.volume_name = mount_source
                 db.commit()
+
+                # EGRESS GUARD: WAN-only enforcement for non-tailscale workspaces.
+                # Tailscale workspaces route through the sidecar and are skipped.
+                if not ws.use_tailscale and not get_workspace_lan_access(db):
+                    self._apply_egress_guard(ws.id)
 
                 ready = self._wait_for_ready(container)
                 ws = db.get(Workspace, ws_id)  # re-fetch after wait
@@ -400,6 +422,52 @@ class DockerManager:
         finally:
             db.close()
 
+    def _apply_egress_guard(self, ws_id: int) -> None:
+        """Apply WAN-only egress firewall rules inside the workspace netns.
+
+        Runs a short-lived helper container that shares the workspace
+        container's network namespace and installs iptables rules dropping
+        traffic destined for RFC1918 / link-local / CGNAT ranges. Allowed:
+        loopback, the embedded Docker DNS (127.0.0.11), ESTABLISHED/RELATED,
+        and everything else (i.e. the public internet / WAN).
+
+        Filtering is by DESTINATION address, so a workspace can still reach the
+        WAN through its RFC1918 default gateway (the gateway is only the L2 next
+        hop — the packet's destination IP is the public host, which is allowed).
+
+        Best-effort: any failure is logged and never aborts the launch. Note
+        there is a brief startup race — rules are applied just after the
+        container starts running, so a packet sent in that window could slip
+        through. For a home-lab egress control this is acceptable.
+        """
+        target = f"cove-ws-{ws_id}"
+        # Build the iptables script. Drop private destinations on OUTPUT while
+        # allowing loopback, embedded DNS, and established/related flows.
+        rules = [
+            "iptables -P OUTPUT ACCEPT",
+            "iptables -A OUTPUT -o lo -j ACCEPT",
+            "iptables -A OUTPUT -d 127.0.0.11 -j ACCEPT",
+            "iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+        ]
+        for cidr in _PRIVATE_RANGES:
+            rules.append(f"iptables -A OUTPUT -d {cidr} -j DROP")
+        script = " && ".join(rules)
+
+        try:
+            self._pull_image(EGRESS_GUARD_IMAGE)
+            self._client.containers.run(
+                EGRESS_GUARD_IMAGE,
+                network_mode=f"container:{target}",
+                cap_add=["NET_ADMIN"],
+                remove=True,
+                detach=False,
+                entrypoint="/bin/sh",
+                command=["-c", script],
+            )
+            logger.info("Applied egress guard (WAN-only) for workspace %s", ws_id)
+        except Exception as exc:
+            logger.warning("Egress guard failed for workspace %s: %s", ws_id, exc)
+
     def _launch_tailscale_sidecar(
         self,
         ws: Workspace,
@@ -407,6 +475,7 @@ class DockerManager:
         net_name: str,
         labels: dict,
         ts_cfg: "UserTailscale | None",
+        ts_image: str = "tailscale/tailscale:latest",
     ) -> None:
         """Launch the Tailscale sidecar that carries this workspace's netns + routing.
 
@@ -444,9 +513,9 @@ class DockerManager:
             "TS_EXTRA_ARGS": " ".join(extra_args),
         }
 
-        self._pull_image("tailscale/tailscale:latest")
+        self._pull_image(ts_image)
         self._client.containers.run(
-            "tailscale/tailscale:latest",
+            ts_image,
             name=sidecar_name,
             detach=True,
             environment=environment,

@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -7,6 +8,32 @@ import bcrypt
 from jose import JWTError, jwt
 
 from server.config import get_settings
+
+# Allowed username charset: alphanumerics plus dot, underscore, hyphen, 1–64 chars.
+# "." and ".." are rejected outright (path-like / reserved) even though they
+# otherwise match the charset.
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
+
+
+def is_valid_username(username: str) -> bool:
+    """Return True if `username` is a syntactically valid Cove username."""
+    if not isinstance(username, str):
+        return False
+    if username in (".", ".."):
+        return False
+    return bool(_USERNAME_RE.match(username))
+
+
+def validate_username(username: str) -> str:
+    """Validate a username, raising HTTP 400 on failure. Returns it on success."""
+    from fastapi import HTTPException
+
+    if not is_valid_username(username):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid username: must be 1-64 chars of [a-zA-Z0-9._-] and not '.' or '..'",
+        )
+    return username
 
 
 def hash_password(password: str) -> str:

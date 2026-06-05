@@ -146,6 +146,18 @@ class AdminUserUpdate(BaseModel):
     password: Optional[str] = None
 
 
+# ── App settings ──────────────────────────────────────────────────────────────
+
+class AppSettingsOut(BaseModel):
+    tailscale_image: str
+    workspace_lan_access: bool
+
+
+class AppSettingsUpdate(BaseModel):
+    tailscale_image: Optional[str] = None
+    workspace_lan_access: Optional[bool] = None
+
+
 # ── Tailscale ─────────────────────────────────────────────────────────────────
 
 class TailscaleConfigOut(BaseModel):

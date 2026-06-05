@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { User, Workspace, AuditEntry } from '@/types'
+import type { User, Workspace, AuditEntry, AppSettings } from '@/types'
 
 export const adminApi = {
   users: {
@@ -16,5 +16,9 @@ export const adminApi = {
   },
   audit: {
     list: () => api.get<AuditEntry[]>('/admin/audit'),
+  },
+  settings: {
+    get: () => api.get<AppSettings>('/admin/settings'),
+    update: (p: Partial<AppSettings>) => api.put<AppSettings>('/admin/settings', p),
   },
 }

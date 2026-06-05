@@ -14,6 +14,7 @@ const router = createRouter({
     { path: '/admin/sessions', component: () => import('@/views/AdminSessionsView.vue'), meta: { admin: true } },
     { path: '/admin/images', component: () => import('@/views/AdminImagesView.vue'), meta: { admin: true } },
     { path: '/admin/audit', component: () => import('@/views/AdminAuditView.vue'), meta: { admin: true } },
+    { path: '/admin/settings', component: () => import('@/views/AdminSettingsView.vue'), meta: { admin: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

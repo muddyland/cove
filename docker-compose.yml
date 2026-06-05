@@ -1,7 +1,6 @@
 services:
-  # Single privileged component. It mounts the raw Docker socket and exposes a
-  # FILTERED Docker API on tcp://docker-socket-proxy:2375. Both Traefik and the
-  # cove backend talk to this proxy instead of the raw socket.
+  # WRITE-capable Docker proxy — used ONLY by the cove backend to create/stop
+  # workspace containers. Reachable only on the internal cove-sockwrite network.
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: cove-socket-proxy
@@ -9,14 +8,32 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      # Allow exactly what cove + traefik need; everything else stays default (0).
       - CONTAINERS=1
       - NETWORKS=1
       - IMAGES=1
+      - VOLUMES=1
       - EVENTS=1
       - INFO=1
       - VERSION=1
       - POST=1
+    networks:
+      - cove-sockwrite
+
+  # READ-ONLY Docker proxy — used ONLY by Traefik for service discovery. No POST,
+  # so a Traefik compromise cannot create containers (no host-root pivot).
+  docker-socket-proxy-ro:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: cove-socket-proxy-ro
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - NETWORKS=1
+      - EVENTS=1
+      - INFO=1
+      - VERSION=1
+      # POST defaults to 0 → read-only.
     networks:
       - cove-net
 
@@ -26,7 +43,7 @@ services:
     restart: unless-stopped
     command:
       - --providers.docker=true
-      - --providers.docker.endpoint=tcp://docker-socket-proxy:2375
+      - --providers.docker.endpoint=tcp://docker-socket-proxy-ro:2375
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=cove-net
       - --entrypoints.web.address=:80
@@ -36,7 +53,7 @@ services:
     networks:
       - cove-net
     depends_on:
-      - docker-socket-proxy
+      - docker-socket-proxy-ro
 
   cove:
     build: .
@@ -77,19 +94,25 @@ services:
     volumes:
       - ./data:/app/data
       - ./scripts:/app/scripts:ro
-      # When COVE_STORAGE_PATH is set, add a line here binding the same path
-      # into the container at the same absolute path, e.g.:
-      #   - /mnt/storage/cove:/mnt/storage/cove
+      # Workspace home dirs. The path MUST be identical on host and in the
+      # container so that bind mounts the backend asks the Docker daemon to make
+      # for workspace containers resolve to the same directory the file browser
+      # reads. (Default: /var/lib/cove/workspaces.)
+      - ${COVE_STORAGE_PATH:-/var/lib/cove/workspaces}:${COVE_STORAGE_PATH:-/var/lib/cove/workspaces}
     networks:
       - cove-net
+      - cove-sockwrite
     environment:
       - COVE_DATA_DIR=/app/data
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
       - COVE_TRAEFIK_NETWORK=cove-net
       - COVE_TRAEFIK_CONTAINER=cove-traefik
       - COVE_WORKSPACE_TZ=${TZ:-UTC}
-      - COVE_STORAGE_PATH=${COVE_STORAGE_PATH:-}
+      - COVE_STORAGE_PATH=${COVE_STORAGE_PATH:-/var/lib/cove/workspaces}
       - COVE_COOKIE_SECURE=${COVE_COOKIE_SECURE:-false}
+      # Only Traefik can reach cove:8080 (cove-net), so trust its forwarded
+      # headers; the app also reads the real client from the rightmost XFF hop.
+      - FORWARDED_ALLOW_IPS=*
       # OIDC (optional — remove if not using)
       # - COVE_OIDC_ISSUER=https://auth.example.com/application/o/cove/
       # - COVE_OIDC_CLIENT_ID=your-client-id
@@ -102,3 +125,8 @@ networks:
   cove-net:
     name: cove-net
     driver: bridge
+  # Backend ↔ write-proxy only; no external connectivity.
+  cove-sockwrite:
+    name: cove-sockwrite
+    driver: bridge
+    internal: true

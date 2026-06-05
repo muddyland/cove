@@ -43,14 +43,20 @@ OIDC and provider-credential variables are documented inline in `.env.example`.
 
 ## 4. Persistent storage
 
-By default, workspace home directories live under `./data/workspaces/<user>/workspace-<name>/`.
+Workspace home directories (each container's `/config`) live under
+`${COVE_STORAGE_PATH}/<user>/workspace-<name>/`, defaulting to
+**`/var/lib/cove/workspaces`**.
 
-To store them elsewhere, set `COVE_STORAGE_PATH` and add a **matching** bind mount on the `cove` service in `docker-compose.yml` (same absolute path on both sides, so the backend and the Docker daemon agree):
+This path is bind-mounted into the `cove` container **at the same absolute path**
+(see `docker-compose.yml`). That identity is required: the backend asks the
+Docker daemon (which runs on the host) to bind-mount these dirs into workspace
+containers, so the path must mean the same thing on the host and inside cove —
+otherwise workspaces write to one place and the file browser reads another.
 
-```yaml
-# docker-compose.yml → services.cove.volumes
-- /mnt/storage/cove:/mnt/storage/cove
-```
+To relocate storage, set `COVE_STORAGE_PATH` to another absolute path; the
+compose file already mounts `${COVE_STORAGE_PATH}` at the same path on both
+sides, so no manual volume edit is needed:
+
 ```ini
 # .env
 COVE_STORAGE_PATH=/mnt/storage/cove

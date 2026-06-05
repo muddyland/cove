@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     login_rate_limit: int = 10
     login_rate_window_seconds: int = 60
 
+    # Maximum size (MiB) for a single file upload.
+    max_upload_mb: int = 1024
+
     # Optional SQLCipher database encryption key (empty -> None)
     db_encryption_key: Optional[str] = None
 
@@ -58,6 +61,8 @@ class Settings(BaseSettings):
         return self.secret_key_path or (self.data_dir / "secret.key")
 
     def get_secret_key(self) -> str:
+        import os
+
         path = self.secret_key_file
         if path.exists():
             return path.read_text().strip()
@@ -65,6 +70,8 @@ class Settings(BaseSettings):
         key = secrets.token_hex(32)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(key)
+        # Restrict to owner read/write only — the secret key signs all tokens.
+        os.chmod(path, 0o600)
         return key
 
     @property

@@ -70,6 +70,11 @@ export interface FileListing {
   entries: FileEntry[]
 }
 
+export interface AppSettings {
+  tailscale_image: string
+  workspace_lan_access: boolean
+}
+
 export interface AuditEntry {
   id: number
   ts: string

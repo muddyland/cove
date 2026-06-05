@@ -1,10 +1,16 @@
+import re
 import secrets
 from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
+from jose import jwt
+from jose.exceptions import JWTError
 
 from server.config import get_settings
+
+# Reuse the canonical username charset for sanitizing OIDC-derived usernames.
+_USERNAME_CHARSET_RE = re.compile(r"[^a-zA-Z0-9._-]")
 
 _discovery: Optional[dict] = None
 _jwks: Optional[dict] = None
@@ -70,19 +76,45 @@ async def exchange_code(code: str, redirect_uri: str) -> dict:
         return resp.json()
 
 
-def decode_id_token_claims(id_token: str) -> dict:
-    """Decode without full signature verification for claim extraction.
-    We trust the token because it came directly from the IdP token endpoint over TLS.
-    """
-    import base64
-    import json
+def _select_signing_key(jwks: dict, kid: Optional[str]) -> dict:
+    """Return the JWK matching `kid`, or the sole key if only one is present."""
+    keys = jwks.get("keys", [])
+    if not keys:
+        raise JWTError("JWKS contains no keys")
+    if kid:
+        for key in keys:
+            if key.get("kid") == kid:
+                return key
+        raise JWTError(f"No JWKS key matches token kid={kid!r}")
+    if len(keys) == 1:
+        return keys[0]
+    raise JWTError("Token has no kid and JWKS has multiple keys")
 
-    parts = id_token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Invalid id_token format")
-    # Add padding
-    payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
-    return json.loads(base64.urlsafe_b64decode(payload_b64))
+
+async def verify_id_token(id_token: str) -> dict:
+    """Verify an id_token's signature and standard claims; return the claims.
+
+    Fetches JWKS + discovery, selects the signing key by the token header `kid`,
+    and verifies signature, audience (oidc_client_id) and issuer. Raises
+    jose.JWTError (or related) on any verification failure.
+    """
+    settings = get_settings()
+    discovery = await fetch_discovery()
+    jwks = await fetch_jwks()
+
+    header = jwt.get_unverified_header(id_token)
+    key = _select_signing_key(jwks, header.get("kid"))
+
+    algorithms = discovery.get("id_token_signing_alg_values_supported") or ["RS256"]
+
+    return jwt.decode(
+        id_token,
+        key=key,
+        algorithms=algorithms,
+        audience=settings.oidc_client_id,
+        issuer=discovery.get("issuer"),
+        options={"verify_aud": True},
+    )
 
 
 def generate_state() -> str:
@@ -90,11 +122,26 @@ def generate_state() -> str:
 
 
 def extract_username(claims: dict) -> str:
-    return (
+    """Derive a username from OIDC claims, sanitized to the allowed charset.
+
+    Disallowed characters are replaced with '-' and the result is trimmed to
+    64 chars. Falls back to a safe value ("user") if nothing usable remains.
+    """
+    raw = (
         claims.get("preferred_username")
         or claims.get("email", "").split("@")[0]
         or claims.get("sub", "")[:32]
+        or ""
     )
+    return sanitize_username(raw)
+
+
+def sanitize_username(raw: str) -> str:
+    """Coerce an arbitrary string into a valid Cove username."""
+    cleaned = _USERNAME_CHARSET_RE.sub("-", raw or "").strip("-")[:64]
+    if not cleaned or cleaned in (".", ".."):
+        return "user"
+    return cleaned
 
 
 def is_admin_from_claims(claims: dict) -> bool:

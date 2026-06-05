@@ -30,7 +30,7 @@ services:
     # sequences), so the full command is restated here with DNS-01 enabled.
     command:
       - --providers.docker=true
-      - --providers.docker.endpoint=tcp://docker-socket-proxy:2375
+      - --providers.docker.endpoint=tcp://docker-socket-proxy-ro:2375
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=cove-net
       - --entrypoints.web.address=:80

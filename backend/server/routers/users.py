@@ -5,24 +5,16 @@ from sqlalchemy import select
 
 from server.deps import CurrentUser, DbSession
 from server.models import UserTailscale
+from server.net import client_ip
 from server.schemas import _UNSET, TailscaleConfigOut, TailscaleConfigUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        first = fwd.split(",")[0].strip()
-        if first:
-            return first
-    return request.client.host if request.client else "unknown"
-
-
 def _audit(db, action, *, detail=None, user=None, request=None):
     from server.main import record_audit
 
-    ip = _client_ip(request) if request is not None else None
+    ip = client_ip(request) if request is not None else None
     record_audit(db, action, detail=detail, user=user, ip=ip)
 
 

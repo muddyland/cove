@@ -11,6 +11,7 @@ from server import oidc as oidc_module
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession, resolve_user_from_token
 from server.models import User, Workspace
+from server.net import client_ip
 from server.schemas import (
     AuthConfig,
     ChangePasswordRequest,
@@ -25,6 +26,7 @@ from server.security import (
     decode_token,
     hash_password,
     sign_state,
+    validate_username,
     verify_password,
     verify_state,
 )
@@ -35,15 +37,6 @@ _STREAM_RE = re.compile(r"^/workspace/([^/]+)/")
 
 # Module-level sliding-window rate limiter for login attempts, keyed by client IP.
 _login_attempts: dict[str, list[float]] = {}
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        first = fwd.split(",")[0].strip()
-        if first:
-            return first
-    return request.client.host if request.client else "unknown"
 
 
 def _record_audit(db: Session, action: str, *, detail=None, user=None, ip=None) -> None:
@@ -115,6 +108,7 @@ def get_auth_config(db: DbSession):
 def setup(body: SetupRequest, request: Request, db: DbSession):
     if not _needs_setup(db):
         raise HTTPException(status_code=410, detail="Setup already complete")
+    validate_username(body.username)
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     user = User(
@@ -127,7 +121,7 @@ def setup(body: SetupRequest, request: Request, db: DbSession):
     db.add(user)
     db.commit()
     db.refresh(user)
-    _record_audit(db, "setup", user=user, ip=_client_ip(request))
+    _record_audit(db, "setup", user=user, ip=client_ip(request))
     resp = JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content=TokenResponse(access_token=create_access_token(user.id, user.is_admin)).model_dump(),
@@ -138,7 +132,7 @@ def setup(body: SetupRequest, request: Request, db: DbSession):
 
 @router.post("/login")
 def login(body: LoginRequest, request: Request, db: DbSession):
-    ip = _client_ip(request)
+    ip = client_ip(request)
     if not _check_rate_limit(ip):
         raise HTTPException(status_code=429, detail="Too many login attempts")
 
@@ -202,7 +196,7 @@ def me(user: CurrentUser):
 def logout(user: CurrentUser, request: Request, db: DbSession):
     user.tokens_valid_from = datetime.now(timezone.utc)
     db.commit()
-    _record_audit(db, "logout", user=user, ip=_client_ip(request))
+    _record_audit(db, "logout", user=user, ip=client_ip(request))
     resp = JSONResponse(content={"ok": True})
     _clear_auth_cookies(resp)
     return resp
@@ -271,7 +265,10 @@ async def oidc_callback(
 
     redirect_uri = str(request.base_url).rstrip("/") + "/api/auth/oidc/callback"
     token_response = await oidc_module.exchange_code(code=code, redirect_uri=redirect_uri)
-    claims = oidc_module.decode_id_token_claims(token_response["id_token"])
+    try:
+        claims = await oidc_module.verify_id_token(token_response["id_token"])
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid id_token") from exc
 
     sub = claims.get("sub")
     if not sub:
@@ -300,7 +297,7 @@ async def oidc_callback(
     db.commit()
     db.refresh(user)
 
-    _record_audit(db, "login.oidc", user=user, ip=_client_ip(request))
+    _record_audit(db, "login.oidc", user=user, ip=client_ip(request))
     resp = RedirectResponse(url="/")
     resp.delete_cookie("oidc_state", path="/")
     _set_auth_cookies(resp, user)
@@ -332,13 +329,13 @@ def forward_auth(request: Request, db: DbSession):
 
         ws = db.scalar(select(Workspace).where(Workspace.public_id == public_id))
         if not ws:
-            _record_audit(db, "stream.deny", detail=uri, user=user, ip=_client_ip(request))
+            _record_audit(db, "stream.deny", detail=uri, user=user, ip=client_ip(request))
             return Response(status_code=401)
 
         if ws.user_id == user.id or user.is_admin:
             return Response(status_code=200, headers={"X-Cove-User": user.username})
 
-        _record_audit(db, "stream.deny", detail=uri, user=user, ip=_client_ip(request))
+        _record_audit(db, "stream.deny", detail=uri, user=user, ip=client_ip(request))
         return Response(status_code=401)
     except Exception:
         return Response(status_code=401)

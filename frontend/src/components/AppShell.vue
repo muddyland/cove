@@ -26,6 +26,9 @@
           <RouterLink to="/admin/audit" class="nav-link" :class="{ active: $route.path === '/admin/audit' }">
             Audit
           </RouterLink>
+          <RouterLink to="/admin/settings" class="nav-link" :class="{ active: $route.path === '/admin/settings' }">
+            Settings
+          </RouterLink>
         </template>
       </nav>
 

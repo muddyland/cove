@@ -7,24 +7,16 @@ from fastapi.responses import FileResponse
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.models import User
+from server.net import client_ip
 from server.schemas import FileEntry, FileListing
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        first = fwd.split(",")[0].strip()
-        if first:
-            return first
-    return request.client.host if request.client else "unknown"
-
-
 def _audit(db, action, *, detail=None, user=None, request=None):
     from server.main import record_audit
 
-    ip = _client_ip(request) if request is not None else None
+    ip = client_ip(request) if request is not None else None
     record_audit(db, action, detail=detail, user=user, ip=ip)
 
 
@@ -107,12 +99,26 @@ def upload_file(
         raise HTTPException(status_code=400, detail="Invalid filename")
     dest = _resolve(base, str(Path(path or "") / filename))
 
-    with open(dest, "wb") as out:
-        while True:
-            chunk = file.file.read(1024 * 1024)
-            if not chunk:
-                break
-            out.write(chunk)
+    settings = get_settings()
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    total = 0
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    # Abort: stop reading, drop the partial file, and reject.
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"File exceeds maximum upload size of {settings.max_upload_mb} MiB",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
 
     _audit(db, "files.upload", detail=str(dest.relative_to(base)), user=user, request=request)
     return {"name": filename, "path": str(dest.relative_to(base))}

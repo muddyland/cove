@@ -21,8 +21,10 @@ Cove lets you spin up full Linux desktops (XFCE, KDE, MATE, i3 on Ubuntu/Debian/
 - **User preferences** — a self-service page to change your password and manage Tailscale settings.
 - **File browser** — browse, upload, download, and delete files in your workspace storage areas.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
+- **Egress policy** — workspaces are WAN-only by default (private/LAN ranges blocked); admins can allow LAN access per deployment.
+- **Admin settings** — pin/override the Tailscale image and toggle workspace LAN access from the UI.
 - **Installable PWA** — add Cove to your home screen / desktop; offline-aware app shell (the live stream and API are never cached).
-- **Security-first** — ForwardAuth-gated streams, per-workspace isolated Docker networks, a filtered Docker socket proxy, dropped capabilities, short-lived JWTs with refresh, audit logging, and optional at-rest DB encryption.
+- **Security-first** — ForwardAuth-gated streams, per-workspace isolated Docker networks, split read-only/write Docker socket proxies, verified OIDC tokens, dropped capabilities, short-lived JWTs with refresh, real-client-IP rate limiting, audit logging, and optional at-rest DB encryption.
 - **Persistent storage** — per-workspace home directories that survive restarts.
 - **Admin UI** — manage users, images, live sessions, and the audit log.
 - **Cyberpunk UI** — neon theme with an optional CRT toggle.

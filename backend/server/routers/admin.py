@@ -3,33 +3,28 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import select
 
+from server import settings_store
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace
+from server.net import client_ip
 from server.schemas import (
     AdminUserCreate,
     AdminUserUpdate,
+    AppSettingsOut,
+    AppSettingsUpdate,
     AuditOut,
     UserOut,
     WorkspaceOut,
 )
-from server.security import hash_password
+from server.security import hash_password, validate_username
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        first = fwd.split(",")[0].strip()
-        if first:
-            return first
-    return request.client.host if request.client else "unknown"
 
 
 def _audit(db, action, *, detail=None, user=None, request=None):
     from server.main import record_audit
 
-    ip = _client_ip(request) if request is not None else None
+    ip = client_ip(request) if request is not None else None
     record_audit(db, action, detail=detail, user=user, ip=ip)
 
 
@@ -40,6 +35,7 @@ def list_users(user: AdminUser, db: DbSession):
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(body: AdminUserCreate, user: AdminUser, db: DbSession, request: Request):
+    validate_username(body.username)
     from sqlalchemy import select as sa_select
     existing = db.scalar(sa_select(User).where(User.username == body.username))
     if existing:
@@ -64,7 +60,11 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    if body.username is not None:
+    if body.username is not None and body.username != target.username:
+        validate_username(body.username)
+        existing = db.scalar(select(User).where(User.username == body.username))
+        if existing:
+            raise HTTPException(status_code=409, detail="Username already taken")
         target.username = body.username
     if body.is_admin is not None:
         target.is_admin = body.is_admin
@@ -127,3 +127,26 @@ def list_audit(admin: AdminUser, db: DbSession):
     return db.scalars(
         select(AuditLog).order_by(AuditLog.ts.desc(), AuditLog.id.desc()).limit(200)
     ).all()
+
+
+@router.get("/settings", response_model=AppSettingsOut)
+def get_app_settings(admin: AdminUser, db: DbSession):
+    return AppSettingsOut(**settings_store.get_all(db))
+
+
+@router.put("/settings", response_model=AppSettingsOut)
+def update_app_settings(
+    body: AppSettingsUpdate, admin: AdminUser, db: DbSession, request: Request
+):
+    if body.tailscale_image is not None:
+        settings_store.set_setting(
+            db, settings_store.KEY_TAILSCALE_IMAGE, body.tailscale_image
+        )
+    if body.workspace_lan_access is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_LAN_ACCESS,
+            "true" if body.workspace_lan_access else "false",
+        )
+    _audit(db, "admin.settings.update", user=admin, request=request)
+    return AppSettingsOut(**settings_store.get_all(db))

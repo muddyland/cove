@@ -92,6 +92,13 @@ class UserTailscale(Base):
     )
 
 
+class AppSetting(Base):
+    __tablename__ = "app_setting"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
