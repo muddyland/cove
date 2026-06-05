@@ -31,6 +31,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function init() {
     await loadConfig()
+    // Resume a cookie-based session when there's no stored bearer token. This
+    // covers OIDC logins (the callback sets httpOnly cookies but no localStorage
+    // token) and returning users whose refresh cookie is still valid.
+    if (!token.value) {
+      try {
+        const { access_token } = await authApi.refresh()
+        setToken(access_token)
+      } catch {
+        /* no active session — stay anonymous */
+      }
+    }
     if (token.value) {
       try {
         user.value = await authApi.me()
