@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
+
+:root {
+  --bg:          #06060f;
+  --surface:     #0b0b1e;
+  --surface-2:   #10102a;
+  --border:      #1c1c42;
+  --text:        #c8d8ff;
+  --text-muted:  #4a5880;
+  --accent:      #00f5ff;
+  --accent-hover:#7fffff;
+  --accent-dim:  rgba(0, 245, 255, 0.08);
+  --accent-2:    #ff00aa;
+  --green:       #00ff9d;
+  --amber:       #ffaa00;
+  --red:         #ff2055;
+  --radius:      4px;
+  --radius-sm:   2px;
+  --shadow:      0 8px 32px rgba(0, 0, 0, 0.7);
+  --glow:        0 0 8px var(--accent), 0 0 24px rgba(0, 245, 255, 0.2);
+  --glow-sm:     0 0 4px var(--accent), 0 0 12px rgba(0, 245, 255, 0.15);
+  --font-display: 'Orbitron', 'Share Tech Mono', monospace;
+  --font-mono:    'Share Tech Mono', 'Courier New', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #app {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Subtle scanline overlay on the app chrome (CRT effect).
+   Opt-in via the body.cove-crt class (toggled from the UI store). */
+body.cove-crt::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.06) 2px,
+    rgba(0, 0, 0, 0.06) 4px
+  );
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* Never overlay the live workspace stream — it must render pristine. */
+body.cove-immersive::after {
+  display: none;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-shadow: var(--glow-sm); }
+
+input, textarea, select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  font-family: inherit;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: var(--glow-sm);
+}
+select option { background: var(--surface-2); }
+
+label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 0.8px; text-transform: uppercase; font-family: var(--font-mono); }
+
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-error { color: var(--red); font-size: 12px; font-family: var(--font-mono); }

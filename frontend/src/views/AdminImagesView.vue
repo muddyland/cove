@@ -1,0 +1,170 @@
+<template>
+  <AppShell>
+    <div class="page-header">
+      <h2>// IMAGE REGISTRY</h2>
+      <div class="header-actions">
+        <NeonButton variant="secondary" :loading="syncing" @click="handleSync">⟳ Sync LinuxServer</NeonButton>
+        <NeonButton variant="primary" @click="showForm = true">+ Add Image</NeonButton>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Docker Image</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="img in images" :key="img.id">
+            <td>{{ img.name }}</td>
+            <td><code>{{ img.docker_image }}</code></td>
+            <td>{{ img.image_type }}</td>
+            <td>
+              <span class="status-dot" :class="img.enabled ? 'enabled' : 'disabled'">
+                {{ img.enabled ? 'Enabled' : 'Disabled' }}
+              </span>
+            </td>
+            <td class="actions">
+              <NeonButton variant="ghost" @click="toggleEnabled(img)">
+                {{ img.enabled ? 'Disable' : 'Enable' }}
+              </NeonButton>
+              <NeonButton variant="danger" @click="confirmDelete(img)">Delete</NeonButton>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <BaseModal v-model="showForm" title="Add Image">
+      <form @submit.prevent="handleAdd" class="form">
+        <div class="form-group">
+          <label>Display Name</label>
+          <input v-model="form.name" required placeholder="Ubuntu KDE" />
+        </div>
+        <div class="form-group">
+          <label>Docker Image</label>
+          <input v-model="form.docker_image" required placeholder="lscr.io/linuxserver/webtop:ubuntu-kde" />
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select v-model="form.image_type">
+            <option value="desktop">Desktop</option>
+            <option value="link">Link (browser)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Internal Port (optional)</label>
+          <input v-model.number="form.internal_port" type="number" min="1" max="65535" placeholder="3000" />
+        </div>
+        <div class="form-group">
+          <label>Description (optional)</label>
+          <input v-model="form.description" />
+        </div>
+        <div v-if="formError" class="form-error">{{ formError }}</div>
+        <div class="form-actions">
+          <NeonButton type="button" variant="secondary" @click="showForm = false">Cancel</NeonButton>
+          <NeonButton type="submit" variant="primary" :loading="adding">Add</NeonButton>
+        </div>
+      </form>
+    </BaseModal>
+
+    <ConfirmModal
+      v-model="showConfirm"
+      title="Delete Image"
+      :message="`Delete '${deleteTarget?.name}'?`"
+      confirm-label="Delete"
+      :loading="deleting"
+      @confirm="handleDelete"
+    />
+  </AppShell>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, onMounted } from 'vue'
+import AppShell from '@/components/AppShell.vue'
+import NeonButton from '@/components/NeonButton.vue'
+import BaseModal from '@/components/BaseModal.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
+import { imagesApi } from '@/api/images'
+import { useUiStore } from '@/stores/ui'
+import type { WorkspaceImage } from '@/types'
+
+const images = ref<WorkspaceImage[]>([])
+const ui = useUiStore()
+const showForm = ref(false)
+const showConfirm = ref(false)
+const deleteTarget = ref<WorkspaceImage | null>(null)
+const adding = ref(false)
+const deleting = ref(false)
+const syncing = ref(false)
+const formError = ref('')
+const form = reactive({ name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000 })
+
+async function load() { images.value = await imagesApi.list() }
+onMounted(load)
+
+async function handleSync() {
+  syncing.value = true
+  try {
+    const res = await imagesApi.sync()
+    await load()
+    ui.toast(`Synced — ${res.added} added (${res.total} total)`, 'success')
+  } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { syncing.value = false }
+}
+
+async function handleAdd() {
+  formError.value = ''
+  adding.value = true
+  try {
+    const img = await imagesApi.create({
+      name: form.name,
+      docker_image: form.docker_image,
+      image_type: form.image_type,
+      description: form.description || undefined,
+      internal_port: form.internal_port,
+    })
+    images.value.push(img)
+    showForm.value = false
+    ui.toast('Image added', 'success')
+    Object.assign(form, { name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000 })
+  } catch (e: any) { formError.value = e.message }
+  finally { adding.value = false }
+}
+
+async function toggleEnabled(img: WorkspaceImage) {
+  try {
+    const updated = await imagesApi.update(img.id, { enabled: !img.enabled })
+    const idx = images.value.findIndex(i => i.id === img.id)
+    if (idx !== -1) images.value[idx] = updated
+  } catch (e: any) { ui.toast(e.message, 'error') }
+}
+
+function confirmDelete(img: WorkspaceImage) { deleteTarget.value = img; showConfirm.value = true }
+
+async function handleDelete() {
+  if (!deleteTarget.value) return
+  deleting.value = true
+  try {
+    await imagesApi.remove(deleteTarget.value.id)
+    images.value = images.value.filter(i => i.id !== deleteTarget.value!.id)
+    showConfirm.value = false
+    ui.toast('Image deleted', 'success')
+  } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { deleting.value = false }
+}
+</script>
+
+<style scoped>
+@import '@/styles/tables.css';
+.header-actions { display: flex; gap: 8px; }
+.status-dot { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; }
+.enabled { color: var(--green); text-shadow: 0 0 6px var(--green); }
+.disabled { color: var(--text-muted); }
+.form { display: flex; flex-direction: column; gap: 14px; }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+</style>

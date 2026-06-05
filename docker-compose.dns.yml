@@ -1,0 +1,58 @@
+# =============================================================================
+# Cove — ACME DNS-01 challenge override
+# =============================================================================
+# Use DNS-01 instead of the TLS-ALPN-01 challenge. DNS-01 works when port 80/443
+# isn't publicly reachable and is REQUIRED for wildcard certificates
+# (*.example.com). Stack it on top of the prod override:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                    -f docker-compose.dns.yml up -d
+#
+# Required environment (see .env.example):
+#   COVE_DOMAIN              public hostname (or use a wildcard, see below)
+#   COVE_ACME_EMAIL          Let's Encrypt account email
+#   COVE_ACME_DNS_PROVIDER   Traefik DNS provider code, e.g. cloudflare, route53,
+#                            digitalocean, gandiv5, azuredns  (full list:
+#                            https://doc.traefik.io/traefik/https/acme/#providers)
+#   + your provider's credential env vars, e.g. for Cloudflare:
+#       CF_DNS_API_TOKEN=...      (scoped token: Zone:Read + DNS:Edit)
+#
+# Optional:
+#   COVE_ACME_DNS_RESOLVERS  comma-separated DNS used to check propagation
+#                            (default 1.1.1.1:53,8.8.8.8:53)
+#
+# Wildcard certs: set COVE_DOMAIN=example.com and add a SAN by also declaring
+# the two tls.domains labels shown (commented) on the cove service below.
+# =============================================================================
+services:
+  traefik:
+    # `command` is replaced wholesale by this override (compose does not merge
+    # sequences), so the full command is restated here with DNS-01 enabled.
+    command:
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://docker-socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=cove-net
+      - --entrypoints.web.address=:80
+      - --log.level=WARN
+      # TLS / HTTPS
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=${COVE_ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      # DNS-01 challenge (instead of tlschallenge)
+      - --certificatesresolvers.le.acme.dnschallenge=true
+      - --certificatesresolvers.le.acme.dnschallenge.provider=${COVE_ACME_DNS_PROVIDER}
+      - --certificatesresolvers.le.acme.dnschallenge.resolvers=${COVE_ACME_DNS_RESOLVERS:-1.1.1.1:53,8.8.8.8:53}
+      # Redirect all plain HTTP to HTTPS
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+    # Provider credentials are read by Traefik from its own environment. Pull
+    # them in from the project .env so you don't have to hardcode secrets here.
+    env_file:
+      - .env
+
+  # Optional wildcard certificate. Uncomment and set COVE_DOMAIN=example.com .
+  # cove:
+  #   labels:
+  #     - traefik.http.routers.cove.tls.domains[0].main=${COVE_DOMAIN}
+  #     - traefik.http.routers.cove.tls.domains[0].sans=*.${COVE_DOMAIN}

@@ -1,0 +1,58 @@
+# =============================================================================
+# Cove — production HTTPS override
+# =============================================================================
+# Layer this on top of the base compose file for a public, TLS-terminated
+# deployment:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required environment variables (see .env.example):
+#   COVE_DOMAIN      e.g. cove.example.com  (public hostname, must resolve here)
+#   COVE_ACME_EMAIL  e.g. you@example.com   (Let's Encrypt account email)
+#
+# This override:
+#   * adds the websecure (:443) entrypoint and an HTTP->HTTPS global redirect
+#   * enables the Let's Encrypt TLS-ALPN-01 resolver "le"
+#   * binds the cove router to your domain over TLS and enables HSTS
+#   * sets secure cookies (COVE_COOKIE_SECURE=true)
+# =============================================================================
+services:
+  traefik:
+    command:
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://docker-socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=cove-net
+      - --entrypoints.web.address=:80
+      - --log.level=WARN
+      # TLS / HTTPS
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=${COVE_ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      # Redirect all plain HTTP to HTTPS
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+    ports:
+      - "${COVE_HTTP_PORT:-80}:80"
+      - "443:443"
+    volumes:
+      - letsencrypt:/letsencrypt
+
+  cove:
+    environment:
+      - COVE_COOKIE_SECURE=true
+    labels:
+      # Re-declare the cove router for HTTPS on the public domain.
+      # Compose merges labels by full key, so these override the base values.
+      - traefik.http.routers.cove.rule=Host(`${COVE_DOMAIN}`)
+      - traefik.http.routers.cove.entrypoints=websecure
+      - traefik.http.routers.cove.tls.certresolver=le
+      - traefik.http.routers.cove.middlewares=cove-headers
+      # Extend cove-headers with HSTS (HTTPS only).
+      - traefik.http.middlewares.cove-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.cove-headers.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.cove-headers.headers.stsPreload=true
+
+volumes:
+  letsencrypt:

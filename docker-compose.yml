@@ -1,0 +1,104 @@
+services:
+  # Single privileged component. It mounts the raw Docker socket and exposes a
+  # FILTERED Docker API on tcp://docker-socket-proxy:2375. Both Traefik and the
+  # cove backend talk to this proxy instead of the raw socket.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: cove-socket-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Allow exactly what cove + traefik need; everything else stays default (0).
+      - CONTAINERS=1
+      - NETWORKS=1
+      - IMAGES=1
+      - EVENTS=1
+      - INFO=1
+      - VERSION=1
+      - POST=1
+    networks:
+      - cove-net
+
+  traefik:
+    image: traefik:v3.2
+    container_name: cove-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://docker-socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=cove-net
+      - --entrypoints.web.address=:80
+      - --log.level=WARN
+    ports:
+      - "${COVE_HTTP_PORT:-80}:80"
+    networks:
+      - cove-net
+    depends_on:
+      - docker-socket-proxy
+
+  cove:
+    build: .
+    image: cove:local
+    container_name: cove
+    restart: unless-stopped
+    depends_on:
+      - traefik
+      - docker-socket-proxy
+    labels:
+      - traefik.enable=true
+      # Main app router (catch-all, lowest priority).
+      - traefik.http.routers.cove.rule=PathPrefix(`/`)
+      - traefik.http.routers.cove.entrypoints=web
+      - traefik.http.routers.cove.priority=1
+      - traefik.http.routers.cove.service=cove
+      - traefik.http.routers.cove.middlewares=cove-headers
+      - traefik.http.services.cove.loadbalancer.server.port=8080
+      # Dedicated login router with rate limiting (higher priority).
+      - traefik.http.routers.cove-login.rule=PathPrefix(`/api/auth/login`)
+      - traefik.http.routers.cove-login.entrypoints=web
+      - traefik.http.routers.cove-login.priority=100
+      - traefik.http.routers.cove-login.service=cove
+      - traefik.http.routers.cove-login.middlewares=cove-ratelimit,cove-headers
+      # --- Middleware definitions (referenced by name elsewhere) ---
+      # ForwardAuth: authenticates workspace streams (cove-auth@docker).
+      - traefik.http.middlewares.cove-auth.forwardauth.address=http://cove:8080/api/auth/forward
+      - traefik.http.middlewares.cove-auth.forwardauth.authResponseHeaders=X-Cove-User
+      # Security headers (cove-headers@docker). No CSP (breaks webtop), no HSTS (HTTP local).
+      - traefik.http.middlewares.cove-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.cove-headers.headers.referrerPolicy=strict-origin-when-cross-origin
+      - traefik.http.middlewares.cove-headers.headers.customResponseHeaders.X-Frame-Options=SAMEORIGIN
+      - traefik.http.middlewares.cove-headers.headers.customResponseHeaders.X-Cove=1
+      # Rate limit for login.
+      - traefik.http.middlewares.cove-ratelimit.ratelimit.average=5
+      - traefik.http.middlewares.cove-ratelimit.ratelimit.period=1m
+      - traefik.http.middlewares.cove-ratelimit.ratelimit.burst=10
+    volumes:
+      - ./data:/app/data
+      - ./scripts:/app/scripts:ro
+      # When COVE_STORAGE_PATH is set, add a line here binding the same path
+      # into the container at the same absolute path, e.g.:
+      #   - /mnt/storage/cove:/mnt/storage/cove
+    networks:
+      - cove-net
+    environment:
+      - COVE_DATA_DIR=/app/data
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - COVE_TRAEFIK_NETWORK=cove-net
+      - COVE_TRAEFIK_CONTAINER=cove-traefik
+      - COVE_WORKSPACE_TZ=${TZ:-UTC}
+      - COVE_STORAGE_PATH=${COVE_STORAGE_PATH:-}
+      - COVE_COOKIE_SECURE=${COVE_COOKIE_SECURE:-false}
+      # OIDC (optional — remove if not using)
+      # - COVE_OIDC_ISSUER=https://auth.example.com/application/o/cove/
+      # - COVE_OIDC_CLIENT_ID=your-client-id
+      # - COVE_OIDC_CLIENT_SECRET=your-client-secret
+      # - COVE_OIDC_ADMIN_GROUP=cove-admins
+      # - COVE_OIDC_PROVIDER_NAME=Authentik
+
+networks:
+  # Per-workspace networks are created at runtime by the backend; not declared here.
+  cove-net:
+    name: cove-net
+    driver: bridge
