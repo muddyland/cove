@@ -31,7 +31,9 @@ def upsert_catalog(db: Session, specs: list[dict]) -> int:
 
 @router.get("", response_model=list[ImageOut])
 def list_images(user: CurrentUser, db: DbSession):
-    images = db.scalars(select(WorkspaceImage).where(WorkspaceImage.enabled == True).order_by(WorkspaceImage.name)).all()
+    images = db.scalars(
+        select(WorkspaceImage).where(WorkspaceImage.enabled.is_(True)).order_by(WorkspaceImage.name)
+    ).all()
     return images
 
 

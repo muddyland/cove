@@ -21,7 +21,9 @@ class User(Base):
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     tokens_valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    workspaces: Mapped[list["Workspace"]] = relationship("Workspace", back_populates="user", cascade="all, delete-orphan")
+    workspaces: Mapped[list["Workspace"]] = relationship(
+        "Workspace", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class WorkspaceImage(Base):

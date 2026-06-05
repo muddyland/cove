@@ -1,5 +1,5 @@
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -8,3 +8,4 @@ select = ["E", "F", "I"]
 [tool.pytest.ini_options]
 testpaths = ["server/tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

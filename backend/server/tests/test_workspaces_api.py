@@ -1,0 +1,151 @@
+"""Tests for the workspaces router (create validation + ownership).
+
+Docker is fully stubbed by the ``client`` fixture (``get_docker_manager`` is
+monkeypatched to a MagicMock), so creating a workspace schedules a harmless
+background task that never touches a real daemon.
+"""
+
+from server.db import SessionLocal
+from server.models import Workspace
+from server.tests.helpers import (
+    add_image,
+    auth_header,
+    create_user_via_admin,
+    login,
+    setup_admin,
+)
+
+
+def test_desktop_workspace_launches(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+
+    resp = client.post("/api/workspaces", json={"name": "my-desk", "image_id": image_id})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["status"] == "creating"
+    assert body["workspace_type"] == "desktop"
+    assert body["target_url"] is None
+
+    # The launch was scheduled on the (mocked) docker manager as a background task.
+    fake_docker_manager.launch_workspace.assert_called_once_with(body["id"])
+
+
+def test_browser_workspace_accepts_and_stores_target_url(client):
+    setup_admin(client)
+    image_id = add_image(
+        name="Chromium",
+        docker_image="lscr.io/linuxserver/chromium:latest",
+        image_type="browser",
+        url_env="CHROME_CLI",
+    )
+
+    resp = client.post(
+        "/api/workspaces",
+        json={
+            "name": "browse",
+            "image_id": image_id,
+            "target_url": "https://example.com/",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["target_url"] == "https://example.com/"
+    assert body["workspace_type"] == "browser"
+
+    # Persisted to the DB too.
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, body["id"])
+        assert ws is not None
+        assert ws.target_url == "https://example.com/"
+    finally:
+        db.close()
+
+
+def test_browser_workspace_rejects_invalid_target_url(client):
+    setup_admin(client)
+    image_id = add_image(
+        name="Chromium",
+        docker_image="lscr.io/linuxserver/chromium:latest",
+        image_type="browser",
+        url_env="CHROME_CLI",
+    )
+
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "bad", "image_id": image_id, "target_url": "ftp://x"},
+    )
+    assert resp.status_code == 400, resp.text
+
+
+def test_desktop_workspace_ignores_target_url(client):
+    """A non-url-capable image must not store a startup URL even if supplied."""
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "d", "image_id": image_id, "target_url": "https://example.com/"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["target_url"] is None
+
+
+def test_create_workspace_unknown_image_404(client):
+    setup_admin(client)
+    resp = client.post("/api/workspaces", json={"name": "x", "image_id": 9999})
+    assert resp.status_code == 404
+
+
+def test_create_workspace_disabled_image_404(client):
+    setup_admin(client)
+    image_id = add_image(name="Disabled", image_type="desktop")
+    # Disable it directly.
+    db = SessionLocal()
+    try:
+        from server.models import WorkspaceImage
+
+        img = db.get(WorkspaceImage, image_id)
+        img.enabled = False
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.post("/api/workspaces", json={"name": "x", "image_id": image_id})
+    assert resp.status_code == 404
+
+
+def test_ownership_enforced_other_user_cannot_get(client):
+    """User A cannot GET user B's workspace."""
+    admin_token, _ = setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+
+    # Admin (user A) creates a workspace (session cookie is in the jar).
+    created = client.post("/api/workspaces", json={"name": "a-ws", "image_id": image_id})
+    assert created.status_code == 201, created.text
+    ws_id = created.json()["id"]
+
+    # Create a normal user B and log in as them.
+    create_user_via_admin(client, admin_token, "bob")
+    client.cookies.clear()
+    bob_token = login(client, "bob", "password123").json()["access_token"]
+
+    # Bob tries to read admin's workspace -> 403 (forbidden, exists but not owner).
+    resp = client.get(f"/api/workspaces/{ws_id}", headers=auth_header(bob_token))
+    assert resp.status_code == 403, resp.text
+
+
+def test_list_workspaces_scoped_to_owner(client):
+    admin_token, _ = setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    client.post("/api/workspaces", json={"name": "a-ws", "image_id": image_id})
+
+    create_user_via_admin(client, admin_token, "carol")
+    client.cookies.clear()
+    carol_token = login(client, "carol", "password123").json()["access_token"]
+
+    # Carol sees none of admin's workspaces.
+    resp = client.get("/api/workspaces", headers=auth_header(carol_token))
+    assert resp.status_code == 200
+    assert resp.json() == []

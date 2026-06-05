@@ -39,17 +39,19 @@ lint:frontend:
 test:backend:
   extends: .python_base
   stage: test
+  before_script:
+    - pip install --quiet -r backend/requirements.txt pytest pytest-asyncio
   script:
+    - cd backend
     # Import smoke test — fails fast on broken imports / wiring.
-    - cd backend && python -c "import server.main; print('app import OK')"
-    # Run the suite if one exists.
-    - |
-      if [ -d server/tests ] || [ -d tests ]; then
-        pip install --quiet pytest
-        pytest -q --tb=short
-      else
-        echo "no tests present — skipping pytest"
-      fi
+    - python -c "import server.main; print('app import OK')"
+    - pytest -q --tb=short
+
+test:frontend:
+  extends: .node_base
+  stage: test
+  script:
+    - npm test
 
 build:frontend:
   extends: .node_base
