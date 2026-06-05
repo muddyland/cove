@@ -92,8 +92,16 @@ class UserTailscale(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auth_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     login_server: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    # NOTE: exit_node/accept_routes/accept_dns moved to the Workspace level. The
-    # legacy columns may still exist in old DBs but are no longer mapped/used.
+    # Legacy columns — Tailscale routing options moved to the Workspace level.
+    # Still mapped (with defaults) so inserts satisfy the NOT NULL constraint that
+    # exists in databases created before the move. Not exposed in the API.
+    exit_node: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    accept_routes: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    accept_dns: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
