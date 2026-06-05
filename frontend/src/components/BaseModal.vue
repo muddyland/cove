@@ -5,7 +5,7 @@
         <div class="modal" :style="{ width: width || '480px' }">
           <div class="modal-header">
             <span class="modal-title">{{ title }}</span>
-            <button class="close-btn" @click="$emit('update:modelValue', false)">[ × ]</button>
+            <button class="close-btn" @click="$emit('update:modelValue', false)" aria-label="Close"><X :size="16" /></button>
           </div>
           <div class="modal-body">
             <slot />
@@ -17,6 +17,7 @@
 </template>
 
 <script setup lang="ts">
+import { X } from 'lucide-vue-next'
 defineProps<{ modelValue: boolean; title: string; width?: string }>()
 defineEmits(['update:modelValue'])
 </script>
@@ -65,6 +66,7 @@ defineEmits(['update:modelValue'])
   background: none; border: none; color: var(--text-muted);
   cursor: pointer; font-size: 12px; font-family: var(--font-mono);
   letter-spacing: 1px; padding: 2px 6px; transition: color 0.15s;
+  display: inline-flex; align-items: center;
 }
 .close-btn:hover { color: var(--red); text-shadow: 0 0 8px var(--red); }
 .modal-body { padding: 20px; overflow-y: auto; }

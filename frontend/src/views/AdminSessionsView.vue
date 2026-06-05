@@ -2,7 +2,7 @@
   <AppShell>
     <div class="page-header">
       <h2>// ACTIVE SESSIONS</h2>
-      <NeonButton variant="secondary" @click="load">Refresh</NeonButton>
+      <NeonButton variant="secondary" @click="load"><RefreshCw :size="14" /> Refresh</NeonButton>
     </div>
     <div v-if="!sessions.length" class="empty">No active sessions.</div>
     <div v-else class="table-wrap">
@@ -23,7 +23,7 @@
             <td>{{ ws.image_name }}</td>
             <td>{{ ws.started_at ? formatDate(ws.started_at) : '—' }}</td>
             <td class="actions">
-              <NeonButton variant="danger" @click="confirmKill(ws)">Kill</NeonButton>
+              <NeonButton variant="danger" @click="confirmKill(ws)"><Square :size="13" /> Kill</NeonButton>
             </td>
           </tr>
         </tbody>
@@ -46,6 +46,7 @@ import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import { RefreshCw, Square } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
 import type { Workspace } from '@/types'

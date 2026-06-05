@@ -2,7 +2,7 @@
   <AppShell>
     <div class="page-header">
       <h2>// AUDIT LOG</h2>
-      <NeonButton variant="secondary" @click="load">Refresh</NeonButton>
+      <NeonButton variant="secondary" @click="load"><RefreshCw :size="14" /> Refresh</NeonButton>
     </div>
     <div v-if="!entries.length" class="empty">No audit entries.</div>
     <div v-else class="table-wrap">
@@ -34,6 +34,7 @@
 import { ref, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import { RefreshCw } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
 import type { AuditEntry } from '@/types'

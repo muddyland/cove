@@ -8,26 +8,26 @@
 
       <nav class="nav-links">
         <RouterLink to="/" class="nav-link" :class="{ active: $route.path === '/' }">
-          Dashboard
+          <LayoutGrid class="nav-icon" :size="16" /> Dashboard
         </RouterLink>
         <RouterLink to="/files" class="nav-link" :class="{ active: $route.path === '/files' }">
-          Files
+          <FolderOpen class="nav-icon" :size="16" /> Files
         </RouterLink>
         <template v-if="auth.isAdmin">
           <RouterLink to="/admin/sessions" class="nav-link" :class="{ active: $route.path === '/admin/sessions' }">
-            Sessions
+            <MonitorPlay class="nav-icon" :size="16" /> Sessions
           </RouterLink>
           <RouterLink to="/admin/users" class="nav-link" :class="{ active: $route.path === '/admin/users' }">
-            Users
+            <Users class="nav-icon" :size="16" /> Users
           </RouterLink>
           <RouterLink to="/admin/images" class="nav-link" :class="{ active: $route.path === '/admin/images' }">
-            Images
+            <Boxes class="nav-icon" :size="16" /> Images
           </RouterLink>
           <RouterLink to="/admin/audit" class="nav-link" :class="{ active: $route.path === '/admin/audit' }">
-            Audit
+            <ScrollText class="nav-icon" :size="16" /> Audit
           </RouterLink>
           <RouterLink to="/admin/settings" class="nav-link" :class="{ active: $route.path === '/admin/settings' }">
-            Settings
+            <Settings class="nav-icon" :size="16" /> Settings
           </RouterLink>
         </template>
       </nav>
@@ -38,13 +38,13 @@
           :class="{ active: ui.crt }"
           :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
           @click="ui.toggleCrt()"
-        >▦ CRT</button>
+        ><ScanLine class="nav-icon" :size="14" /> CRT</button>
         <RouterLink to="/preferences" class="user-chip" title="Preferences">
-          <span class="user-dot" />
+          <UserRound class="nav-icon" :size="14" />
           <span class="username">{{ auth.user?.username }}</span>
           <span v-if="auth.user?.is_admin" class="admin-tag">ADMIN</span>
         </RouterLink>
-        <button class="logout-btn" @click="handleLogout">[ EXIT ]</button>
+        <button class="logout-btn" @click="handleLogout"><LogOut class="nav-icon" :size="14" /> EXIT</button>
       </div>
     </header>
 
@@ -58,6 +58,10 @@
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
 import { useRouter, RouterLink } from 'vue-router'
+import {
+  LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes,
+  ScrollText, Settings, ScanLine, UserRound, LogOut,
+} from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const ui = useUiStore()
@@ -128,6 +132,7 @@ async function handleLogout() {
 .nav-link {
   display: flex;
   align-items: center;
+  gap: 7px;
   padding: 0 16px;
   color: var(--text-muted);
   text-decoration: none;
@@ -227,4 +232,10 @@ async function handleLogout() {
 }
 
 .content { flex: 1; overflow-y: auto; padding: 28px; }
+
+/* Shared icon styling — inherit currentColor, no shrink. */
+.nav-icon { flex-shrink: 0; }
+.nav-link.active .nav-icon { filter: drop-shadow(var(--glow-sm)); }
+.crt-btn, .logout-btn { display: inline-flex; align-items: center; gap: 5px; }
+.crt-btn.active .nav-icon { filter: drop-shadow(var(--glow-sm)); }
 </style>

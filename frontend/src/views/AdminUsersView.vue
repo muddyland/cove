@@ -2,7 +2,7 @@
   <AppShell>
     <div class="page-header">
       <h2>// USER REGISTRY</h2>
-      <NeonButton variant="primary" @click="openCreate">+ Add User</NeonButton>
+      <NeonButton variant="primary" @click="openCreate"><Plus :size="14" /> Add User</NeonButton>
     </div>
     <div class="table-wrap">
       <table>
@@ -22,8 +22,8 @@
             <td>{{ u.is_admin ? 'Admin' : 'User' }}</td>
             <td>{{ u.last_login_at ? formatDate(u.last_login_at) : '—' }}</td>
             <td class="actions">
-              <NeonButton variant="ghost" @click="openEdit(u)">Edit</NeonButton>
-              <NeonButton variant="danger" @click="confirmDelete(u)">Delete</NeonButton>
+              <NeonButton variant="ghost" @click="openEdit(u)"><Pencil :size="13" /> Edit</NeonButton>
+              <NeonButton variant="danger" @click="confirmDelete(u)"><Trash2 :size="13" /> Delete</NeonButton>
             </td>
           </tr>
         </tbody>
@@ -48,6 +48,7 @@ import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import UserFormModal from '@/components/UserFormModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import { Plus, Pencil, Trash2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
 import type { User } from '@/types'

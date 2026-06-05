@@ -9,7 +9,7 @@
       <div class="auth-subtitle">// SECURE ACCESS TERMINAL</div>
 
       <a v-if="auth.oidcEnabled" :href="oidcLoginUrl" class="oidc-btn">
-        ⬡ {{ auth.oidcOnly ? 'CONTINUE TO' : 'AUTH VIA' }} {{ auth.oidcProviderName.toUpperCase() }}
+        <LogIn :size="15" /> {{ auth.oidcOnly ? 'CONTINUE TO' : 'AUTH VIA' }} {{ auth.oidcProviderName.toUpperCase() }}
       </a>
 
       <!-- OIDC-only mode: redirecting to the IdP; local form is hidden. -->
@@ -42,6 +42,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import NeonButton from '@/components/NeonButton.vue'
+import { LogIn } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -153,7 +154,10 @@ async function handleLogin() {
 }
 
 .oidc-btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   text-align: center;
   padding: 10px;
   background: var(--accent-dim);

@@ -8,15 +8,22 @@
         :class="t.type"
         @click="ui.dismiss(t.id)"
       >
-        {{ t.message }}
+        <component :is="iconFor(t.type)" class="toast-icon" :size="16" />
+        <span>{{ t.message }}</span>
       </div>
     </TransitionGroup>
   </div>
 </template>
 
 <script setup lang="ts">
+import { CheckCircle2, XCircle, Info } from 'lucide-vue-next'
 import { useUiStore } from '@/stores/ui'
+import type { Toast } from '@/stores/ui'
 const ui = useUiStore()
+
+function iconFor(type: Toast['type']) {
+  return { success: CheckCircle2, error: XCircle, info: Info }[type]
+}
 </script>
 
 <style scoped>
@@ -30,6 +37,9 @@ const ui = useUiStore()
   z-index: 9999;
 }
 .toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 16px;
   border-radius: var(--radius);
   font-size: 13px;
@@ -37,6 +47,7 @@ const ui = useUiStore()
   max-width: 320px;
   box-shadow: var(--shadow);
 }
+.toast-icon { flex-shrink: 0; }
 .toast.success { background: var(--green); color: #0f1117; }
 .toast.error { background: var(--red); color: #0f1117; }
 .toast.info { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }

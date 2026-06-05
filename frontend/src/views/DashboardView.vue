@@ -6,8 +6,8 @@
         <p class="subtitle">{{ store.items.length }} node{{ store.items.length !== 1 ? 's' : '' }} allocated</p>
       </div>
       <div class="header-actions">
-        <NeonButton variant="secondary" @click="showWebsite = true">⬡ OPEN WEBSITE</NeonButton>
-        <NeonButton variant="primary" @click="showLaunch = true">+ DEPLOY NODE</NeonButton>
+        <NeonButton variant="secondary" @click="showWebsite = true"><Globe :size="15" /> OPEN WEBSITE</NeonButton>
+        <NeonButton variant="primary" @click="showLaunch = true"><Plus :size="15" /> DEPLOY NODE</NeonButton>
       </div>
     </div>
 
@@ -16,9 +16,9 @@
     </div>
 
     <div v-else-if="!store.items.length" class="empty-state">
-      <img class="empty-icon" src="/favicon.svg" alt="" />
+      <MonitorOff class="empty-icon" :size="64" :stroke-width="1.25" />
       <p class="mono">no nodes allocated</p>
-      <NeonButton variant="primary" @click="showLaunch = true">DEPLOY FIRST NODE</NeonButton>
+      <NeonButton variant="primary" @click="showLaunch = true"><Plus :size="15" /> DEPLOY FIRST NODE</NeonButton>
     </div>
 
     <div v-else class="grid">
@@ -37,6 +37,7 @@ import WorkspaceCard from '@/components/WorkspaceCard.vue'
 import LaunchModal from '@/components/LaunchModal.vue'
 import OpenWebsiteModal from '@/components/OpenWebsiteModal.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import { Globe, Plus, MonitorOff } from 'lucide-vue-next'
 import { useWorkspacesStore } from '@/stores/workspaces'
 
 const store = useWorkspacesStore()
@@ -73,7 +74,9 @@ h2 {
   gap: 16px; padding: 80px 24px; color: var(--text-muted); text-align: center;
 }
 .empty-icon {
-  width: 64px; height: 64px; opacity: 0.6;
+  color: var(--accent);
+  opacity: 0.5;
+  filter: drop-shadow(var(--glow-sm));
 }
 .mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; }
 </style>

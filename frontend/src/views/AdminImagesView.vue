@@ -3,8 +3,8 @@
     <div class="page-header">
       <h2>// IMAGE REGISTRY</h2>
       <div class="header-actions">
-        <NeonButton variant="secondary" :loading="syncing" @click="handleSync">⟳ Sync LinuxServer</NeonButton>
-        <NeonButton variant="primary" @click="showForm = true">+ Add Image</NeonButton>
+        <NeonButton variant="secondary" :loading="syncing" @click="handleSync"><RefreshCw :size="14" /> Sync LinuxServer</NeonButton>
+        <NeonButton variant="primary" @click="showForm = true"><Plus :size="14" /> Add Image</NeonButton>
       </div>
     </div>
     <div class="table-wrap">
@@ -30,9 +30,10 @@
             </td>
             <td class="actions">
               <NeonButton variant="ghost" @click="toggleEnabled(img)">
+                <component :is="img.enabled ? ToggleRight : ToggleLeft" :size="15" />
                 {{ img.enabled ? 'Disable' : 'Enable' }}
               </NeonButton>
-              <NeonButton variant="danger" @click="confirmDelete(img)">Delete</NeonButton>
+              <NeonButton variant="danger" @click="confirmDelete(img)"><Trash2 :size="13" /> Delete</NeonButton>
             </td>
           </tr>
         </tbody>
@@ -89,6 +90,7 @@ import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import { RefreshCw, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-vue-next'
 import { imagesApi } from '@/api/images'
 import { useUiStore } from '@/stores/ui'
 import type { WorkspaceImage } from '@/types'

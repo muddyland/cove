@@ -6,14 +6,14 @@
     </div>
     <div class="card-meta">
       <span class="image-name">{{ ws.image_name }}</span>
-      <span v-if="ws.target_url" class="target-url" :title="ws.target_url">⬡ {{ truncateUrl(ws.target_url) }}</span>
+      <span v-if="ws.target_url" class="target-url" :title="ws.target_url"><Globe :size="12" /> {{ truncateUrl(ws.target_url) }}</span>
     </div>
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
     <div class="card-actions" @click.stop>
-      <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open">CONNECT</NeonButton>
-      <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" :loading="acting" @click="handleStart">BOOT</NeonButton>
-      <NeonButton v-if="ws.status === 'running'" variant="secondary" :loading="acting" @click="handleStop">HALT</NeonButton>
-      <NeonButton variant="ghost" :loading="removing" @click="showConfirm = true">PURGE</NeonButton>
+      <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
+      <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" :loading="acting" @click="handleStart"><Power :size="14" /> BOOT</NeonButton>
+      <NeonButton v-if="ws.status === 'running'" variant="secondary" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
+      <NeonButton variant="ghost" :loading="removing" @click="showConfirm = true"><Trash2 :size="14" /> PURGE</NeonButton>
     </div>
   </div>
   <ConfirmModal
@@ -34,6 +34,7 @@ import { useUiStore } from '@/stores/ui'
 import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
+import { Globe, Play, Power, Square, Trash2 } from 'lucide-vue-next'
 import type { Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
@@ -125,7 +126,8 @@ async function handleRemove() {
 
 .card-meta { display: flex; flex-direction: column; gap: 3px; }
 .image-name { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
-.target-url { font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.target-url { font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.target-url svg { flex-shrink: 0; }
 
 .error-msg {
   font-size: 11px;

@@ -4,12 +4,12 @@
       <h2>// FILE STORAGE</h2>
       <div class="header-actions">
         <input ref="fileInput" type="file" class="hidden-input" @change="handleUpload" />
-        <NeonButton variant="primary" :loading="uploading" @click="triggerUpload">↑ Upload</NeonButton>
+        <NeonButton variant="primary" :loading="uploading" @click="triggerUpload"><Upload :size="14" /> Upload</NeonButton>
       </div>
     </div>
 
     <nav class="breadcrumb">
-      <button class="crumb" @click="navigate('')">root</button>
+      <button class="crumb crumb-home" @click="navigate('')"><House :size="13" /> root</button>
       <template v-for="(seg, i) in segments" :key="i">
         <span class="sep">/</span>
         <button class="crumb" @click="navigate(segments.slice(0, i + 1).join('/'))">{{ seg }}</button>
@@ -30,15 +30,15 @@
           <tr v-for="entry in entries" :key="entry.name">
             <td>
               <button v-if="entry.type === 'dir'" class="name-btn dir" @click="navigate(join(entry.name))">
-                <span class="icon">▸</span> {{ entry.name }}
+                <Folder class="icon" :size="15" /> {{ entry.name }}
               </button>
-              <span v-else class="name-btn"><span class="icon file-icon">·</span> {{ entry.name }}</span>
+              <span v-else class="name-btn"><File class="icon file-icon" :size="15" /> {{ entry.name }}</span>
             </td>
             <td>{{ entry.type === 'dir' ? '—' : humanSize(entry.size) }}</td>
             <td>{{ formatDate(entry.modified) }}</td>
             <td class="actions">
-              <NeonButton v-if="entry.type === 'file'" variant="ghost" @click="download(entry.name)">Download</NeonButton>
-              <NeonButton variant="danger" @click="confirmDelete(entry)">Delete</NeonButton>
+              <NeonButton v-if="entry.type === 'file'" variant="ghost" @click="download(entry.name)"><Download :size="13" /> Download</NeonButton>
+              <NeonButton variant="danger" @click="confirmDelete(entry)"><Trash2 :size="13" /> Delete</NeonButton>
             </td>
           </tr>
         </tbody>
@@ -63,6 +63,7 @@ import { ref, computed, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import { Upload, House, Folder, File, Download, Trash2 } from 'lucide-vue-next'
 import { filesApi } from '@/api/files'
 import { useUiStore } from '@/stores/ui'
 import type { FileEntry } from '@/types'
@@ -189,6 +190,7 @@ async function handleDelete() {
   padding: 2px 4px; transition: text-shadow 0.15s;
 }
 .crumb:hover { text-shadow: var(--glow-sm); }
+.crumb-home { display: inline-flex; align-items: center; gap: 4px; }
 .sep { color: var(--text-muted); }
 
 .name-btn {
