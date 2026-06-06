@@ -113,7 +113,7 @@ const form = reactive({
   ts_exit_node: '',
   ts_accept_routes: true,
   ts_accept_dns: true,
-  allow_sudo: true,
+  allow_sudo: false,
   install_packages: '',
   proot_apps: '',
 })

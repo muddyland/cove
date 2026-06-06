@@ -90,7 +90,7 @@ describe('LaunchModal', () => {
     expect(payload.ts_accept_dns).toBe(false)
   })
 
-  it('always sends allow_sudo and omits package fields when blank', async () => {
+  it('sends allow_sudo=false by default and omits package fields when blank', async () => {
     const wrapper = mount(LaunchModal, { props: { modelValue: true } })
     await flushPromises()
 
@@ -100,7 +100,7 @@ describe('LaunchModal', () => {
     await flushPromises()
 
     const payload = launchMock.mock.calls[0][0]
-    expect(payload.allow_sudo).toBe(true)
+    expect(payload.allow_sudo).toBe(false)
     expect(payload).not.toHaveProperty('install_packages')
     expect(payload).not.toHaveProperty('proot_apps')
   })

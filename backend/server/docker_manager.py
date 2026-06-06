@@ -1,9 +1,11 @@
 import logging
 import os
 import re
+import shutil
 import time
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from pathlib import Path
 from threading import Lock
 
 import docker
@@ -100,6 +102,37 @@ def _resolve_mount(username: str, ws_name: str, user_id: int) -> tuple[str, bool
     return str(host_path), True
 
 
+def delete_workspace_storage(ws) -> None:
+    """Best-effort removal of a workspace's persistent home directory.
+
+    Only deletes a path strictly *under* the configured storage base, so a
+    crafted name (or a tampered ``volume_name``) can't escape it. No-op when the
+    directory doesn't exist (e.g. a workspace that was never launched).
+    """
+    settings = get_settings()
+    base = (settings.storage_path or (settings.data_dir / "workspaces")).resolve()
+
+    # Prefer the recorded mount source; fall back to the derived path.
+    if ws.volume_name:
+        candidate = Path(ws.volume_name)
+    elif ws.user and ws.user.username:
+        candidate = base / ws.user.username / f"workspace-{_sanitize(ws.name)}"
+    else:
+        return
+
+    try:
+        candidate = candidate.resolve()
+    except OSError:
+        return
+
+    if candidate == base or base not in candidate.parents:
+        logger.warning("Refusing to purge storage outside base: %s", candidate)
+        return
+    if candidate.is_dir():
+        shutil.rmtree(candidate, ignore_errors=True)
+        logger.info("Purged workspace storage %s", candidate)
+
+
 class DockerManager:
     def __init__(self):
         # Honor DOCKER_API_VERSION so the client skips version negotiation through
@@ -155,11 +188,17 @@ class DockerManager:
         return f"cove-ts-state-{ws_id}"
 
     def _ensure_ws_network(self, network_name: str) -> None:
-        """Create the per-workspace bridge network if it does not exist."""
+        """Create the per-workspace bridge network if it does not exist.
+
+        IPv6 is explicitly disabled: the egress guard (_apply_egress_guard) only
+        installs IPv4 iptables rules, so allowing IPv6 would let a workspace reach
+        IPv6 link-local/ULA/internal/metadata addresses unfiltered, bypassing the
+        WAN-only (LAN-block) policy.
+        """
         try:
             self._client.networks.get(network_name)
         except docker.errors.NotFound:
-            self._client.networks.create(network_name, driver="bridge")
+            self._client.networks.create(network_name, driver="bridge", enable_ipv6=False)
             logger.info("Created network %s", network_name)
 
     def _cleanup_ws_network(self, network_name: str) -> None:
@@ -419,8 +458,12 @@ class DockerManager:
         finally:
             db.close()
 
-    def remove_workspace(self, ws_id: int) -> None:
-        """Stop container and delete workspace record."""
+    def remove_workspace(self, ws_id: int, purge_storage: bool = False) -> None:
+        """Stop container and delete workspace record.
+
+        When ``purge_storage`` is set, also delete the workspace's persistent
+        home directory (otherwise it is left on disk for reuse).
+        """
         db = self._get_db()
         try:
             ws = db.get(Workspace, ws_id)
@@ -435,6 +478,8 @@ class DockerManager:
                     pass
             self._cleanup_tailscale_sidecar(ws.id)
             self._cleanup_ws_network(self._ws_network_name(ws.id))
+            if purge_storage:
+                delete_workspace_storage(ws)
             db.delete(ws)
             db.commit()
         finally:

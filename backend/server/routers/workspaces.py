@@ -174,13 +174,29 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
 
 
 @router.delete("/{ws_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: BackgroundTasks, request: Request):
+def delete_workspace(
+    ws_id: int,
+    user: CurrentUser,
+    db: DbSession,
+    bg: BackgroundTasks,
+    request: Request,
+    purge_storage: bool = False,
+):
     ws = _get_workspace_or_404(ws_id, user, db)
     public_id = ws.public_id
-    _audit(db, "workspace.delete", detail=public_id, user=user, request=request)
+    _audit(
+        db,
+        "workspace.delete",
+        detail=f"{public_id} purge_storage={purge_storage}",
+        user=user,
+        request=request,
+    )
+    from server.docker_manager import delete_workspace_storage, get_docker_manager
+
     if ws.status in ("running", "creating", "stopping"):
-        from server.docker_manager import get_docker_manager
-        bg.add_task(get_docker_manager().remove_workspace, ws.id)
+        bg.add_task(get_docker_manager().remove_workspace, ws.id, purge_storage)
     else:
+        if purge_storage:
+            delete_workspace_storage(ws)
         db.delete(ws)
         db.commit()

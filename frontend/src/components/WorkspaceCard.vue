@@ -27,17 +27,25 @@
       <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
       <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" :loading="acting" @click="handleStart"><Power :size="14" /> BOOT</NeonButton>
       <NeonButton v-if="ws.status === 'running'" variant="secondary" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
-      <NeonButton variant="ghost" :loading="removing" @click="showConfirm = true"><Trash2 :size="14" /> PURGE</NeonButton>
+      <NeonButton variant="ghost" :loading="removing" @click="openPurge"><Trash2 :size="14" /> PURGE</NeonButton>
     </div>
   </div>
   <ConfirmModal
     v-model="showConfirm"
     title="Purge Workspace"
-    :message="`Terminate '${ws.name}'? Container destroyed. Storage preserved.`"
+    :message="`Terminate '${ws.name}'? The container is destroyed.`"
     confirm-label="PURGE"
     :loading="removing"
     @confirm="handleRemove"
-  />
+  >
+    <label class="purge-storage">
+      <input type="checkbox" v-model="purgeStorage" />
+      <span>
+        Also delete persistent storage
+        <small>Permanently erases this workspace's home directory. Cannot be undone.</small>
+      </span>
+    </label>
+  </ConfirmModal>
   <EditWorkspaceModal v-model="showEdit" :ws="ws" />
 </template>
 
@@ -61,6 +69,7 @@ const router = useRouter()
 const acting = ref(false)
 const removing = ref(false)
 const showConfirm = ref(false)
+const purgeStorage = ref(false)
 const showEdit = ref(false)
 
 function hideLogo(e: Event) {
@@ -94,18 +103,36 @@ async function handleStart() {
   finally { acting.value = false }
 }
 
+function openPurge() {
+  purgeStorage.value = false
+  showConfirm.value = true
+}
+
 async function handleRemove() {
   removing.value = true
   try {
-    await store.remove(props.ws.id)
+    await store.remove(props.ws.id, purgeStorage.value)
     showConfirm.value = false
-    ui.toast('Workspace purged', 'success')
+    ui.toast(purgeStorage.value ? 'Workspace purged (storage deleted)' : 'Workspace purged', 'success')
+    purgeStorage.value = false
   } catch (e: any) { ui.toast(e.message, 'error') }
   finally { removing.value = false }
 }
 </script>
 
 <style scoped>
+.purge-storage {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: -8px 0 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.purge-storage input { margin-top: 3px; flex-shrink: 0; }
+.purge-storage small { display: block; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);

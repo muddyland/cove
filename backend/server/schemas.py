@@ -95,7 +95,10 @@ class WorkspaceCreate(BaseModel):
     # Per-workspace package installation + sudo control.
     install_packages: Optional[str] = None
     proot_apps: Optional[str] = None
-    allow_sudo: bool = True
+    # Default off: workspaces get no-new-privileges (no in-container sudo/setuid
+    # escalation) unless the creator explicitly opts in. Shrinks the blast radius
+    # of an in-container compromise.
+    allow_sudo: bool = False
 
 
 class WorkspaceUpdate(BaseModel):

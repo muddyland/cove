@@ -34,5 +34,6 @@ export const workspacesApi = {
   streamAuth: (id: number) => api.post<{ url: string }>(`/workspaces/${id}/stream-auth`),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),
   start: (id: number) => api.post<Workspace>(`/workspaces/${id}/start`),
-  remove: (id: number) => api.delete(`/workspaces/${id}`),
+  remove: (id: number, purgeStorage = false) =>
+    api.delete(`/workspaces/${id}${purgeStorage ? '?purge_storage=true' : ''}`),
 }

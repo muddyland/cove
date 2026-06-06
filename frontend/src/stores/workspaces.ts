@@ -76,8 +76,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     schedulePoll()
   }
 
-  async function remove(id: number) {
-    await workspacesApi.remove(id)
+  async function remove(id: number, purgeStorage = false) {
+    await workspacesApi.remove(id, purgeStorage)
     items.value = items.value.filter(w => w.id !== id)
   }
 

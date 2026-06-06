@@ -1,6 +1,7 @@
 <template>
   <BaseModal :modelValue="modelValue" :title="title" @update:modelValue="$emit('update:modelValue', $event)" width="360px">
     <p class="message">{{ message }}</p>
+    <slot />
     <div class="actions">
       <NeonButton variant="secondary" @click="$emit('update:modelValue', false)">Cancel</NeonButton>
       <NeonButton variant="danger" :loading="loading" @click="$emit('confirm')">{{ confirmLabel }}</NeonButton>

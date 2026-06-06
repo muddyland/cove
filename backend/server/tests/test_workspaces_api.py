@@ -242,7 +242,7 @@ def test_create_persists_packages_and_sudo(client, fake_docker_manager):
 
 
 def test_create_packages_defaults(client, fake_docker_manager):
-    """Defaults: no packages/apps, sudo allowed."""
+    """Defaults: no packages/apps, sudo disabled (no-new-privileges on)."""
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")
 
@@ -251,7 +251,7 @@ def test_create_packages_defaults(client, fake_docker_manager):
     body = resp.json()
     assert body["install_packages"] is None
     assert body["proot_apps"] is None
-    assert body["allow_sudo"] is True
+    assert body["allow_sudo"] is False
 
 
 def test_list_workspaces_scoped_to_owner(client):
@@ -295,3 +295,60 @@ def test_update_workspace_ownership(client):
         f"/api/workspaces/{ws['id']}", json={"name": "hax"}, headers=auth_header(dave)
     )
     assert resp.status_code in (403, 404)
+
+
+# ── purge storage ─────────────────────────────────────────────────────────────
+
+def _stopped_ws_with_storage(client, name="purgeme"):
+    """Create a workspace, mark it stopped, and give it a populated storage dir."""
+    from server.config import get_settings
+
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": name, "image_id": image_id}).json()
+    base = get_settings().data_dir / "workspaces"
+    storage = base / "admin" / f"workspace-{name}"
+    storage.mkdir(parents=True, exist_ok=True)
+    (storage / "marker.txt").write_text("keep me?")
+    db = SessionLocal()
+    try:
+        row = db.get(Workspace, ws["id"])
+        row.status = "stopped"
+        row.volume_name = str(storage)
+        db.commit()
+    finally:
+        db.close()
+    return ws, storage
+
+
+def test_delete_with_purge_storage_removes_dir(client):
+    setup_admin(client)
+    ws, storage = _stopped_ws_with_storage(client)
+    assert storage.exists()
+
+    resp = client.delete(f"/api/workspaces/{ws['id']}?purge_storage=true")
+    assert resp.status_code == 204
+    assert not storage.exists()
+
+
+def test_delete_without_purge_keeps_storage(client):
+    setup_admin(client)
+    ws, storage = _stopped_ws_with_storage(client)
+
+    resp = client.delete(f"/api/workspaces/{ws['id']}")
+    assert resp.status_code == 204
+    assert storage.exists()  # persistent home preserved by default
+
+
+def test_delete_workspace_storage_refuses_outside_base(tmp_path):
+    """The purge helper must never delete a path outside the storage base."""
+    from types import SimpleNamespace
+
+    from server.docker_manager import delete_workspace_storage
+
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "important").write_text("do not delete")
+    ws = SimpleNamespace(volume_name=str(victim), user=None, name="x")
+
+    delete_workspace_storage(ws)
+    assert victim.exists()  # outside base -> refused
