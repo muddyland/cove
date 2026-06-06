@@ -114,6 +114,16 @@ services:
     networks:
       - cove-net
       - cove-sockwrite
+    # Pin the resolver explicitly instead of inheriting the host's /etc/resolv.conf.
+    # Docker strips loopback nameservers (systemd-resolved/dnsmasq) when generating
+    # the container resolv.conf; if the host is in that state at create time the
+    # container ends up with NO upstream DNS and every outbound lookup (OIDC
+    # discovery, the LinuxServer API, …) fails with "Temporary failure in name
+    # resolution". Defaults to public resolvers; override to your LAN DNS in .env
+    # when services like the OIDC issuer use split-horizon/internal names.
+    dns:
+      - ${COVE_DNS_PRIMARY:-1.1.1.1}
+      - ${COVE_DNS_SECONDARY:-9.9.9.9}
     environment:
       - COVE_DATA_DIR=/app/data
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
