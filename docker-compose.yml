@@ -89,6 +89,11 @@ services:
       # ForwardAuth: authenticates workspace streams (cove-auth@docker).
       - traefik.http.middlewares.cove-auth.forwardauth.address=http://cove:8080/api/auth/forward
       - traefik.http.middlewares.cove-auth.forwardauth.authResponseHeaders=X-Cove-User
+      # Custom error page for unreachable workspace streams (cove-errors@docker),
+      # replacing Traefik's default 502/503/504 page. Served by the cove app.
+      - traefik.http.middlewares.cove-errors.errors.status=502-504
+      - traefik.http.middlewares.cove-errors.errors.service=cove
+      - traefik.http.middlewares.cove-errors.errors.query=/__cove_error/{status}
       # Security headers (cove-headers@docker). No CSP (breaks webtop), no HSTS (HTTP local).
       - traefik.http.middlewares.cove-headers.headers.contentTypeNosniff=true
       - traefik.http.middlewares.cove-headers.headers.referrerPolicy=strict-origin-when-cross-origin

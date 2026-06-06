@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,37 @@ from server.routers import admin, auth, files, images, proot, users, workspaces
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
+
+# Served (via Traefik's errors middleware) in place of the default Bad Gateway
+# page when a workspace stream is unreachable. Self-contained (no external assets)
+# and auto-refreshes, since it renders inside the workspace iframe.
+_STREAM_ERROR_PAGE = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="refresh" content="6" />
+<title>Workspace unavailable</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{display:flex;align-items:center;justify-content:center;background:#0a0e14;
+       color:#c8d3e0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .box{text-align:center;padding:32px;max-width:420px}
+  .code{font-size:13px;letter-spacing:3px;color:#ff4d6d;text-transform:uppercase}
+  h1{font-size:18px;letter-spacing:2px;margin:14px 0 6px;color:#36e0c8;
+     text-shadow:0 0 12px rgba(54,224,200,.5)}
+  p{font-size:13px;line-height:1.6;color:#7f8ea3;margin:8px 0}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#36e0c8;
+       margin-right:7px;animation:pulse 1.4s ease-in-out infinite;vertical-align:middle}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+  a{color:#36e0c8;text-decoration:none}
+</style></head>
+<body><div class="box">
+  <div class="code">Stream {{CODE}}</div>
+  <h1>Workspace unavailable</h1>
+  <p><span class="dot"></span>The desktop isn't responding yet — it may still be
+     starting up or briefly restarting.</p>
+  <p>This page retries automatically. <a href="">Retry now</a></p>
+</div></body></html>"""
 
 
 def record_audit(
@@ -134,6 +165,17 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/__cove_error/{status}", include_in_schema=False)
+    def stream_error(status: str):
+        """Custom page served (via Traefik's errors middleware) when a workspace
+        stream is unreachable — replaces Traefik's default Bad Gateway page.
+
+        Shown inside the workspace iframe, so it auto-retries: a 5xx here usually
+        means the desktop is still starting or briefly restarting.
+        """
+        code = status if status.isdigit() else "Error"  # avoid reflected XSS
+        return HTMLResponse(_STREAM_ERROR_PAGE.replace("{{CODE}}", code))
 
     # Serve built frontend
     if STATIC_DIR.exists():

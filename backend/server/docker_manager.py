@@ -817,7 +817,9 @@ class DockerManager:
         if settings.workspace_domain:
             host = settings.workspace_host(ws.public_id)
             base[f"traefik.http.routers.{name}.rule"] = f"Host(`{host}`)"
-            base[f"traefik.http.routers.{name}.middlewares"] = f"cove-auth@docker,{hdr}"
+            base[f"traefik.http.routers.{name}.middlewares"] = (
+                f"cove-errors@docker,cove-auth@docker,{hdr}"
+            )
             # Only request TLS termination in prod/HTTPS deployments.
             if settings.cookie_secure:
                 base[f"traefik.http.routers.{name}.tls"] = "true"
@@ -825,7 +827,9 @@ class DockerManager:
 
         prefix = f"/workspace/{ws.public_id}"
         base[f"traefik.http.routers.{name}.rule"] = f"PathPrefix(`{prefix}/`)"
-        base[f"traefik.http.routers.{name}.middlewares"] = f"cove-auth@docker,{hdr},{name}-strip"
+        base[f"traefik.http.routers.{name}.middlewares"] = (
+            f"cove-errors@docker,cove-auth@docker,{hdr},{name}-strip"
+        )
         base[f"traefik.http.middlewares.{name}-strip.stripprefix.prefixes"] = prefix
         return base
 

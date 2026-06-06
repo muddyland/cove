@@ -269,7 +269,10 @@ def test_traefik_labels_subdomain_mode(client, subdomain_env):
     host = f"{ws['public_id']}.{DOMAIN}"
     assert labels[f"traefik.http.routers.{name}.rule"] == f"Host(`{host}`)"
     # Per-workspace headers middleware (frame-ancestors) instead of cove-headers.
-    assert labels[f"traefik.http.routers.{name}.middlewares"] == f"cove-auth@docker,{name}-hdr"
+    assert (
+        labels[f"traefik.http.routers.{name}.middlewares"]
+        == f"cove-errors@docker,cove-auth@docker,{name}-hdr"
+    )
     # X-Frame-Options is stripped; CSP frame-ancestors allows the SPA to iframe it.
     assert labels[f"traefik.http.middlewares.{name}-hdr.headers.customResponseHeaders.X-Frame-Options"] == ""
     assert "frame-ancestors" in labels[f"traefik.http.middlewares.{name}-hdr.headers.contentSecurityPolicy"]
