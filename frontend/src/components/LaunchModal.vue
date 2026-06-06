@@ -27,6 +27,16 @@
         <input type="checkbox" v-model="form.kiosk" />
         <span>Kiosk mode (full-screen, no browser chrome)</span>
       </label>
+      <template v-if="urlCapable && form.kiosk">
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="form.kiosk_dark" />
+          <span>Dark mode</span>
+        </label>
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="form.kiosk_menu" />
+          <span>Allow right-click / refresh menu</span>
+        </label>
+      </template>
       <label class="checkbox-row">
         <input type="checkbox" v-model="form.use_tailscale" />
         <span>Route through Tailscale</span>
@@ -112,6 +122,8 @@ const form = reactive({
   image_id: '' as number | '',
   target_url: '',
   kiosk: false,
+  kiosk_dark: false,
+  kiosk_menu: false,
   use_tailscale: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -141,6 +153,8 @@ async function handleSubmit() {
       workspace_type: selectedImage.value?.image_type ?? 'desktop',
       target_url: urlCapable.value && form.target_url ? form.target_url : undefined,
       kiosk: urlCapable.value ? form.kiosk : false,
+      kiosk_dark: urlCapable.value && form.kiosk ? form.kiosk_dark : false,
+      kiosk_menu: urlCapable.value && form.kiosk ? form.kiosk_menu : false,
       use_tailscale: form.use_tailscale,
       ...(form.use_tailscale
         ? {
@@ -159,6 +173,8 @@ async function handleSubmit() {
     form.image_id = ''
     form.target_url = ''
     form.kiosk = false
+    form.kiosk_dark = false
+    form.kiosk_menu = false
     form.use_tailscale = false
     form.ts_exit_node = ''
     form.ts_accept_routes = true

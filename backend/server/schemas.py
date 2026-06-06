@@ -88,6 +88,8 @@ class WorkspaceCreate(BaseModel):
     workspace_type: str = "desktop"
     target_url: Optional[str] = None
     kiosk: bool = False
+    kiosk_dark: bool = False
+    kiosk_menu: bool = False
     use_tailscale: bool = False
     # Per-workspace Tailscale routing options (stored regardless of use_tailscale).
     ts_exit_node: Optional[str] = None
@@ -106,6 +108,8 @@ class WorkspaceUpdate(BaseModel):
     name: Optional[str] = None
     target_url: Optional[str] = None
     kiosk: Optional[bool] = None
+    kiosk_dark: Optional[bool] = None
+    kiosk_menu: Optional[bool] = None
     use_tailscale: Optional[bool] = None
     ts_exit_node: Optional[str] = None
     ts_accept_routes: Optional[bool] = None
@@ -136,6 +140,8 @@ class WorkspaceOut(BaseModel):
     image_logo: Optional[str]
     target_url: Optional[str]
     kiosk: bool
+    kiosk_dark: bool
+    kiosk_menu: bool
     use_tailscale: bool
     ts_exit_node: Optional[str]
     ts_accept_routes: bool
@@ -177,6 +183,8 @@ class WorkspaceOut(BaseModel):
             image_logo=ws.image.logo_url if ws.image else None,
             target_url=ws.target_url,
             kiosk=ws.kiosk,
+            kiosk_dark=ws.kiosk_dark,
+            kiosk_menu=ws.kiosk_menu,
             use_tailscale=ws.use_tailscale,
             ts_exit_node=ws.ts_exit_node,
             ts_accept_routes=ws.ts_accept_routes,

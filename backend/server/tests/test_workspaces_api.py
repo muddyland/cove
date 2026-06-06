@@ -249,12 +249,21 @@ def test_create_kiosk_flag(client, fake_docker_manager):
     # Default is off.
     d = client.post("/api/workspaces", json={"name": "plain", "image_id": image_id}).json()
     assert d["kiosk"] is False
-    # Explicitly enabled.
+    # Explicitly enabled, with dark mode + right-click menu.
     k = client.post(
         "/api/workspaces",
-        json={"name": "kioskws", "image_id": image_id, "kiosk": True, "target_url": "https://x.io"},
+        json={
+            "name": "kioskws",
+            "image_id": image_id,
+            "kiosk": True,
+            "kiosk_dark": True,
+            "kiosk_menu": True,
+            "target_url": "https://x.io",
+        },
     ).json()
     assert k["kiosk"] is True
+    assert k["kiosk_dark"] is True
+    assert k["kiosk_menu"] is True
 
 
 def test_create_packages_defaults(client, fake_docker_manager):

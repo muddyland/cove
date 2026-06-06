@@ -45,6 +45,8 @@ export interface Workspace {
   image_logo: string | null
   target_url: string | null
   kiosk: boolean
+  kiosk_dark: boolean
+  kiosk_menu: boolean
   stream_url: string | null
   created_at: string
   started_at: string | null

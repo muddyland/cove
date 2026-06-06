@@ -35,7 +35,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  async function launch(payload: { name: string; image_id: number; workspace_type: string; target_url?: string; kiosk?: boolean; use_tailscale?: boolean; ts_exit_node?: string; ts_accept_routes?: boolean; ts_accept_dns?: boolean; install_packages?: string; proot_apps?: string; allow_sudo?: boolean }) {
+  async function launch(payload: { name: string; image_id: number; workspace_type: string; target_url?: string; kiosk?: boolean; kiosk_dark?: boolean; kiosk_menu?: boolean; use_tailscale?: boolean; ts_exit_node?: string; ts_accept_routes?: boolean; ts_accept_dns?: boolean; install_packages?: string; proot_apps?: string; allow_sudo?: boolean }) {
     const ws = await workspacesApi.create(payload)
     items.value.unshift(ws)
     schedulePoll()
@@ -48,6 +48,8 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       name?: string
       target_url?: string
       kiosk?: boolean
+      kiosk_dark?: boolean
+      kiosk_menu?: boolean
       use_tailscale?: boolean
       ts_exit_node?: string
       ts_accept_routes?: boolean

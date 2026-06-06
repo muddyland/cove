@@ -14,6 +14,16 @@
         <input type="checkbox" v-model="form.kiosk" />
         <span>Kiosk mode (full-screen, no browser chrome)</span>
       </label>
+      <template v-if="urlCapable && form.kiosk">
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="form.kiosk_dark" />
+          <span>Dark mode</span>
+        </label>
+        <label class="checkbox-row ts-field">
+          <input type="checkbox" v-model="form.kiosk_menu" />
+          <span>Allow right-click / refresh menu</span>
+        </label>
+      </template>
 
       <label class="checkbox-row">
         <input type="checkbox" v-model="form.use_tailscale" />
@@ -102,6 +112,8 @@ const form = reactive({
   name: '',
   target_url: '',
   kiosk: false,
+  kiosk_dark: false,
+  kiosk_menu: false,
   use_tailscale: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -120,6 +132,8 @@ function resetFromWs() {
   form.name = props.ws.name
   form.target_url = props.ws.target_url ?? ''
   form.kiosk = props.ws.kiosk
+  form.kiosk_dark = props.ws.kiosk_dark
+  form.kiosk_menu = props.ws.kiosk_menu
   form.use_tailscale = props.ws.use_tailscale
   form.ts_exit_node = props.ws.ts_exit_node ?? ''
   form.ts_accept_routes = props.ws.ts_accept_routes
@@ -149,6 +163,8 @@ async function handleSubmit() {
       name: form.name,
       target_url: urlCapable.value ? form.target_url : undefined,
       kiosk: urlCapable.value ? form.kiosk : undefined,
+      kiosk_dark: urlCapable.value ? form.kiosk_dark : undefined,
+      kiosk_menu: urlCapable.value ? form.kiosk_menu : undefined,
       use_tailscale: form.use_tailscale,
       ...(form.use_tailscale
         ? {

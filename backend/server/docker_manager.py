@@ -56,6 +56,25 @@ def _helper_script_path(name: str) -> str:
     """Host-resolvable bind-mount source for a staged helper script."""
     return str(_stage_helper_scripts() / name)
 
+
+def _build_browser_cli(ws) -> str:
+    """Assemble the browser CLI string (the *_CLI env value) for a URL workspace.
+
+    Chromium/Brave flags:
+      --kiosk           full-screen, locked (no context menu / shortcuts)
+      --start-fullscreen full-screen but keeps the right-click menu + refresh
+      --force-dark-mode --enable-features=WebContentsForceDark  force dark pages
+    (Firefox ignores the Chromium-specific flags; --kiosk still applies.)
+    """
+    flags = []
+    if ws.kiosk:
+        # kiosk_menu keeps the context menu (right-click → Reload) and F5 by using
+        # functional full-screen instead of the locked-down kiosk mode.
+        flags.append("--start-fullscreen" if ws.kiosk_menu else "--kiosk")
+    if ws.kiosk_dark:
+        flags += ["--force-dark-mode", "--enable-features=WebContentsForceDark"]
+    return " ".join([*flags, ws.target_url]) if flags else ws.target_url
+
 # Helper image used to apply egress firewall rules inside a workspace netns.
 # netshoot ships iptables; it runs briefly and is removed immediately.
 EGRESS_GUARD_IMAGE = "nicolaka/netshoot:latest"
@@ -383,11 +402,10 @@ class DockerManager:
                 "TZ": settings.workspace_tz,
             }
             # Browser images open a startup URL via their native CLI env var
-            # (e.g. CHROME_CLI / BRAVE_CLI / FIREFOX_CLI). Prepending --kiosk
-            # launches it full-screen with no browser chrome (Chromium/Brave and
-            # Firefox 71+ all accept --kiosk <url>).
+            # (e.g. CHROME_CLI / BRAVE_CLI / FIREFOX_CLI), which is appended to the
+            # browser command. Assemble kiosk/full-screen + dark-mode flags.
             if ws.target_url and image.url_env:
-                env[image.url_env] = f"--kiosk {ws.target_url}" if ws.kiosk else ws.target_url
+                env[image.url_env] = _build_browser_cli(ws)
             elif ws.workspace_type == "link" and ws.target_url:
                 # Legacy webtop-based link workspaces use a custom init script.
                 env["LAUNCH_URL"] = ws.target_url
@@ -563,8 +581,10 @@ class DockerManager:
             db.close()
 
     # Max time a workspace may sit in "creating" before it's declared failed.
-    # Generous because big proot-apps / package installs run before the GUI starts.
-    _PROVISION_DEADLINE_SECONDS = 1800
+    # Generous because big proot-apps / package installs (a dozen+ apps, plus
+    # ghcr rate-limiting) run before the GUI starts. Even if exceeded, an "error"
+    # workspace is auto-recovered once its GUI finally answers (see sync below).
+    _PROVISION_DEADLINE_SECONDS = 3600
 
     def sync_workspace_statuses(self) -> None:
         """Reconcile workspace status with reality.
@@ -594,21 +614,25 @@ class DockerManager:
                     ws.error_message = "Container not found"
                     db.commit()
 
-            creating = db.scalars(
-                select(Workspace).where(Workspace.status == "creating")
+            # Promote provisioning workspaces once their GUI answers — and also
+            # recover ones we previously marked "error" (e.g. a very large install
+            # that outran the deadline but did finish and is now serving).
+            pending = db.scalars(
+                select(Workspace).where(Workspace.status.in_(("creating", "error")))
             ).all()
             now = datetime.now(timezone.utc)
-            for ws in creating:
+            for ws in pending:
                 if not ws.container_id:
                     continue  # launch task hasn't started the container yet
                 try:
                     container = self._client.containers.get(ws.container_id)
                 except docker.errors.NotFound:
-                    continue  # mid-launch; don't fail prematurely
+                    continue  # mid-launch or genuinely gone; leave status as-is
                 if container.status in ("exited", "dead"):
-                    ws.status = "error"
-                    ws.error_message = "Container exited during startup"
-                    db.commit()
+                    if ws.status == "creating":
+                        ws.status = "error"
+                        ws.error_message = "Container exited during startup"
+                        db.commit()
                     continue
                 if container.status != "running":
                     continue
@@ -616,13 +640,17 @@ class DockerManager:
                 if self._wait_for_http_ready(ws.id, port, 5):
                     ws.status = "running"
                     ws.started_at = now
+                    ws.error_message = None
                     db.commit()
                     continue
-                created = ws.created_at.replace(tzinfo=timezone.utc) if ws.created_at else now
-                if (now - created).total_seconds() > self._PROVISION_DEADLINE_SECONDS:
-                    ws.status = "error"
-                    ws.error_message = "Workspace did not become ready in time"
-                    db.commit()
+                # Still starting: only fail a "creating" one past the (generous)
+                # deadline. An "error" one stays error until its GUI answers.
+                if ws.status == "creating":
+                    created = ws.created_at.replace(tzinfo=timezone.utc) if ws.created_at else now
+                    if (now - created).total_seconds() > self._PROVISION_DEADLINE_SECONDS:
+                        ws.status = "error"
+                        ws.error_message = "Workspace did not become ready in time"
+                        db.commit()
         except Exception as exc:
             logger.warning("sync_workspace_statuses error: %s", exc)
         finally:

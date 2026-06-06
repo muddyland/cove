@@ -10,6 +10,8 @@ export const workspacesApi = {
     workspace_type: string
     target_url?: string
     kiosk?: boolean
+    kiosk_dark?: boolean
+    kiosk_menu?: boolean
     use_tailscale?: boolean
     ts_exit_node?: string
     ts_accept_routes?: boolean
@@ -24,6 +26,8 @@ export const workspacesApi = {
       name?: string
       target_url?: string
       kiosk?: boolean
+      kiosk_dark?: boolean
+      kiosk_menu?: boolean
       use_tailscale?: boolean
       ts_exit_node?: string
       ts_accept_routes?: boolean

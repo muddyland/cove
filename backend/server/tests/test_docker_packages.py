@@ -4,7 +4,40 @@ These are pure functions / static methods that build env, volumes, and
 hardening kwargs without ever touching a real Docker daemon.
 """
 
-from server.docker_manager import DockerManager, _helper_script_path, _split_packages
+from types import SimpleNamespace
+
+from server.docker_manager import (
+    DockerManager,
+    _build_browser_cli,
+    _helper_script_path,
+    _split_packages,
+)
+
+# ── _build_browser_cli (kiosk / dark-mode flags) ───────────────────────────────
+
+def _ws(**kw):
+    base = dict(target_url="https://x.io", kiosk=False, kiosk_dark=False, kiosk_menu=False)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_browser_cli_plain_url():
+    assert _build_browser_cli(_ws()) == "https://x.io"
+
+
+def test_browser_cli_kiosk_locked():
+    assert _build_browser_cli(_ws(kiosk=True)) == "--kiosk https://x.io"
+
+
+def test_browser_cli_kiosk_menu_uses_fullscreen():
+    # The right-click/refresh menu needs functional full-screen, not locked kiosk.
+    assert _build_browser_cli(_ws(kiosk=True, kiosk_menu=True)) == "--start-fullscreen https://x.io"
+
+
+def test_browser_cli_kiosk_dark_mode():
+    assert _build_browser_cli(_ws(kiosk=True, kiosk_dark=True)) == (
+        "--kiosk --force-dark-mode --enable-features=WebContentsForceDark https://x.io"
+    )
 
 # ── _split_packages ────────────────────────────────────────────────────────────
 

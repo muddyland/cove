@@ -78,6 +78,14 @@ class Workspace(Base):
     kiosk: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Kiosk extras (browser images only): force dark mode, and keep the
+    # right-click context menu / refresh (uses --start-fullscreen vs --kiosk).
+    kiosk_dark: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    kiosk_menu: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     # Per-workspace distro packages (universal-package-install Docker Mod), free
     # text — pipe/comma/space separated package names.
     install_packages: Mapped[Optional[str]] = mapped_column(String, nullable=True)
