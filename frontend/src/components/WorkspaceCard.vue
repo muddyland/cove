@@ -224,6 +224,15 @@ async function handleRemove() {
 }
 
 /* Pin the action row to the bottom so cards of varying body length keep
-   their buttons aligned across the row. */
-.card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+   their buttons aligned across the row. Buttons share the width equally and
+   stay on a single line so every card has an identical full-width footer. */
+.card-actions { display: flex; gap: 6px; margin-top: auto; }
+.card-actions :deep(.btn) {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding: 8px 8px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
 </style>
