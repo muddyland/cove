@@ -478,22 +478,23 @@ class DockerManager:
                 if not ws.use_tailscale and not get_workspace_lan_access(db):
                     self._apply_egress_guard(ws.id)
 
-                ready = self._wait_for_ready(container)
-                if ready:
-                    # Then wait for the web GUI to actually answer. Per-workspace
-                    # package/proot installs run before the GUI starts and can take
-                    # minutes (large downloads), so allow much longer in that case.
-                    has_install = bool(ws.install_packages or ws.proot_apps)
-                    http_timeout = 900 if has_install else 180
-                    ready = self._wait_for_http_ready(ws.id, image.internal_port, http_timeout)
+                started = self._wait_for_ready(container)
                 ws = db.get(Workspace, ws_id)  # re-fetch after wait
-                if ready:
-                    ws.status = "running"
-                    ws.started_at = datetime.now(timezone.utc)
-                else:
+                if not started:
                     ws.status = "error"
-                    ws.error_message = "Workspace did not become ready in time"
-                db.commit()
+                    ws.error_message = "Container did not start"
+                    db.commit()
+                else:
+                    # Fast path: give the GUI a short window to answer so simple
+                    # workspaces flip to running promptly. Big package/proot
+                    # installs run before the GUI starts and can take many minutes
+                    # — those stay "creating" (the provisioning screen) and the
+                    # status monitor promotes them once the GUI answers, so we
+                    # never give up just because an install is slow.
+                    if self._wait_for_http_ready(ws.id, image.internal_port, 60):
+                        ws.status = "running"
+                        ws.started_at = datetime.now(timezone.utc)
+                        db.commit()
 
             except docker.errors.APIError as exc:
                 logger.error("Docker error launching workspace %s: %s", ws_id, exc)
@@ -561,8 +562,18 @@ class DockerManager:
         finally:
             db.close()
 
+    # Max time a workspace may sit in "creating" before it's declared failed.
+    # Generous because big proot-apps / package installs run before the GUI starts.
+    _PROVISION_DEADLINE_SECONDS = 1800
+
     def sync_workspace_statuses(self) -> None:
-        """Check running workspaces against actual container states."""
+        """Reconcile workspace status with reality.
+
+        - running workspaces whose container has died -> error.
+        - creating workspaces whose GUI now answers -> running (self-healing
+          promotion, so slow installs that outlast the launch-time probe still
+          come up); expired ones -> error.
+        """
         db = self._get_db()
         try:
             from sqlalchemy import select
@@ -581,6 +592,36 @@ class DockerManager:
                 except docker.errors.NotFound:
                     ws.status = "error"
                     ws.error_message = "Container not found"
+                    db.commit()
+
+            creating = db.scalars(
+                select(Workspace).where(Workspace.status == "creating")
+            ).all()
+            now = datetime.now(timezone.utc)
+            for ws in creating:
+                if not ws.container_id:
+                    continue  # launch task hasn't started the container yet
+                try:
+                    container = self._client.containers.get(ws.container_id)
+                except docker.errors.NotFound:
+                    continue  # mid-launch; don't fail prematurely
+                if container.status in ("exited", "dead"):
+                    ws.status = "error"
+                    ws.error_message = "Container exited during startup"
+                    db.commit()
+                    continue
+                if container.status != "running":
+                    continue
+                port = ws.image.internal_port if ws.image else 3000
+                if self._wait_for_http_ready(ws.id, port, 5):
+                    ws.status = "running"
+                    ws.started_at = now
+                    db.commit()
+                    continue
+                created = ws.created_at.replace(tzinfo=timezone.utc) if ws.created_at else now
+                if (now - created).total_seconds() > self._PROVISION_DEADLINE_SECONDS:
+                    ws.status = "error"
+                    ws.error_message = "Workspace did not become ready in time"
                     db.commit()
         except Exception as exc:
             logger.warning("sync_workspace_statuses error: %s", exc)
