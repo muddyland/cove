@@ -130,7 +130,10 @@ async function handleRemove() {
   font-size: 13px;
   color: var(--text);
 }
-.purge-storage input { margin-top: 3px; flex-shrink: 0; }
+/* Reset the global `input { width: 100% }` so the checkbox doesn't stretch
+   across the row (which squeezed the label into a sliver + overflowed the modal). */
+.purge-storage input { width: auto; margin: 0; padding: 0; flex-shrink: 0; margin-top: 3px; }
+.purge-storage span { min-width: 0; }
 .purge-storage small { display: block; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
 
 .card {
