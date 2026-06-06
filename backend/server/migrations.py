@@ -89,6 +89,15 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0017_workspace_kiosk_menu",
         "ALTER TABLE workspace ADD COLUMN kiosk_menu INTEGER NOT NULL DEFAULT 0",
     ),
+    # Per-workspace custom (public) DNS resolvers.
+    (
+        "0018_workspace_custom_dns",
+        "ALTER TABLE workspace ADD COLUMN custom_dns INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "0019_workspace_dns_servers",
+        "ALTER TABLE workspace ADD COLUMN dns_servers VARCHAR(256)",
+    ),
 ]
 
 

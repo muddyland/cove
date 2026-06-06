@@ -50,6 +50,8 @@ const desktopWs: Workspace = {
   ts_exit_node: null,
   ts_accept_routes: true,
   ts_accept_dns: true,
+  custom_dns: false,
+  dns_servers: null,
   install_packages: null,
   proot_apps: null,
   allow_sudo: true,

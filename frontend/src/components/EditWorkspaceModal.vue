@@ -44,6 +44,23 @@
         </label>
       </template>
 
+      <template v-if="!form.use_tailscale">
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.custom_dns" />
+          <span>Use custom DNS (public resolvers)</span>
+        </label>
+        <div v-if="form.custom_dns" class="form-group ts-field">
+          <label>DNS servers</label>
+          <input v-model="form.dns_servers" type="text" placeholder="1.1.1.1 9.9.9.9" />
+          <div class="dns-presets">
+            <button type="button" @click="addDns('1.1.1.1')">+ Cloudflare</button>
+            <button type="button" @click="addDns('9.9.9.9')">+ Quad9</button>
+            <button type="button" @click="addDns('8.8.8.8')">+ Google</button>
+          </div>
+          <p class="hint">Space/comma separated IPs. Leave empty to use 1.1.1.1 + 9.9.9.9.</p>
+        </div>
+      </template>
+
       <details class="advanced">
         <summary>Advanced</summary>
         <div class="advanced-body">
@@ -118,10 +135,18 @@ const form = reactive({
   ts_exit_node: '',
   ts_accept_routes: true,
   ts_accept_dns: true,
+  custom_dns: false,
+  dns_servers: '',
   allow_sudo: false,
   install_packages: '',
   proot_apps: [] as string[],
 })
+
+function addDns(ip: string) {
+  const list = form.dns_servers.split(/[,\s]+/).filter(Boolean)
+  if (!list.includes(ip)) list.push(ip)
+  form.dns_servers = list.join(' ')
+}
 
 // Stored proot_apps is a space/comma-separated string; the selector works on an array.
 function parseProotApps(value: string | null): string[] {
@@ -138,6 +163,8 @@ function resetFromWs() {
   form.ts_exit_node = props.ws.ts_exit_node ?? ''
   form.ts_accept_routes = props.ws.ts_accept_routes
   form.ts_accept_dns = props.ws.ts_accept_dns
+  form.custom_dns = props.ws.custom_dns
+  form.dns_servers = props.ws.dns_servers ?? ''
   form.allow_sudo = props.ws.allow_sudo
   form.install_packages = props.ws.install_packages ?? ''
   form.proot_apps = parseProotApps(props.ws.proot_apps)
@@ -171,8 +198,12 @@ async function handleSubmit() {
             ts_exit_node: form.ts_exit_node || undefined,
             ts_accept_routes: form.ts_accept_routes,
             ts_accept_dns: form.ts_accept_dns,
+            custom_dns: false,
           }
-        : {}),
+        : {
+            custom_dns: form.custom_dns,
+            dns_servers: form.custom_dns ? form.dns_servers.trim() : '',
+          }),
       allow_sudo: form.allow_sudo,
       install_packages: form.install_packages.trim(),
       proot_apps: form.proot_apps.join(' '),
@@ -225,6 +256,20 @@ async function handleSubmit() {
   font-size: 10px;
   color: var(--accent);
 }
+.dns-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dns-presets button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.dns-presets button:hover { color: var(--accent); border-color: var(--accent); }
 .apply-note {
   font-size: 11px;
   line-height: 1.5;

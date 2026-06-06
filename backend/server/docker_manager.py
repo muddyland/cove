@@ -181,6 +181,24 @@ def delete_workspace_storage(ws) -> None:
         logger.info("Purged workspace storage %s", candidate)
 
 
+# Public resolvers used when a workspace opts into custom DNS without naming any.
+_DEFAULT_PUBLIC_DNS = ["1.1.1.1", "9.9.9.9"]
+
+
+def _dns_list(ws) -> list[str] | None:
+    """DNS servers to apply to a workspace, or None to use the Docker default.
+
+    When ``custom_dns`` is set, the container resolves via the listed servers
+    (falling back to public defaults if none were given) instead of the local
+    network's DNS.
+    """
+    if not getattr(ws, "custom_dns", False):
+        return None
+    raw = (getattr(ws, "dns_servers", None) or "").strip()
+    servers = [s for s in re.split(r"[,\s]+", raw) if s]
+    return servers or list(_DEFAULT_PUBLIC_DNS)
+
+
 def _parse_stats(raw: dict) -> dict | None:
     """Reduce a Docker ``stats(stream=False)`` payload to CPU% + memory.
 
@@ -224,6 +242,9 @@ class DockerManager:
         api_version = os.environ.get("DOCKER_API_VERSION")
         self._client = docker.from_env(version=api_version) if api_version else docker.from_env()
         self._lock = Lock()
+        # Image refs with a manual pull currently in flight (for the Images UI).
+        self._pulling: set[str] = set()
+        self._pulling_lock = Lock()
 
     def _get_db(self):
         return SessionLocal()
@@ -254,6 +275,47 @@ class DockerManager:
             logger.info("Pulled image %s", ref)
         except docker.errors.APIError as exc:
             logger.warning("Could not pull %s (%s); using local image if present", ref, exc)
+
+    def image_present(self, ref: str) -> bool:
+        """True if the image is available locally (no registry round-trip)."""
+        try:
+            self._client.images.get(ref)
+            return True
+        except (docker.errors.ImageNotFound, docker.errors.NotFound):
+            return False
+        except docker.errors.APIError as exc:
+            logger.debug("image_present check failed for %s: %s", ref, exc)
+            return False
+
+    def is_pulling(self, ref: str) -> bool:
+        with self._pulling_lock:
+            return ref in self._pulling
+
+    def pull_status(self, ref: str) -> str:
+        """One of 'pulling', 'present', or 'absent'."""
+        if self.is_pulling(ref):
+            return "pulling"
+        return "present" if self.image_present(ref) else "absent"
+
+    def pull_image_blocking(self, ref: str) -> bool:
+        """Pull an image, tracking it as in-flight. Returns True on success.
+
+        Intended to run as a background task behind the manual-pull endpoint; the
+        ``_pulling`` set lets the status endpoint report progress meanwhile.
+        """
+        with self._pulling_lock:
+            self._pulling.add(ref)
+        try:
+            repo, tag = self._split_ref(ref)
+            self._client.images.pull(repo, tag=tag)
+            logger.info("Manually pulled image %s", ref)
+            return True
+        except docker.errors.APIError as exc:
+            logger.warning("Manual pull failed for %s: %s", ref, exc)
+            return False
+        finally:
+            with self._pulling_lock:
+                self._pulling.discard(ref)
 
     @staticmethod
     def _ws_network_name(ws_id: int) -> str:
@@ -479,6 +541,11 @@ class DockerManager:
                     allow_sudo=ws.allow_sudo,
                 )
 
+                # Custom DNS: forwarders for the workspace resolver. Only for
+                # non-Tailscale workspaces — Tailscale routes DNS through tailscaled
+                # (which owns the shared netns resolv.conf), so it isn't overridable.
+                dns = None if ws.use_tailscale else _dns_list(ws)
+
                 if ws.use_tailscale:
                     ts_cfg = db.scalar(
                         select(UserTailscale).where(UserTailscale.user_id == ws.user_id)
@@ -509,6 +576,7 @@ class DockerManager:
                         labels=labels,
                         network=net_name,
                         shm_size="1g",
+                        **({"dns": dns} if dns else {}),
                         **hardening,
                     )
                 logger.info("Started container %s for workspace %s", container.id[:12], ws_id)
@@ -831,6 +899,9 @@ class DockerManager:
             "TS_EXTRA_ARGS": " ".join(extra_args),
         }
 
+        # Custom DNS is intentionally NOT applied here: Tailscale workspaces route
+        # DNS through tailscaled (MagicDNS / accept-dns), which owns the netns
+        # resolv.conf. Custom DNS only applies to non-Tailscale workspaces.
         self._pull_image(ts_image)
         self._client.containers.run(
             ts_image,

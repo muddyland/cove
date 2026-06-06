@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
+from concurrent.futures import ThreadPoolExecutor
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -49,6 +51,42 @@ def list_images(user: CurrentUser, db: DbSession):
         select(WorkspaceImage).where(WorkspaceImage.enabled.is_(True)).order_by(WorkspaceImage.name)
     ).all()
     return images
+
+
+@router.get("/pull-status", response_model=dict[int, str])
+def images_pull_status(user: AdminUser, db: DbSession):
+    """Local availability per image: 'present', 'absent', or 'pulling'.
+
+    Checks run concurrently since each is a Docker daemon round-trip.
+    """
+    images = db.scalars(select(WorkspaceImage)).all()
+    if not images:
+        return {}
+
+    from server.docker_manager import get_docker_manager
+    dm = get_docker_manager()
+
+    results: dict[int, str] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(images))) as ex:
+        futures = {ex.submit(dm.pull_status, img.docker_image): img for img in images}
+        for fut, img in futures.items():
+            results[img.id] = fut.result()
+    return results
+
+
+@router.post("/{image_id}/pull")
+def pull_image(image_id: int, user: AdminUser, db: DbSession, bg: BackgroundTasks):
+    """Manually pull an image in the background. Poll /pull-status for progress."""
+    image = db.get(WorkspaceImage, image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    from server.docker_manager import get_docker_manager
+    dm = get_docker_manager()
+    if dm.is_pulling(image.docker_image):
+        return {"status": "pulling"}
+    bg.add_task(dm.pull_image_blocking, image.docker_image)
+    return {"status": "pulling"}
 
 
 @router.post("/sync")

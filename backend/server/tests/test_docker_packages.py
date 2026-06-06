@@ -9,10 +9,28 @@ from types import SimpleNamespace
 from server.docker_manager import (
     DockerManager,
     _build_browser_cli,
+    _dns_list,
     _helper_script_path,
     _parse_stats,
     _split_packages,
 )
+
+# ── _dns_list (custom DNS resolution) ──────────────────────────────────────────
+
+def test_dns_list_disabled_returns_none():
+    assert _dns_list(SimpleNamespace(custom_dns=False, dns_servers="1.1.1.1")) is None
+
+
+def test_dns_list_enabled_empty_uses_public_defaults():
+    assert _dns_list(SimpleNamespace(custom_dns=True, dns_servers=None)) == ["1.1.1.1", "9.9.9.9"]
+    assert _dns_list(SimpleNamespace(custom_dns=True, dns_servers="  ")) == ["1.1.1.1", "9.9.9.9"]
+
+
+def test_dns_list_parses_custom_servers():
+    assert _dns_list(SimpleNamespace(custom_dns=True, dns_servers="8.8.8.8, 9.9.9.9")) == [
+        "8.8.8.8",
+        "9.9.9.9",
+    ]
 
 # ── _parse_stats (docker stats reduction) ──────────────────────────────────────
 

@@ -56,6 +56,23 @@
         </label>
       </template>
 
+      <template v-if="!form.use_tailscale">
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.custom_dns" />
+          <span>Use custom DNS (public resolvers)</span>
+        </label>
+        <div v-if="form.custom_dns" class="form-group ts-field">
+          <label>DNS servers</label>
+          <input v-model="form.dns_servers" type="text" placeholder="1.1.1.1 9.9.9.9" />
+          <div class="dns-presets">
+            <button type="button" @click="addDns('1.1.1.1')">+ Cloudflare</button>
+            <button type="button" @click="addDns('9.9.9.9')">+ Quad9</button>
+            <button type="button" @click="addDns('8.8.8.8')">+ Google</button>
+          </div>
+          <p class="hint">Space/comma separated IPs. Leave empty to use 1.1.1.1 + 9.9.9.9.</p>
+        </div>
+      </template>
+
       <details class="advanced">
         <summary>Advanced</summary>
         <div class="advanced-body">
@@ -128,10 +145,18 @@ const form = reactive({
   ts_exit_node: '',
   ts_accept_routes: true,
   ts_accept_dns: true,
+  custom_dns: false,
+  dns_servers: '',
   allow_sudo: false,
   install_packages: '',
   proot_apps: [] as string[],
 })
+
+function addDns(ip: string) {
+  const list = form.dns_servers.split(/[,\s]+/).filter(Boolean)
+  if (!list.includes(ip)) list.push(ip)
+  form.dns_servers = list.join(' ')
+}
 
 const selectedImage = computed(() => images.value.find(i => i.id === form.image_id))
 const urlCapable = computed(() =>
@@ -162,7 +187,12 @@ async function handleSubmit() {
             ts_accept_routes: form.ts_accept_routes,
             ts_accept_dns: form.ts_accept_dns,
           }
-        : {}),
+        : {
+            custom_dns: form.custom_dns,
+            ...(form.custom_dns && form.dns_servers.trim()
+              ? { dns_servers: form.dns_servers.trim() }
+              : {}),
+          }),
       allow_sudo: form.allow_sudo,
       ...(form.install_packages.trim() ? { install_packages: form.install_packages.trim() } : {}),
       ...(form.proot_apps.length ? { proot_apps: form.proot_apps.join(' ') } : {}),
@@ -179,6 +209,8 @@ async function handleSubmit() {
     form.ts_exit_node = ''
     form.ts_accept_routes = true
     form.ts_accept_dns = true
+    form.custom_dns = false
+    form.dns_servers = ''
     form.allow_sudo = false
     form.install_packages = ''
     form.proot_apps = []
@@ -229,4 +261,18 @@ async function handleSubmit() {
   font-size: 10px;
   color: var(--accent);
 }
+.dns-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dns-presets button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.dns-presets button:hover { color: var(--accent); border-color: var(--accent); }
 </style>

@@ -14,6 +14,7 @@
             <th>Name</th>
             <th>Docker Image</th>
             <th>Type</th>
+            <th>Downloaded</th>
             <th>Status</th>
             <th></th>
           </tr>
@@ -29,11 +30,24 @@
             <td><code>{{ img.docker_image }}</code></td>
             <td>{{ img.image_type }}</td>
             <td>
+              <span class="pull-state" :class="pullStatus[img.id] ?? 'unknown'">
+                <component :is="pullIcon(img.id)" :size="13" :class="{ spin: pullStatus[img.id] === 'pulling' }" />
+                {{ pullLabel(img.id) }}
+              </span>
+            </td>
+            <td>
               <span class="status-dot" :class="img.enabled ? 'enabled' : 'disabled'">
                 {{ img.enabled ? 'Enabled' : 'Disabled' }}
               </span>
             </td>
             <td class="actions">
+              <NeonButton
+                variant="ghost"
+                :loading="pullStatus[img.id] === 'pulling'"
+                @click="handlePull(img)"
+              >
+                <Download :size="13" /> {{ pullStatus[img.id] === 'present' ? 'Re-pull' : 'Pull' }}
+              </NeonButton>
               <NeonButton variant="ghost" @click="toggleEnabled(img)">
                 <component :is="img.enabled ? ToggleRight : ToggleLeft" :size="15" />
                 {{ img.enabled ? 'Disable' : 'Enable' }}
@@ -90,17 +104,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { RefreshCw, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-vue-next'
-import { imagesApi } from '@/api/images'
+import {
+  RefreshCw, Plus, Trash2, ToggleLeft, ToggleRight,
+  Download, CheckCircle2, CircleDashed, Loader,
+} from 'lucide-vue-next'
+import { imagesApi, type ImagePullStatus } from '@/api/images'
 import { useUiStore } from '@/stores/ui'
 import type { WorkspaceImage } from '@/types'
 
 const images = ref<WorkspaceImage[]>([])
+const pullStatus = ref<Record<number, ImagePullStatus>>({})
+let pullTimer: ReturnType<typeof setInterval> | null = null
 const ui = useUiStore()
 const showForm = ref(false)
 const showConfirm = ref(false)
@@ -116,13 +135,62 @@ function hideLogo(e: Event) {
 }
 
 async function load() { images.value = await imagesApi.list() }
-onMounted(load)
+
+async function loadPullStatus() {
+  try {
+    pullStatus.value = await imagesApi.pullStatus()
+  } catch {
+    // Best-effort; the daemon may be briefly unreachable.
+  }
+  schedulePullPoll()
+}
+
+// Poll only while something is actively downloading.
+function schedulePullPoll() {
+  const anyPulling = Object.values(pullStatus.value).some(s => s === 'pulling')
+  if (anyPulling && !pullTimer) {
+    pullTimer = setInterval(loadPullStatus, 3000)
+  } else if (!anyPulling && pullTimer) {
+    clearInterval(pullTimer)
+    pullTimer = null
+  }
+}
+
+onMounted(async () => {
+  await load()
+  await loadPullStatus()
+})
+onUnmounted(() => { if (pullTimer) clearInterval(pullTimer) })
+
+function pullIcon(id: number) {
+  const s = pullStatus.value[id]
+  if (s === 'present') return CheckCircle2
+  if (s === 'pulling') return Loader
+  return CircleDashed
+}
+function pullLabel(id: number): string {
+  const s = pullStatus.value[id]
+  if (s === 'present') return 'Downloaded'
+  if (s === 'pulling') return 'Pulling…'
+  if (s === 'absent') return 'Not pulled'
+  return '—'
+}
+
+async function handlePull(img: WorkspaceImage) {
+  try {
+    await imagesApi.pull(img.id)
+    pullStatus.value = { ...pullStatus.value, [img.id]: 'pulling' }
+    ui.toast(`Pulling ${img.name}…`, 'info')
+    schedulePullPoll()
+  } catch (e: any) { ui.toast(e.message, 'error') }
+}
 
 async function handleSync() {
   syncing.value = true
   try {
     const res = await imagesApi.sync()
     await load()
+    await loadPullStatus()
     ui.toast(`Synced — ${res.added} added, ${res.updated} updated (${res.total} total)`, 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }
   finally { syncing.value = false }
@@ -141,6 +209,7 @@ async function handleAdd() {
     })
     images.value.push(img)
     showForm.value = false
+    await loadPullStatus()
     ui.toast('Image added', 'success')
     Object.assign(form, { name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000 })
   } catch (e: any) { formError.value = e.message }
@@ -178,6 +247,20 @@ async function handleDelete() {
 .status-dot { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; }
 .enabled { color: var(--green); text-shadow: 0 0 6px var(--green); }
 .disabled { color: var(--text-muted); }
+.pull-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.pull-state.present { color: var(--green); }
+.pull-state.pulling { color: var(--accent); }
+.pull-state.absent, .pull-state.unknown { color: var(--text-muted); }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
 </style>

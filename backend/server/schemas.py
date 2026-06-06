@@ -95,6 +95,9 @@ class WorkspaceCreate(BaseModel):
     ts_exit_node: Optional[str] = None
     ts_accept_routes: bool = True
     ts_accept_dns: bool = True
+    # Use custom (public) DNS resolvers; dns_servers is a space/comma list of IPs.
+    custom_dns: bool = False
+    dns_servers: Optional[str] = None
     # Per-workspace package installation + sudo control.
     install_packages: Optional[str] = None
     proot_apps: Optional[str] = None
@@ -114,6 +117,8 @@ class WorkspaceUpdate(BaseModel):
     ts_exit_node: Optional[str] = None
     ts_accept_routes: Optional[bool] = None
     ts_accept_dns: Optional[bool] = None
+    custom_dns: Optional[bool] = None
+    dns_servers: Optional[str] = None
     install_packages: Optional[str] = None
     proot_apps: Optional[str] = None
     allow_sudo: Optional[bool] = None
@@ -153,6 +158,8 @@ class WorkspaceOut(BaseModel):
     ts_exit_node: Optional[str]
     ts_accept_routes: bool
     ts_accept_dns: bool
+    custom_dns: bool
+    dns_servers: Optional[str]
     install_packages: Optional[str]
     proot_apps: Optional[str]
     allow_sudo: bool
@@ -196,6 +203,8 @@ class WorkspaceOut(BaseModel):
             ts_exit_node=ws.ts_exit_node,
             ts_accept_routes=ws.ts_accept_routes,
             ts_accept_dns=ws.ts_accept_dns,
+            custom_dns=ws.custom_dns,
+            dns_servers=ws.dns_servers,
             install_packages=ws.install_packages,
             proot_apps=ws.proot_apps,
             allow_sudo=ws.allow_sudo,

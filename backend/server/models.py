@@ -86,6 +86,14 @@ class Workspace(Base):
     kiosk_menu: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Use custom (public) DNS resolvers instead of the Docker/host default. When
+    # enabled, the container's resolver forwards to ``dns_servers`` (or sensible
+    # public defaults if none are listed) rather than the local network's DNS.
+    custom_dns: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    # Space/comma separated DNS server IPs (e.g. "1.1.1.1 9.9.9.9").
+    dns_servers: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     # Per-workspace distro packages (universal-package-install Docker Mod), free
     # text — pipe/comma/space separated package names.
     install_packages: Mapped[Optional[str]] = mapped_column(String, nullable=True)

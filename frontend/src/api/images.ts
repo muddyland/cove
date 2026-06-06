@@ -9,4 +9,8 @@ export const imagesApi = {
     api.patch<WorkspaceImage>(`/images/${id}`, payload),
   remove: (id: number) => api.delete(`/images/${id}`),
   sync: () => api.post<{ added: number; updated: number; total: number }>('/images/sync'),
+  pullStatus: () => api.get<Record<number, ImagePullStatus>>('/images/pull-status'),
+  pull: (id: number) => api.post<{ status: ImagePullStatus }>(`/images/${id}/pull`),
 }
+
+export type ImagePullStatus = 'present' | 'absent' | 'pulling'

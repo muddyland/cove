@@ -17,6 +17,8 @@ export const workspacesApi = {
     ts_exit_node?: string
     ts_accept_routes?: boolean
     ts_accept_dns?: boolean
+    custom_dns?: boolean
+    dns_servers?: string
     install_packages?: string
     proot_apps?: string
     allow_sudo?: boolean

@@ -1,3 +1,5 @@
+import ipaddress
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 
@@ -25,6 +27,29 @@ def _audit(db, action, *, detail=None, user=None, request=None):
 
     ip = client_ip(request) if request is not None else None
     record_audit(db, action, detail=detail, user=user, ip=ip)
+
+
+def _clean_dns(raw: str | None) -> str | None:
+    """Validate + normalize a DNS server list to a space-separated IP string.
+
+    Accepts space/comma separated IPv4/IPv6 addresses. Returns None when empty,
+    raises 400 on any malformed entry. Capped at 6 servers (resolv.conf limit).
+    """
+    if not raw or not raw.strip():
+        return None
+    parts = [p for p in re.split(r"[,\s]+", raw.strip()) if p]
+    cleaned: list[str] = []
+    for p in parts:
+        try:
+            ip = ipaddress.ip_address(p)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid DNS server: {p}")
+        s = str(ip)
+        if s not in cleaned:
+            cleaned.append(s)
+    if len(cleaned) > 6:
+        raise HTTPException(status_code=400, detail="At most 6 DNS servers allowed")
+    return " ".join(cleaned) if cleaned else None
 
 
 def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
@@ -80,6 +105,8 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         ts_exit_node=body.ts_exit_node or None,
         ts_accept_routes=body.ts_accept_routes,
         ts_accept_dns=body.ts_accept_dns,
+        custom_dns=body.custom_dns,
+        dns_servers=_clean_dns(body.dns_servers),
         install_packages=body.install_packages or None,
         proot_apps=body.proot_apps or None,
         allow_sudo=body.allow_sudo,
@@ -170,11 +197,13 @@ def update_workspace(
         if not ts or not ts.auth_key:
             raise HTTPException(status_code=400, detail="Tailscale not configured")
 
-    nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps"}
+    nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "dns_servers"}
     for key, value in data.items():
         if key == "name" and not (value or "").strip():
             continue  # never blank the name
-        if key in nullable_text and isinstance(value, str) and value.strip() == "":
+        if key == "dns_servers":
+            value = _clean_dns(value)
+        elif key in nullable_text and isinstance(value, str) and value.strip() == "":
             value = None
         setattr(ws, key, value)
     db.commit()
