@@ -108,3 +108,13 @@ def test_missing_image_is_ignored():
           "tags": [{"tag": "latest", "desc": "Chromium"}]}]
     )
     assert all(s["image_type"] == "browser" for s in specs)
+
+
+def test_linuxserver_base_name_variants():
+    f = catalog.linuxserver_base_name
+    assert f("lscr.io/linuxserver/handbrake:latest") == "handbrake"
+    assert f("linuxserver/webtop") == "webtop"
+    assert f("ghcr.io/linuxserver/kali-linux:rolling") == "kali-linux"
+    assert f("docker.io/library/nginx:1.25") is None
+    assert f("nginx") is None
+    assert f("") is None

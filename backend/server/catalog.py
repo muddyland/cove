@@ -90,13 +90,55 @@ def _build_specs(linuxserver_images: list[dict]) -> list[dict]:
     return specs
 
 
-async def fetch_catalog() -> list[dict]:
-    """Fetch and curate the LinuxServer catalog. Raises on network/parse error."""
+def linuxserver_base_name(docker_image: str) -> str | None:
+    """Extract the LinuxServer image name from a ref, or None if not an lsio image.
+
+    Handles registry prefixes and tags, e.g.
+    ``lscr.io/linuxserver/handbrake:latest`` -> ``handbrake``.
+    """
+    ref = (docker_image or "").strip()
+    if not ref:
+        return None
+    # Drop the tag (a ':' only separates a tag when it's after the final '/').
+    last = ref.rsplit("/", 1)[-1]
+    if ":" in last:
+        ref = ref.rsplit(":", 1)[0]
+    parts = ref.split("/")
+    if "linuxserver" in parts:
+        idx = parts.index("linuxserver")
+        if idx + 1 < len(parts):
+            return parts[idx + 1] or None
+    return None
+
+
+async def fetch_linuxserver_images() -> list[dict]:
+    """Raw LinuxServer image list. Raises on network/parse error."""
     async with httpx.AsyncClient() as client:
         resp = await client.get(LINUXSERVER_API, timeout=20)
         resp.raise_for_status()
         payload = resp.json()
-    images = payload.get("data", {}).get("repositories", {}).get("linuxserver", [])
+    return payload.get("data", {}).get("repositories", {}).get("linuxserver", [])
+
+
+async def fetch_logo(docker_image: str) -> str | None:
+    """Look up the project logo for a LinuxServer image ref (best-effort)."""
+    base = linuxserver_base_name(docker_image)
+    if not base:
+        return None
+    try:
+        images = await fetch_linuxserver_images()
+    except Exception as exc:
+        logger.warning("Logo lookup failed for %s: %s", docker_image, exc)
+        return None
+    for img in images:
+        if img.get("name") == base:
+            return img.get("project_logo")
+    return None
+
+
+async def fetch_catalog() -> list[dict]:
+    """Fetch and curate the LinuxServer catalog. Raises on network/parse error."""
+    images = await fetch_linuxserver_images()
     specs = _build_specs(images)
     logger.info("Fetched %d workspace image specs from LinuxServer", len(specs))
     return specs

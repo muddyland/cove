@@ -4,7 +4,12 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from server.catalog import fetch_catalog
+from server.catalog import (
+    _build_specs,
+    fetch_linuxserver_images,
+    fetch_logo,
+    linuxserver_base_name,
+)
 from server.deps import AdminUser, CurrentUser, DbSession
 from server.models import WorkspaceImage
 from server.schemas import ImageCreate, ImageOut, ImageUpdate
@@ -91,21 +96,54 @@ def pull_image(image_id: int, user: AdminUser, db: DbSession, bg: BackgroundTask
 
 @router.post("/sync")
 async def sync_images(user: AdminUser, db: DbSession):
-    """Auto-populate the catalog from the LinuxServer.io API (admin only)."""
+    """Auto-populate the catalog from the LinuxServer.io API (admin only).
+
+    Also backfills missing logos for any LinuxServer image already in the DB
+    (including manually-added ones outside the curated catalog).
+    """
     try:
-        specs = await fetch_catalog()
+        images_raw = await fetch_linuxserver_images()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to reach LinuxServer API: {exc}")
+    specs = _build_specs(images_raw)
     result = upsert_catalog(db, specs)
+    logos_added = _backfill_logos(db, images_raw)
     total = db.scalar(select(func.count()).select_from(WorkspaceImage))
-    return {"added": result["added"], "updated": result["updated"], "total": total}
+    return {
+        "added": result["added"],
+        "updated": result["updated"] + logos_added,
+        "total": total,
+    }
+
+
+def _backfill_logos(db: Session, images_raw: list[dict]) -> int:
+    """Fill in logos for LinuxServer images that don't have one yet.
+
+    Covers images added manually (or outside the curated catalog) — matched to
+    the upstream project logo by their lsio base name. Returns the count updated.
+    """
+    logos = {i.get("name"): i.get("project_logo") for i in images_raw}
+    updated = 0
+    for row in db.scalars(select(WorkspaceImage)).all():
+        if row.logo_url:
+            continue
+        base = linuxserver_base_name(row.docker_image)
+        if base and logos.get(base):
+            row.logo_url = logos[base]
+            updated += 1
+    if updated:
+        db.commit()
+    return updated
 
 
 @router.post("", response_model=ImageOut, status_code=status.HTTP_201_CREATED)
-def create_image(body: ImageCreate, user: AdminUser, db: DbSession):
+async def create_image(body: ImageCreate, user: AdminUser, db: DbSession):
     if body.image_type not in ("desktop", "link"):
         raise HTTPException(status_code=400, detail="image_type must be 'desktop' or 'link'")
     image = WorkspaceImage(**body.model_dump())
+    # Auto-fetch the project logo for LinuxServer images when none was provided.
+    if not image.logo_url:
+        image.logo_url = await fetch_logo(image.docker_image)
     db.add(image)
     db.commit()
     db.refresh(image)
