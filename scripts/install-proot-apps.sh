@@ -21,8 +21,20 @@ if ! command -v proot-apps >/dev/null 2>&1; then
   exit 0
 fi
 
+# Per-app download cap. proot-apps' downloader has no timeout, so a throttled /
+# stalled ghcr.io blob pull would otherwise hang container init forever.
+timeout_cmd=""
+command -v timeout >/dev/null 2>&1 && timeout_cmd="timeout 600"
+
 for app in $apps; do
+  # /config is persistent, so skip apps already installed (proot-apps extracts to
+  # this path). Avoids re-downloading ~0.5GB per app on every boot — which both
+  # slows recreates and hammers ghcr.io into rate-limiting us.
+  if [ -d "/config/proot-apps/ghcr.io_linuxserver_proot-apps_${app}" ]; then
+    echo "[cove] proot-apps: ${app} already installed, skipping"
+    continue
+  fi
   echo "[cove] proot-apps install ${app}"
-  HOME=/config s6-setuidgid abc proot-apps install "${app}" \
-    || echo "[cove] proot-apps: failed to install ${app}"
+  HOME=/config ${timeout_cmd} s6-setuidgid abc proot-apps install "${app}" \
+    || echo "[cove] proot-apps: failed/timed out installing ${app}"
 done
