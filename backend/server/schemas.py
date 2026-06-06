@@ -126,6 +126,13 @@ class StreamAuthOut(BaseModel):
     url: str
 
 
+class WorkspaceStats(BaseModel):
+    cpu_pct: float
+    mem_used: int
+    mem_limit: int
+    mem_pct: float
+
+
 class WorkspaceOut(BaseModel):
     id: int
     public_id: str

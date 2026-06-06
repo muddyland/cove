@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
@@ -7,7 +8,13 @@ from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.models import UserTailscale, Workspace, WorkspaceImage
 from server.net import client_ip
-from server.schemas import StreamAuthOut, WorkspaceCreate, WorkspaceOut, WorkspaceUpdate
+from server.schemas import (
+    StreamAuthOut,
+    WorkspaceCreate,
+    WorkspaceOut,
+    WorkspaceStats,
+    WorkspaceUpdate,
+)
 from server.security import create_stream_token
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
@@ -88,6 +95,35 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     bg.add_task(get_docker_manager().launch_workspace, ws.id)
 
     return WorkspaceOut.from_workspace(ws)
+
+
+@router.get("/stats", response_model=dict[int, WorkspaceStats])
+def workspace_stats(user: CurrentUser, db: DbSession):
+    """Live CPU/memory for the caller's running workspaces, keyed by id.
+
+    Only running workspaces are included; ids absent from the map have no
+    current stats. Reads run concurrently so the call stays responsive even
+    with several active containers (each Docker stats sample takes ~1s).
+    """
+    q = select(Workspace).where(
+        Workspace.user_id == user.id, Workspace.status == "running"
+    )
+    running = [ws for ws in db.scalars(q).all() if ws.container_id]
+    if not running:
+        return {}
+
+    from server.docker_manager import get_docker_manager
+    dm = get_docker_manager()
+
+    results: dict[int, WorkspaceStats] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(running))) as ex:
+        futures = {ex.submit(dm.get_stats, ws.container_id): ws for ws in running}
+        for fut in as_completed(futures):
+            ws = futures[fut]
+            data = fut.result()
+            if data:
+                results[ws.id] = WorkspaceStats(**data)
+    return results
 
 
 @router.get("/{ws_id}", response_model=WorkspaceOut)

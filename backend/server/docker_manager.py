@@ -181,6 +181,41 @@ def delete_workspace_storage(ws) -> None:
         logger.info("Purged workspace storage %s", candidate)
 
 
+def _parse_stats(raw: dict) -> dict | None:
+    """Reduce a Docker ``stats(stream=False)`` payload to CPU% + memory.
+
+    Returns ``{cpu_pct, mem_used, mem_limit, mem_pct}`` or ``None`` if the
+    payload is too incomplete to compute a CPU delta (e.g. container just
+    started). Memory excludes page cache so the figure tracks real usage.
+    """
+    try:
+        cpu = raw["cpu_stats"]
+        precpu = raw["precpu_stats"]
+        cpu_delta = cpu["cpu_usage"]["total_usage"] - precpu["cpu_usage"]["total_usage"]
+        system_delta = cpu.get("system_cpu_usage", 0) - precpu.get("system_cpu_usage", 0)
+        online = cpu.get("online_cpus") or len(cpu["cpu_usage"].get("percpu_usage") or []) or 1
+        cpu_pct = (cpu_delta / system_delta) * online * 100.0 if system_delta > 0 else 0.0
+
+        mem = raw["memory_stats"]
+        usage = mem.get("usage", 0)
+        # cgroup v2 reports inactive_file; v1 reports cache. Subtract whichever
+        # exists so the number reflects active RSS rather than reclaimable cache.
+        detail = mem.get("stats", {}) or {}
+        cache = detail.get("inactive_file", detail.get("cache", 0))
+        mem_used = max(usage - cache, 0)
+        mem_limit = mem.get("limit", 0)
+        mem_pct = (mem_used / mem_limit) * 100.0 if mem_limit > 0 else 0.0
+    except (KeyError, TypeError, ZeroDivisionError):
+        return None
+
+    return {
+        "cpu_pct": round(cpu_pct, 1),
+        "mem_used": int(mem_used),
+        "mem_limit": int(mem_limit),
+        "mem_pct": round(mem_pct, 1),
+    }
+
+
 class DockerManager:
     def __init__(self):
         # Honor DOCKER_API_VERSION so the client skips version negotiation through
@@ -522,6 +557,20 @@ class DockerManager:
                 db.commit()
         finally:
             db.close()
+
+    def get_stats(self, container_id: str) -> dict | None:
+        """Live CPU/memory for one running container, or None if unavailable."""
+        try:
+            container = self._client.containers.get(container_id)
+            if container.status != "running":
+                return None
+            raw = container.stats(stream=False)
+        except (docker.errors.NotFound, docker.errors.APIError):
+            return None
+        except Exception as exc:  # defensive: never let a stats read break the API
+            logger.debug("stats read failed for %s: %s", container_id[:12], exc)
+            return None
+        return _parse_stats(raw)
 
     def stop_workspace(self, ws_id: int) -> None:
         db = self._get_db()

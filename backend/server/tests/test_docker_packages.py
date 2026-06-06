@@ -10,8 +10,52 @@ from server.docker_manager import (
     DockerManager,
     _build_browser_cli,
     _helper_script_path,
+    _parse_stats,
     _split_packages,
 )
+
+# ── _parse_stats (docker stats reduction) ──────────────────────────────────────
+
+def test_parse_stats_computes_cpu_and_mem():
+    raw = {
+        "cpu_stats": {
+            "cpu_usage": {"total_usage": 2_000},
+            "system_cpu_usage": 20_000,
+            "online_cpus": 4,
+        },
+        "precpu_stats": {
+            "cpu_usage": {"total_usage": 1_000},
+            "system_cpu_usage": 10_000,
+        },
+        "memory_stats": {
+            "usage": 600 * 1024 * 1024,
+            "limit": 1024 * 1024 * 1024,
+            "stats": {"inactive_file": 100 * 1024 * 1024},
+        },
+    }
+    out = _parse_stats(raw)
+    # cpu_delta/system_delta = 1000/10000 = 0.1, * 4 cpus * 100 = 40%
+    assert out["cpu_pct"] == 40.0
+    # 600MB usage - 100MB cache = 500MB used
+    assert out["mem_used"] == 500 * 1024 * 1024
+    assert out["mem_limit"] == 1024 * 1024 * 1024
+    assert out["mem_pct"] == round(500 / 1024 * 100, 1)
+
+
+def test_parse_stats_handles_zero_system_delta():
+    raw = {
+        "cpu_stats": {"cpu_usage": {"total_usage": 5}, "system_cpu_usage": 100},
+        "precpu_stats": {"cpu_usage": {"total_usage": 5}, "system_cpu_usage": 100},
+        "memory_stats": {"usage": 1024, "limit": 2048, "stats": {}},
+    }
+    out = _parse_stats(raw)
+    assert out["cpu_pct"] == 0.0
+    assert out["mem_used"] == 1024
+
+
+def test_parse_stats_returns_none_on_incomplete():
+    assert _parse_stats({}) is None
+    assert _parse_stats({"cpu_stats": {}}) is None
 
 # ── _build_browser_cli (kiosk / dark-mode flags) ───────────────────────────────
 

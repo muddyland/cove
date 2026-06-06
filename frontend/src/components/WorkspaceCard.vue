@@ -27,6 +27,17 @@
         :title="ws.ts_exit_node ? `Routed through Tailscale · exit node: ${ws.ts_exit_node}` : 'Routed through Tailscale'"
       ><Network :size="12" /> Tailscale<template v-if="ws.ts_exit_node"> · {{ ws.ts_exit_node }}</template></span>
     </div>
+    <div v-if="stats" class="stats">
+      <div class="stat">
+        <div class="stat-head"><span><Cpu :size="11" /> CPU</span><span class="stat-val">{{ stats.cpu_pct.toFixed(0) }}%</span></div>
+        <div class="stat-bar"><div class="stat-fill" :style="{ width: barWidth(stats.cpu_pct) }"></div></div>
+      </div>
+      <div class="stat">
+        <div class="stat-head"><span><MemoryStick :size="11" /> MEM</span><span class="stat-val">{{ fmtBytes(stats.mem_used) }}</span></div>
+        <div class="stat-bar"><div class="stat-fill" :style="{ width: barWidth(stats.mem_pct) }"></div></div>
+      </div>
+    </div>
+
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
     <div class="card-actions" @click.stop>
       <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
@@ -63,10 +74,21 @@ import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import EditWorkspaceModal from './EditWorkspaceModal.vue'
-import { Globe, Network, Play, Power, Square, Trash2, Pencil } from 'lucide-vue-next'
-import type { Workspace } from '@/types'
+import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick } from 'lucide-vue-next'
+import type { Workspace, WorkspaceStats } from '@/types'
 
-const props = defineProps<{ ws: Workspace }>()
+const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
+
+function fmtBytes(n: number): string {
+  if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB'
+  if (n >= 1024 ** 2) return Math.round(n / 1024 ** 2) + ' MB'
+  if (n >= 1024) return Math.round(n / 1024) + ' KB'
+  return n + ' B'
+}
+
+function barWidth(pct: number): string {
+  return Math.min(Math.max(pct, 0), 100).toFixed(0) + '%'
+}
 const store = useWorkspacesStore()
 const ui = useUiStore()
 const router = useRouter()
@@ -212,6 +234,33 @@ async function handleRemove() {
 .target-url svg { flex-shrink: 0; }
 .ts-badge { font-size: 11px; color: var(--accent-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
 .ts-badge svg { flex-shrink: 0; }
+
+.stats { display: flex; flex-direction: column; gap: 8px; }
+.stat { display: flex; flex-direction: column; gap: 4px; }
+.stat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+.stat-head > span:first-child { display: inline-flex; align-items: center; gap: 5px; }
+.stat-val { color: var(--accent); }
+.stat-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.stat-fill {
+  height: 100%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(0, 245, 255, 0.4);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
 
 .error-msg {
   font-size: 11px;

@@ -31,6 +31,13 @@ export interface WorkspaceImage {
 
 export type WorkspaceStatus = 'creating' | 'running' | 'stopping' | 'stopped' | 'error'
 
+export interface WorkspaceStats {
+  cpu_pct: number
+  mem_used: number
+  mem_limit: number
+  mem_pct: number
+}
+
 export interface Workspace {
   id: number
   public_id: string

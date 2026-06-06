@@ -1,16 +1,20 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { workspacesApi } from '@/api/workspaces'
-import type { Workspace } from '@/types'
+import type { Workspace, WorkspaceStats } from '@/types'
 
 const TRANSIENT = new Set(['creating', 'stopping'])
+const STATS_INTERVAL = 5000
 
 export const useWorkspacesStore = defineStore('workspaces', () => {
   const items = ref<Workspace[]>([])
+  const stats = ref<Record<number, WorkspaceStats>>({})
   const loading = ref(false)
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let statsTimer: ReturnType<typeof setInterval> | null = null
 
   const hasTransient = computed(() => items.value.some(ws => TRANSIENT.has(ws.status)))
+  const hasRunning = computed(() => items.value.some(ws => ws.status === 'running'))
 
   async function fetch() {
     loading.value = true
@@ -20,6 +24,27 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       loading.value = false
     }
     schedulePoll()
+    fetchStats()
+    scheduleStats()
+  }
+
+  async function fetchStats() {
+    if (!hasRunning.value) {
+      stats.value = {}
+      return
+    }
+    try {
+      stats.value = await workspacesApi.stats()
+    } catch {
+      // Stats are best-effort; keep the last values on a transient failure.
+    }
+  }
+
+  function scheduleStats() {
+    if (statsTimer) clearInterval(statsTimer)
+    statsTimer = setInterval(() => {
+      if (hasRunning.value) fetchStats()
+    }, STATS_INTERVAL)
   }
 
   function schedulePoll() {
@@ -89,7 +114,11 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       clearInterval(pollTimer)
       pollTimer = null
     }
+    if (statsTimer) {
+      clearInterval(statsTimer)
+      statsTimer = null
+    }
   }
 
-  return { items, loading, fetch, launch, update, stop, start, remove, stopPolling }
+  return { items, stats, loading, fetch, fetchStats, launch, update, stop, start, remove, stopPolling }
 })

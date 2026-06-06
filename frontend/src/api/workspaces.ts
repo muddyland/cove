@@ -1,8 +1,9 @@
 import { api } from './client'
-import type { Workspace } from '@/types'
+import type { Workspace, WorkspaceStats } from '@/types'
 
 export const workspacesApi = {
   list: () => api.get<Workspace[]>('/workspaces'),
+  stats: () => api.get<Record<number, WorkspaceStats>>('/workspaces/stats'),
   get: (id: number) => api.get<Workspace>(`/workspaces/${id}`),
   create: (payload: {
     name: string
