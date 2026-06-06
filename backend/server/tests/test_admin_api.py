@@ -89,7 +89,7 @@ def test_env_summary_returns_entries(client):
     assert "entries" in body
     names = {e["name"] for e in body["entries"]}
     assert "COVE_WORKSPACE_DOMAIN" in names
-    assert "COVE_COOKIE_DOMAIN" in names
+    assert "COVE_COOKIE_SECURE" in names
     assert "OIDC enabled" in names
     assert "DB encryption" in names
     # Default (no workspace_domain) shows the subpath hint.

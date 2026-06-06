@@ -125,8 +125,14 @@ origin as the control UI. For stronger isolation you can give each workspace its
 ```ini
 # .env
 COVE_WORKSPACE_DOMAIN=cove.example.com   # workspaces at <public_id>.cove.example.com
-COVE_COOKIE_DOMAIN=cove.example.com      # so the session cookie reaches subdomains
 ```
+
+The SPA session cookie stays **host-only** and is never sent to workspace
+origins. Each stream is authorized by a separate, short-lived **per-workspace
+stream token** (delivered as a host-only `cove_stream` cookie scoped to that one
+workspace origin), so a hostile workspace can only ever obtain a credential for
+the very workspace the user already owns — not the session/admin cookie. No
+shared cookie `Domain` is configured.
 
 This requires a **wildcard DNS record** (`*.cove.example.com`) and a **wildcard
 TLS certificate** — deploy with the DNS-01 override and uncomment the wildcard
@@ -136,7 +142,8 @@ SAN labels in `docker-compose.dns.yml`:
 docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.dns.yml up -d
 ```
 
-Leave both unset to keep the (simpler) subpath routing — no wildcard needed.
+Leave `COVE_WORKSPACE_DOMAIN` unset to keep the (simpler) subpath routing — no
+wildcard needed.
 
 ## 6c. File browser
 

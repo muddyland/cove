@@ -14,6 +14,7 @@ from server.config import get_settings
 from server.db import SessionLocal
 from server.models import Workspace
 from server.schemas import WorkspaceOut
+from server.security import create_stream_token
 from server.tests.helpers import add_image, setup_admin
 
 DOMAIN = "ws.example.com"
@@ -38,22 +39,6 @@ def subdomain_env():
             os.environ.pop("COVE_WORKSPACE_DOMAIN", None)
         else:
             os.environ["COVE_WORKSPACE_DOMAIN"] = prev_domain
-        get_settings.cache_clear()
-
-
-@pytest.fixture
-def cookie_domain_env():
-    """Set COVE_COOKIE_DOMAIN so Set-Cookie carries a Domain attribute."""
-    prev = os.environ.get("COVE_COOKIE_DOMAIN")
-    os.environ["COVE_COOKIE_DOMAIN"] = DOMAIN
-    get_settings.cache_clear()
-    try:
-        yield
-    finally:
-        if prev is None:
-            os.environ.pop("COVE_COOKIE_DOMAIN", None)
-        else:
-            os.environ["COVE_COOKIE_DOMAIN"] = prev
         get_settings.cache_clear()
 
 
@@ -107,43 +92,77 @@ def test_stream_url_subdomain_mode(client, subdomain_env):
 
 # ── ForwardAuth in subdomain mode ─────────────────────────────────────────────
 
-def test_forward_auth_subdomain_authorizes_owner(client, subdomain_env):
-    setup_admin(client)  # owner session cookie in jar
+def _stream_cookie_name():
+    return get_settings().cookie_stream_name
+
+
+def test_forward_auth_subdomain_stream_cookie_authorizes(client, subdomain_env):
+    setup_admin(client)
     image_id = add_image()
     ws = _create_workspace(client, image_id)
     public_id = ws["public_id"]
     host = f"{public_id}.{DOMAIN}"
+    token = create_stream_token(ws["user_id"], public_id)
 
-    # 200 with the owner cookie and the workspace host.
+    # Clear the session cookie to prove it plays NO part in stream auth.
+    client.cookies.clear()
+    client.cookies.set(_stream_cookie_name(), token)
     resp = client.get("/api/auth/forward", headers={"X-Forwarded-Host": host})
     assert resp.status_code == 200
     assert resp.headers.get("X-Cove-User") == "admin"
 
-    # 401 without the session cookie.
-    client.cookies.clear()
+
+def test_forward_auth_subdomain_session_cookie_rejected(client, subdomain_env):
+    """The session cookie must NOT authorize a workspace origin (isolation)."""
+    setup_admin(client)  # session cookie in jar
+    image_id = add_image()
+    ws = _create_workspace(client, image_id)
+    host = f"{ws['public_id']}.{DOMAIN}"
     resp = client.get("/api/auth/forward", headers={"X-Forwarded-Host": host})
     assert resp.status_code == 401
 
 
-def test_forward_auth_subdomain_uses_host_header_fallback(client, subdomain_env):
+def test_forward_auth_subdomain_bootstrap_redirects_and_sets_cookie(client, subdomain_env):
     setup_admin(client)
     image_id = add_image()
     ws = _create_workspace(client, image_id)
-    host = f"{ws['public_id']}.{DOMAIN}"
+    public_id = ws["public_id"]
+    host = f"{public_id}.{DOMAIN}"
+    token = create_stream_token(ws["user_id"], public_id)
 
-    # No X-Forwarded-Host; falls back to Host header.
-    resp = client.get("/api/auth/forward", headers={"Host": host})
-    assert resp.status_code == 200
+    client.cookies.clear()
+    resp = client.get(
+        "/api/auth/forward",
+        headers={
+            "X-Forwarded-Host": host,
+            "X-Forwarded-Uri": f"/?__cove_t={token}",
+            "X-Forwarded-Proto": "https",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    # Redirects to the clean URL with the one-time token stripped.
+    assert resp.headers["location"] == f"https://{host}/"
+    assert "__cove_t" not in resp.headers["location"]
+    # Sets the host-only stream cookie (no Domain attribute).
+    set_cookies = resp.headers.get_list("set-cookie")
+    assert any(_stream_cookie_name() in c for c in set_cookies), set_cookies
+    assert all("domain=" not in c.lower() for c in set_cookies), set_cookies
 
 
-def test_forward_auth_subdomain_strips_port(client, subdomain_env):
+def test_forward_auth_subdomain_token_scoped_to_one_workspace(client, subdomain_env):
     setup_admin(client)
     image_id = add_image()
-    ws = _create_workspace(client, image_id)
-    host = f"{ws['public_id']}.{DOMAIN}:8443"
+    ws_a = _create_workspace(client, image_id, name="a")
+    ws_b = _create_workspace(client, image_id, name="b")
+    host_b = f"{ws_b['public_id']}.{DOMAIN}"
 
-    resp = client.get("/api/auth/forward", headers={"X-Forwarded-Host": host})
-    assert resp.status_code == 200
+    # A token minted for workspace A must not authorize workspace B's origin.
+    token_a = create_stream_token(ws_a["user_id"], ws_a["public_id"])
+    client.cookies.clear()
+    client.cookies.set(_stream_cookie_name(), token_a)
+    resp = client.get("/api/auth/forward", headers={"X-Forwarded-Host": host_b})
+    assert resp.status_code == 401
 
 
 def test_forward_auth_subdomain_unknown_host_401(client, subdomain_env):
@@ -170,18 +189,56 @@ def test_forward_auth_subdomain_falls_back_to_subpath(client, subdomain_env):
 
 # ── Cookie Domain attribute ───────────────────────────────────────────────────
 
-def test_cookies_include_domain_when_set(client, cookie_domain_env):
-    # Fresh setup issues Set-Cookie with the configured Domain.
-    resp = client.post(
-        "/api/auth/setup", json={"username": "admin", "password": "password123"}
-    )
-    assert resp.status_code == 201, resp.text
-    set_cookies = resp.headers.get_list("set-cookie")
-    assert set_cookies
-    assert any(f"domain={DOMAIN}" in c.lower() for c in set_cookies), set_cookies
+# ── stream-auth endpoint ──────────────────────────────────────────────────────
+
+def test_stream_auth_subpath_returns_plain_path(client):
+    setup_admin(client)
+    image_id = add_image()
+    ws = _create_workspace(client, image_id)
+    _mark_running(ws["id"])
+    resp = client.post(f"/api/workspaces/{ws['id']}/stream-auth")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["url"] == f"/workspace/{ws['public_id']}/"
 
 
-def test_cookies_host_only_by_default(client):
+def test_stream_auth_subdomain_returns_token_url(client, subdomain_env):
+    setup_admin(client)
+    image_id = add_image()
+    ws = _create_workspace(client, image_id)
+    _mark_running(ws["id"])
+    resp = client.post(f"/api/workspaces/{ws['id']}/stream-auth")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["url"].startswith(f"//{ws['public_id']}.{DOMAIN}/?__cove_t=")
+
+
+def test_stream_auth_requires_running(client):
+    setup_admin(client)
+    image_id = add_image()
+    ws = _create_workspace(client, image_id)  # status 'creating'
+    resp = client.post(f"/api/workspaces/{ws['id']}/stream-auth")
+    assert resp.status_code == 409
+
+
+def test_stream_auth_denied_for_non_owner(client):
+    admin_token, _ = setup_admin(client)
+    image_id = add_image()
+    ws = _create_workspace(client, image_id)
+    _mark_running(ws["id"])
+
+    from server.tests.helpers import create_user_via_admin
+    create_user_via_admin(client, admin_token, "bob")
+    client.cookies.clear()
+    login = client.post("/api/auth/login", json={"username": "bob", "password": "password123"})
+    assert login.status_code == 200
+
+    resp = client.post(f"/api/workspaces/{ws['id']}/stream-auth")
+    assert resp.status_code == 403
+
+
+def test_session_cookies_are_always_host_only(client):
+    """The session/refresh cookies must never carry a Domain attribute, so they
+    are not sent to workspace origins. (Regression guard for the workspace
+    session-cookie leak: there is deliberately no cookie-Domain setting.)"""
     resp = client.post(
         "/api/auth/setup", json={"username": "admin", "password": "password123"}
     )

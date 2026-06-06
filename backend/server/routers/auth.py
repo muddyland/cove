@@ -1,6 +1,7 @@
 import re
 import time
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from server import oidc as oidc_module
 from server.config import get_settings
-from server.deps import CurrentUser, DbSession, resolve_user_from_token
+from server.deps import CurrentUser, DbSession, _check_revocation, resolve_user_from_token
 from server.models import User, Workspace
 from server.net import client_ip
 from server.schemas import (
@@ -56,7 +57,9 @@ def _set_auth_cookies(resp: Response, user: User) -> None:
     settings = get_settings()
     access = create_access_token(user.id, user.is_admin)
     refresh = create_refresh_token(user.id)
-    domain = settings.cookie_domain or None
+    # Host-only (no Domain): the session/refresh cookies must NOT be sent to
+    # workspace origins ({id}.{domain}). Workspace streams authenticate with a
+    # separate, per-workspace ``cove_stream`` token instead (see forward_auth).
     resp.set_cookie(
         settings.cookie_session_name,
         access,
@@ -64,7 +67,6 @@ def _set_auth_cookies(resp: Response, user: User) -> None:
         secure=settings.cookie_secure,
         samesite="lax",
         path="/",
-        domain=domain,
         max_age=settings.access_token_minutes * 60,
     )
     resp.set_cookie(
@@ -74,16 +76,14 @@ def _set_auth_cookies(resp: Response, user: User) -> None:
         secure=settings.cookie_secure,
         samesite="lax",
         path="/api/auth",
-        domain=domain,
         max_age=settings.refresh_token_days * 86400,
     )
 
 
 def _clear_auth_cookies(resp: Response) -> None:
     settings = get_settings()
-    domain = settings.cookie_domain or None
-    resp.delete_cookie(settings.cookie_session_name, path="/", domain=domain)
-    resp.delete_cookie(settings.cookie_refresh_name, path="/api/auth", domain=domain)
+    resp.delete_cookie(settings.cookie_session_name, path="/")
+    resp.delete_cookie(settings.cookie_refresh_name, path="/api/auth")
 
 
 def _check_rate_limit(ip: str) -> bool:
@@ -323,55 +323,151 @@ async def oidc_callback(
     return resp
 
 
+def _public_id_from_host(host: str | None, settings) -> str | None:
+    """Extract the workspace public_id from a ``{public_id}.{domain}`` host."""
+    if not host:
+        return None
+    host = host.split(":", 1)[0]  # strip any :port
+    suffix = f".{settings.workspace_domain}"
+    if host.endswith(suffix):
+        label = host[: -len(suffix)]
+        if label and "." not in label:
+            return label
+    return None
+
+
+def _authorize_ws(db: Session, public_id: str, user: User) -> bool:
+    ws = db.scalar(select(Workspace).where(Workspace.public_id == public_id))
+    if not ws:
+        return False
+    return ws.user_id == user.id or user.is_admin
+
+
+def _resolve_stream_user(db: Session, token: str, public_id: str) -> User | None:
+    """Validate a stream token and confirm it is scoped to this workspace."""
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "stream":
+        return None
+    if payload.get("ws") != public_id:
+        return None
+    sub = payload.get("sub")
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        return None
+    user = db.get(User, user_id)
+    if not user or not _check_revocation(user, payload):
+        return None
+    return user
+
+
+def _stream_token_from_uri(uri: str | None) -> str | None:
+    if not uri:
+        return None
+    values = parse_qs(urlsplit(uri).query).get("__cove_t")
+    return values[0] if values else None
+
+
+def _clean_stream_url(request: Request, settings, uri: str | None) -> str:
+    """Rebuild the absolute workspace URL with the one-time token stripped."""
+    proto = request.headers.get("X-Forwarded-Proto") or (
+        "https" if settings.cookie_secure else "http"
+    )
+    host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
+    parts = urlsplit(uri or "/")
+    params = {k: v for k, v in parse_qs(parts.query).items() if k != "__cove_t"}
+    query = urlencode({k: v[0] for k, v in params.items()})
+    url = f"{proto}://{host}{parts.path or '/'}"
+    return f"{url}?{query}" if query else url
+
+
+def _forward_auth_subdomain(request, db, settings, public_id: str, uri: str | None):
+    """Authenticate a workspace stream on its own origin (subdomain mode).
+
+    The session cookie is host-only on the SPA and is NOT sent here, so we use a
+    per-workspace ``cove_stream`` cookie. First request carries a one-time
+    ``?__cove_t`` token minted by the SPA; we validate it, set the host-only
+    stream cookie, and 302 to the clean URL (Traefik relays this non-2xx auth
+    response — including Set-Cookie — to the browser).
+    """
+    ip = client_ip(request)
+
+    cookie = request.cookies.get(settings.cookie_stream_name)
+    if cookie:
+        user = _resolve_stream_user(db, cookie, public_id)
+        if user and _authorize_ws(db, public_id, user):
+            return Response(status_code=200, headers={"X-Cove-User": user.username})
+
+    token = _stream_token_from_uri(uri)
+    if token:
+        user = _resolve_stream_user(db, token, public_id)
+        if user and _authorize_ws(db, public_id, user):
+            resp = Response(
+                status_code=302,
+                headers={"Location": _clean_stream_url(request, settings, uri)},
+            )
+            resp.set_cookie(
+                settings.cookie_stream_name,
+                token,
+                httponly=True,
+                secure=settings.cookie_secure,
+                samesite="lax",
+                path="/",
+                max_age=settings.stream_token_minutes * 60,
+            )
+            return resp
+
+    _record_audit(db, "stream.deny", detail=public_id, ip=ip)
+    return Response(status_code=401)
+
+
+def _forward_auth_subpath(request, db, uri: str | None):
+    """Authenticate a workspace stream served same-origin under /workspace/{id}/.
+
+    Same origin as the SPA, so the host-only session cookie is available here.
+    """
+    token = request.cookies.get(get_settings().cookie_session_name)
+    if not token:
+        return Response(status_code=401)
+    user = resolve_user_from_token(db, token)
+    if not user:
+        return Response(status_code=401)
+
+    public_id = None
+    if uri:
+        match = _STREAM_RE.match(uri)
+        if match:
+            public_id = match.group(1)
+    if not public_id:
+        return Response(status_code=401)
+
+    if _authorize_ws(db, public_id, user):
+        return Response(status_code=200, headers={"X-Cove-User": user.username})
+
+    _record_audit(db, "stream.deny", detail=uri, user=user, ip=client_ip(request))
+    return Response(status_code=401)
+
+
 @router.get("/forward")
 def forward_auth(request: Request, db: DbSession):
-    """Traefik ForwardAuth endpoint. Validates the session cookie itself.
+    """Traefik ForwardAuth endpoint for workspace streams.
 
     Robust: any missing piece results in 401.
     """
     settings = get_settings()
     try:
-        token = request.cookies.get(settings.cookie_session_name)
-        if not token:
-            return Response(status_code=401)
-        user = resolve_user_from_token(db, token)
-        if not user:
-            return Response(status_code=401)
-
         uri = request.headers.get("X-Forwarded-Uri") or request.headers.get("X-Forwarded-Path")
 
-        public_id = None
-        detail = uri
-        # Subdomain mode: resolve from the original host's leading label.
+        # Subdomain mode: resolve the workspace from the host and authenticate
+        # via the per-workspace stream cookie. A subpath X-Forwarded-Uri may
+        # still arrive (mixed routing), so fall through to subpath handling when
+        # the host doesn't resolve to a workspace.
         if settings.workspace_domain:
             host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
-            if host:
-                host = host.split(":", 1)[0]  # strip any :port
-                suffix = f".{settings.workspace_domain}"
-                if host.endswith(suffix):
-                    label = host[: -len(suffix)]
-                    if label and "." not in label:
-                        public_id = label
-                        detail = host
+            public_id = _public_id_from_host(host, settings)
+            if public_id:
+                return _forward_auth_subdomain(request, db, settings, public_id, uri)
 
-        # Fall back to the subpath route on X-Forwarded-Uri.
-        if public_id is None and uri:
-            match = _STREAM_RE.match(uri)
-            if match:
-                public_id = match.group(1)
-
-        if not public_id:
-            return Response(status_code=401)
-
-        ws = db.scalar(select(Workspace).where(Workspace.public_id == public_id))
-        if not ws:
-            _record_audit(db, "stream.deny", detail=detail, user=user, ip=client_ip(request))
-            return Response(status_code=401)
-
-        if ws.user_id == user.id or user.is_admin:
-            return Response(status_code=200, headers={"X-Cove-User": user.username})
-
-        _record_audit(db, "stream.deny", detail=detail, user=user, ip=client_ip(request))
-        return Response(status_code=401)
+        return _forward_auth_subpath(request, db, uri)
     except Exception:
         return Response(status_code=401)

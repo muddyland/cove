@@ -110,6 +110,13 @@ class WorkspaceUpdate(BaseModel):
     allow_sudo: Optional[bool] = None
 
 
+class StreamAuthOut(BaseModel):
+    # The URL the SPA should point the workspace iframe at. In subdomain mode it
+    # carries a one-time ``?__cove_t`` token that bootstraps the per-workspace
+    # stream cookie; in subpath mode it is the plain same-origin stream path.
+    url: str
+
+
 class WorkspaceOut(BaseModel):
     id: int
     public_id: str

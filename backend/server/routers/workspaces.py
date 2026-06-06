@@ -3,10 +3,12 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import select
 
+from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.models import UserTailscale, Workspace, WorkspaceImage
 from server.net import client_ip
-from server.schemas import WorkspaceCreate, WorkspaceOut, WorkspaceUpdate
+from server.schemas import StreamAuthOut, WorkspaceCreate, WorkspaceOut, WorkspaceUpdate
+from server.security import create_stream_token
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -89,6 +91,28 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
 def get_workspace(ws_id: int, user: CurrentUser, db: DbSession):
     ws = _get_workspace_or_404(ws_id, user, db)
     return WorkspaceOut.from_workspace(ws)
+
+
+@router.post("/{ws_id}/stream-auth", response_model=StreamAuthOut)
+def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
+    """Mint the iframe URL the SPA uses to open a workspace stream.
+
+    Subdomain mode: returns ``//{host}/?__cove_t=<token>`` where the one-time
+    token bootstraps a per-workspace, host-only stream cookie (so the SPA's
+    session cookie is never sent to the workspace origin). Subpath mode: returns
+    the plain same-origin path (the session cookie authorizes it directly).
+    """
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if ws.status != "running":
+        raise HTTPException(status_code=409, detail="Workspace is not running")
+
+    settings = get_settings()
+    if not settings.workspace_domain:
+        return StreamAuthOut(url=f"/workspace/{ws.public_id}/")
+
+    token = create_stream_token(user.id, ws.public_id)
+    host = settings.workspace_host(ws.public_id)
+    return StreamAuthOut(url=f"//{host}/?__cove_t={token}")
 
 
 @router.patch("/{ws_id}", response_model=WorkspaceOut)

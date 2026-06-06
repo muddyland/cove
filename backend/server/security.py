@@ -71,6 +71,27 @@ def create_refresh_token(user_id: int) -> str:
     return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
 
 
+def create_stream_token(user_id: int, public_id: str) -> str:
+    """Mint a per-workspace stream token (subdomain mode).
+
+    Scoped to a single workspace (``ws``) and the requesting user (``sub``) so a
+    hostile workspace origin that captures it gains nothing beyond access to the
+    very workspace the user already owns. Carries ``iat`` so it is revoked by the
+    same ``tokens_valid_from`` mechanism as access tokens (logout/password change).
+    """
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.stream_token_minutes)
+    payload = {
+        "sub": str(user_id),
+        "ws": public_id,
+        "type": "stream",
+        "iat": now,
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
+
+
 def decode_token(token: str) -> Optional[dict]:
     """Verify signature + expiry; return claims or None."""
     settings = get_settings()
