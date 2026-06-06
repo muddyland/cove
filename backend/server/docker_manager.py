@@ -25,8 +25,36 @@ from server.settings_store import (
 
 logger = logging.getLogger(__name__)
 
-_LAUNCH_URL_SCRIPT_HOST_PATH = "/app/scripts/launch-url.sh"
-_PROOT_SCRIPT_HOST_PATH = "/app/scripts/install-proot-apps.sh"
+# Where the helper scripts live inside the cove container (baked by the Dockerfile
+# / bind-mounted from the host checkout).
+_SCRIPTS_SRC_DIR = "/app/scripts"
+_HELPER_SCRIPTS = ("install-proot-apps.sh", "launch-url.sh")
+
+
+def _stage_helper_scripts() -> "Path":
+    """Stage helper scripts into the storage tree and return that directory.
+
+    Workspace bind-mount *sources* are resolved by the Docker daemon on the HOST,
+    where the cove container's ``/app/scripts`` does not exist (the daemon would
+    silently create an empty directory there and mount that instead of the script).
+    The storage root, by contrast, is bind-mounted at an identical path on host
+    and container, so files staged under it resolve correctly on the host.
+    """
+    settings = get_settings()
+    base = settings.storage_path or (settings.data_dir / "workspaces")
+    dest = Path(base) / ".cove-scripts"
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in _HELPER_SCRIPTS:
+        src = Path(_SCRIPTS_SRC_DIR) / name
+        if src.exists():
+            shutil.copyfile(src, dest / name)
+            os.chmod(dest / name, 0o755)
+    return dest
+
+
+def _helper_script_path(name: str) -> str:
+    """Host-resolvable bind-mount source for a staged helper script."""
+    return str(_stage_helper_scripts() / name)
 
 # Helper image used to apply egress firewall rules inside a workspace netns.
 # netshoot ships iptables; it runs briefly and is removed immediately.
@@ -328,7 +356,7 @@ class DockerManager:
                 mount_source: {"bind": "/config", "mode": "rw"},
             }
             if ws.workspace_type == "link" and not image.url_env:
-                volumes[_LAUNCH_URL_SCRIPT_HOST_PATH] = {
+                volumes[_helper_script_path("launch-url.sh")] = {
                     "bind": "/custom-cont-init.d/99-launch-url.sh",
                     "mode": "ro",
                 }
@@ -694,7 +722,7 @@ class DockerManager:
         if not apps:
             return
         env["PROOT_APPS"] = " ".join(apps)
-        volumes[_PROOT_SCRIPT_HOST_PATH] = {
+        volumes[_helper_script_path("install-proot-apps.sh")] = {
             "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
             "mode": "ro",
         }

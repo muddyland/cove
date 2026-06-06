@@ -4,7 +4,7 @@ These are pure functions / static methods that build env, volumes, and
 hardening kwargs without ever touching a real Docker daemon.
 """
 
-from server.docker_manager import _PROOT_SCRIPT_HOST_PATH, DockerManager, _split_packages
+from server.docker_manager import DockerManager, _helper_script_path, _split_packages
 
 # ── _split_packages ────────────────────────────────────────────────────────────
 
@@ -71,7 +71,10 @@ def test_apply_proot_apps_sets_env_and_mount():
     volumes: dict = {}
     DockerManager._apply_proot_apps(env, volumes, "firefox, libreoffice")
     assert env["PROOT_APPS"] == "firefox libreoffice"
-    assert volumes[_PROOT_SCRIPT_HOST_PATH] == {
+    # The bind source is the staged (host-resolvable) copy under the storage tree.
+    key = _helper_script_path("install-proot-apps.sh")
+    assert key.endswith("/.cove-scripts/install-proot-apps.sh")
+    assert volumes[key] == {
         "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
         "mode": "ro",
     }
