@@ -67,6 +67,9 @@ h2 {
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* Equalize every row to the tallest card so the whole grid is uniform,
+     not just cards within a single row. */
+  grid-auto-rows: 1fr;
   align-items: stretch;
   gap: 16px;
 }
