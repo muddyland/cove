@@ -43,12 +43,6 @@
         </nav>
 
         <div class="nav-right">
-          <button
-            class="crt-btn"
-            :class="{ active: ui.crt }"
-            :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
-            @click="ui.toggleCrt()"
-          ><ScanLine class="nav-icon" :size="14" /> CRT</button>
           <RouterLink to="/preferences" class="user-chip" title="Preferences">
             <UserRound class="nav-icon" :size="14" />
             <span class="username">{{ auth.user?.username }}</span>
@@ -68,15 +62,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { useUiStore } from '@/stores/ui'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes,
-  ScrollText, Settings, ScanLine, UserRound, LogOut, Menu, X,
+  ScrollText, Settings, UserRound, LogOut, Menu, X,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
-const ui = useUiStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -245,32 +237,12 @@ async function handleLogout() {
 }
 .logout-btn:hover { color: var(--red); text-shadow: 0 0 8px var(--red); }
 
-.crt-btn {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: 10px;
-  font-family: var(--font-mono);
-  letter-spacing: 1px;
-  padding: 4px 8px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.crt-btn:hover { color: var(--text); border-color: var(--text-muted); }
-.crt-btn.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  text-shadow: var(--glow-sm);
-}
-
 .content { flex: 1; overflow-y: auto; padding: 28px; }
 
 /* Shared icon styling — inherit currentColor, no shrink. */
 .nav-icon { flex-shrink: 0; }
 .nav-link.active .nav-icon { filter: drop-shadow(var(--glow-sm)); }
-.crt-btn, .logout-btn { display: inline-flex; align-items: center; gap: 5px; }
-.crt-btn.active .nav-icon { filter: drop-shadow(var(--glow-sm)); }
+.logout-btn { display: inline-flex; align-items: center; gap: 5px; }
 
 /* ── Mobile: collapse the nav into a hamburger-toggled drawer ───────────────── */
 @media (max-width: 860px) {

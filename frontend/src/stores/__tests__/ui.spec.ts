@@ -53,19 +53,15 @@ describe('ui store', () => {
     it('defaults to on when localStorage is empty', () => {
       const ui = useUiStore()
       expect(ui.crt).toBe(true)
-      // immediate watcher applies side effects
-      expect(localStorage.getItem('cove_crt')).toBe('on')
-      expect(document.body.classList.contains('cove-crt')).toBe(true)
     })
 
     it('defaults to off when localStorage says off', () => {
       localStorage.setItem('cove_crt', 'off')
       const ui = useUiStore()
       expect(ui.crt).toBe(false)
-      expect(document.body.classList.contains('cove-crt')).toBe(false)
     })
 
-    it('toggleCrt() flips the value and persists/toggles the body class', async () => {
+    it('toggleCrt() flips the value and persists the preference', async () => {
       const ui = useUiStore()
       expect(ui.crt).toBe(true)
 
@@ -74,13 +70,11 @@ describe('ui store', () => {
       await Promise.resolve()
       expect(ui.crt).toBe(false)
       expect(localStorage.getItem('cove_crt')).toBe('off')
-      expect(document.body.classList.contains('cove-crt')).toBe(false)
 
       ui.toggleCrt()
       await Promise.resolve()
       expect(ui.crt).toBe(true)
       expect(localStorage.getItem('cove_crt')).toBe('on')
-      expect(document.body.classList.contains('cove-crt')).toBe(true)
     })
   })
 })

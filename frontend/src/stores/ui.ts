@@ -21,16 +21,12 @@ export const useUiStore = defineStore('ui', () => {
     toasts.value = toasts.value.filter(t => t.id !== id)
   }
 
-  // CRT scanline effect — user preference, on by default, persisted.
+  // CRT scanline effect — user preference, on by default, persisted. Applied to
+  // the workspace stream iframe (the connect page), not globally.
   const crt = ref(localStorage.getItem('cove_crt') !== 'off')
-  watch(
-    crt,
-    (on) => {
-      localStorage.setItem('cove_crt', on ? 'on' : 'off')
-      document.body.classList.toggle('cove-crt', on)
-    },
-    { immediate: true },
-  )
+  watch(crt, (on) => {
+    localStorage.setItem('cove_crt', on ? 'on' : 'off')
+  })
   function toggleCrt() {
     crt.value = !crt.value
   }

@@ -7,6 +7,13 @@
         <StatusBadge v-if="ws" :status="ws.status" />
       </div>
       <div class="top-actions">
+        <button
+          v-if="ws?.status === 'running'"
+          class="crt-btn"
+          :class="{ active: ui.crt }"
+          :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
+          @click="ui.toggleCrt()"
+        ><ScanLine :size="14" /> CRT</button>
         <NeonButton v-if="ws?.status === 'running'" variant="secondary" :loading="stopping" @click="handleStop">HALT</NeonButton>
       </div>
     </div>
@@ -24,6 +31,9 @@
         allow="autoplay; clipboard-read; clipboard-write; fullscreen; camera; microphone"
         allowfullscreen
       />
+      <!-- CRT scanline / flicker overlay (pointer-events:none so the stream stays
+           interactive). Toggled per-user from the top bar. -->
+      <div v-if="ui.crt" class="crt-overlay" aria-hidden="true" />
       <!-- Branding overlay -->
       <div class="branding">
         <img src="/favicon.svg" alt="" />
@@ -46,6 +56,7 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import { ScanLine } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -73,13 +84,11 @@ async function loadStreamUrl() {
 }
 
 onMounted(async () => {
-  document.body.classList.add('cove-immersive')
   if (!ws.value) await store.fetch()
   startPollIfNeeded()
   await loadStreamUrl()
 })
 onUnmounted(() => {
-  document.body.classList.remove('cove-immersive')
   if (pollTimer) clearInterval(pollTimer)
 })
 
@@ -143,10 +152,72 @@ async function handleStop() {
 
 .ws-info { display: flex; align-items: center; gap: 10px; flex: 1; }
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
-.top-actions { margin-left: auto; }
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
 .frame-wrap { flex: 1; position: relative; }
 .workspace-frame { width: 100%; height: 100%; border: none; display: block; }
+
+/* CRT effect over the stream: fine scanlines + a soft vignette + a faint
+   flicker. pointer-events:none keeps the underlying iframe fully interactive. */
+.crt-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background:
+    radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.35) 100%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.18),
+      rgba(0, 0, 0, 0.18) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  mix-blend-mode: multiply;
+  animation: crt-flicker 6s steps(60) infinite;
+}
+/* A second, very subtle moving scanline band for the rolling-CRT feel. */
+.crt-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(0, 245, 255, 0.04), transparent 40%);
+  height: 30%;
+  animation: crt-roll 8s linear infinite;
+}
+@keyframes crt-flicker {
+  0%, 100% { opacity: 0.85; }
+  48% { opacity: 0.9; }
+  50% { opacity: 0.78; }
+  52% { opacity: 0.9; }
+}
+@keyframes crt-roll {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(430%); }
+}
+
+.crt-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 1px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.crt-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.crt-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  text-shadow: var(--glow-sm);
+}
+.crt-btn.active svg { filter: drop-shadow(var(--glow-sm)); }
 
 .branding {
   position: absolute;

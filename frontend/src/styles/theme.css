@@ -34,28 +34,6 @@ html, body, #app {
   line-height: 1.5;
 }
 
-/* Subtle scanline overlay on the app chrome (CRT effect).
-   Opt-in via the body.cove-crt class (toggled from the UI store). */
-body.cove-crt::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.06) 2px,
-    rgba(0, 0, 0, 0.06) 4px
-  );
-  pointer-events: none;
-  z-index: 9998;
-}
-
-/* Never overlay the live workspace stream — it must render pristine. */
-body.cove-immersive::after {
-  display: none;
-}
-
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); text-shadow: var(--glow-sm); }
 
