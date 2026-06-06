@@ -8,6 +8,7 @@ from server.deps import CurrentUser, DbSession
 from server.models import UserTailscale
 from server.net import client_ip
 from server.schemas import _UNSET, TailscaleConfigOut, TailscaleConfigUpdate
+from server.security import encrypt_secret
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -49,9 +50,9 @@ def update_my_tailscale(
         db.add(ts)
 
     # auth_key semantics: omitted (sentinel) -> leave unchanged; "" or null -> clear;
-    # non-empty string -> replace.
+    # non-empty string -> replace. Stored encrypted at rest.
     if body.auth_key != _UNSET:
-        ts.auth_key = body.auth_key if body.auth_key else None
+        ts.auth_key = encrypt_secret(body.auth_key) if body.auth_key else None
 
     if body.login_server is not None:
         login_server = body.login_server or None

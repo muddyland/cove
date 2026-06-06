@@ -1,5 +1,9 @@
 """Tests for the users router (per-user Tailscale config)."""
 
+from sqlalchemy import select
+
+from server.db import SessionLocal
+from server.models import UserTailscale
 from server.tests.helpers import setup_admin
 
 
@@ -62,6 +66,27 @@ def test_clearing_auth_key(client):
     resp = client.put("/api/users/me/tailscale", json={"auth_key": ""})
     assert resp.status_code == 200
     assert resp.json()["has_auth_key"] is False
+
+
+def test_auth_key_stored_encrypted_at_rest(client):
+    from server import security
+
+    setup_admin(client)
+    client.put("/api/users/me/tailscale", json={"auth_key": "tskey-auth-PLAINTEXT-xyz"})
+
+    db = SessionLocal()
+    try:
+        ts = db.scalar(select(UserTailscale))
+        stored = ts.auth_key
+    finally:
+        db.close()
+
+    # The raw key must not be on disk; it is a recognizable encrypted token that
+    # decrypts back to the original.
+    assert stored is not None
+    assert "tskey-auth-PLAINTEXT-xyz" not in stored
+    assert stored.startswith(security._SECRET_PREFIX)
+    assert security.decrypt_secret(stored) == "tskey-auth-PLAINTEXT-xyz"
 
 
 def test_login_server_must_be_https(client):

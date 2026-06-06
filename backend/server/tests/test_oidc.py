@@ -89,3 +89,22 @@ def test_unknown_kid_rejected(oidc_setup):
     token = _encode(oidc_setup, {"sub": "abc", "aud": _AUD, "iss": _ISSUER}, kid="other-kid")
     with pytest.raises(JWTError):
         asyncio.run(oidc_module.verify_id_token(token))
+
+
+def test_matching_nonce_accepted(oidc_setup):
+    token = _encode(oidc_setup, {"sub": "abc", "aud": _AUD, "iss": _ISSUER, "nonce": "n-123"})
+    claims = asyncio.run(oidc_module.verify_id_token(token, nonce="n-123"))
+    assert claims["sub"] == "abc"
+
+
+def test_nonce_mismatch_rejected(oidc_setup):
+    token = _encode(oidc_setup, {"sub": "abc", "aud": _AUD, "iss": _ISSUER, "nonce": "n-123"})
+    with pytest.raises(JWTError):
+        asyncio.run(oidc_module.verify_id_token(token, nonce="different"))
+
+
+def test_missing_nonce_claim_rejected_when_expected(oidc_setup):
+    # We sent a nonce but the token carries none -> reject.
+    token = _encode(oidc_setup, {"sub": "abc", "aud": _AUD, "iss": _ISSUER})
+    with pytest.raises(JWTError):
+        asyncio.run(oidc_module.verify_id_token(token, nonce="n-123"))

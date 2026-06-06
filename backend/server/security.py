@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import re
@@ -5,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
+from cryptography.fernet import Fernet, InvalidToken
 from jose import JWTError, jwt
 
 from server.config import get_settings
@@ -34,6 +36,40 @@ def validate_username(username: str) -> str:
             detail="Invalid username: must be 1-64 chars of [a-zA-Z0-9._-] and not '.' or '..'",
         )
     return username
+
+
+# ── Secret encryption at rest (Fernet, keyed off the app secret) ───────────────
+
+# Marks a value as encrypted by encrypt_secret so legacy plaintext is detectable
+# (and the migration is idempotent).
+_SECRET_PREFIX = "enc:v1:"
+
+
+def _fernet() -> Fernet:
+    """A Fernet built from a stable 32-byte key derived from the app secret."""
+    digest = hashlib.sha256(get_settings().get_secret_key().encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def encrypt_secret(plaintext: str) -> str:
+    """Encrypt a sensitive value (e.g. a Tailscale pre-auth key) for storage."""
+    token = _fernet().encrypt(plaintext.encode()).decode()
+    return _SECRET_PREFIX + token
+
+
+def decrypt_secret(value: Optional[str]) -> Optional[str]:
+    """Inverse of encrypt_secret.
+
+    Returns the value unchanged if it isn't a recognized encrypted token (legacy
+    plaintext written before encryption existed), and None if it is an encrypted
+    token that fails to decrypt (e.g. the secret key changed).
+    """
+    if not value or not value.startswith(_SECRET_PREFIX):
+        return value
+    try:
+        return _fernet().decrypt(value[len(_SECRET_PREFIX):].encode()).decode()
+    except InvalidToken:
+        return None
 
 
 def hash_password(password: str) -> str:

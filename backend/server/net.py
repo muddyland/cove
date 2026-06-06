@@ -10,6 +10,12 @@ Because our trusted reverse proxy (Traefik) appends the address of whoever
 connected to *it* as the last hop, the RIGHTMOST entry is the real client IP
 as seen by our trusted boundary. We use that, falling back to the direct
 socket peer when no XFF header is present.
+
+ASSUMPTION: exactly one trusted proxy (Traefik) sits in front of the app, and
+the app is not reachable directly. If you put another proxy in front of Traefik,
+or expose the app without Traefik, the rightmost hop becomes attacker-influenced
+and this value (used for the login rate-limit key and audit attribution) can no
+longer be trusted — adjust accordingly.
 """
 
 from fastapi import Request

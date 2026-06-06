@@ -67,3 +67,21 @@ def test_verify_state_malformed_returns_none():
 
 def test_decode_access_token_alias():
     assert security.decode_access_token is security.decode_token
+
+
+def test_encrypt_secret_roundtrip():
+    enc = security.encrypt_secret("tskey-auth-secret-123")
+    assert enc.startswith(security._SECRET_PREFIX)
+    assert "tskey-auth-secret-123" not in enc  # ciphertext, not plaintext
+    assert security.decrypt_secret(enc) == "tskey-auth-secret-123"
+
+
+def test_decrypt_secret_passthrough_legacy_plaintext():
+    # A value without the encrypted prefix is treated as legacy plaintext.
+    assert security.decrypt_secret("tskey-plain") == "tskey-plain"
+    assert security.decrypt_secret(None) is None
+    assert security.decrypt_secret("") == ""
+
+
+def test_decrypt_secret_returns_none_on_corrupt_ciphertext():
+    assert security.decrypt_secret(security._SECRET_PREFIX + "not-valid-fernet") is None

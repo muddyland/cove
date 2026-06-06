@@ -15,6 +15,7 @@ from sqlalchemy import select
 from server.config import get_settings
 from server.db import SessionLocal
 from server.models import UserTailscale, Workspace, WorkspaceImage
+from server.security import decrypt_secret
 from server.settings_store import (
     get_tailscale_image,
     get_workspace_lan_access,
@@ -619,7 +620,8 @@ class DockerManager:
         self._ensure_named_volume(volume_name)
 
         # auth_key + login_server are per-user; the routing options are per-workspace.
-        auth_key = ts_cfg.auth_key if ts_cfg else None
+        # The auth_key is stored encrypted at rest; decrypt it for the sidecar.
+        auth_key = decrypt_secret(ts_cfg.auth_key) if ts_cfg else None
         login_server = ts_cfg.login_server if ts_cfg else None
         extra_args = build_ts_extra_args(
             exit_node=ws.ts_exit_node,

@@ -91,6 +91,13 @@ def _check_rate_limit(ip: str) -> bool:
     settings = get_settings()
     now = time.monotonic()
     window = settings.login_rate_window_seconds
+    # Bound memory: periodically evict buckets whose attempts have all aged out,
+    # so a flood of distinct source IPs can't grow the map without limit.
+    if len(_login_attempts) > 512:
+        for stale_ip in [
+            k for k, ts in _login_attempts.items() if all(now - t >= window for t in ts)
+        ]:
+            del _login_attempts[stale_ip]
     bucket = [t for t in _login_attempts.get(ip, []) if now - t < window]
     if len(bucket) >= settings.login_rate_limit:
         _login_attempts[ip] = bucket
@@ -245,15 +252,26 @@ async def oidc_login(request: Request):
     if not settings.oidc_enabled:
         raise HTTPException(status_code=404, detail="OIDC not configured")
     await oidc_module.fetch_discovery()
+    signed = sign_state(oidc_module.generate_state())
+    # A distinct nonce, sent to the IdP and echoed back in the id_token, binds
+    # that token to this login attempt (defeats token replay/injection).
     nonce = oidc_module.generate_state()
-    signed = sign_state(nonce)
     redirect_uri = str(request.base_url).rstrip("/") + "/api/auth/oidc/callback"
     # The state param sent to the IdP is the signed value.
-    auth_url = oidc_module.build_auth_url(redirect_uri=redirect_uri, state=signed)
+    auth_url = oidc_module.build_auth_url(redirect_uri=redirect_uri, state=signed, nonce=nonce)
     resp = RedirectResponse(url=auth_url)
     resp.set_cookie(
         "oidc_state",
         signed,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=300,
+        path="/",
+    )
+    resp.set_cookie(
+        "oidc_nonce",
+        nonce,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
@@ -282,10 +300,14 @@ async def oidc_callback(
     ):
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
+    cookie_nonce = request.cookies.get("oidc_nonce")
+    if not cookie_nonce:
+        raise HTTPException(status_code=400, detail="Missing nonce")
+
     redirect_uri = str(request.base_url).rstrip("/") + "/api/auth/oidc/callback"
     token_response = await oidc_module.exchange_code(code=code, redirect_uri=redirect_uri)
     try:
-        claims = await oidc_module.verify_id_token(token_response["id_token"])
+        claims = await oidc_module.verify_id_token(token_response["id_token"], nonce=cookie_nonce)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid id_token") from exc
 
@@ -319,6 +341,7 @@ async def oidc_callback(
     _record_audit(db, "login.oidc", user=user, ip=client_ip(request))
     resp = RedirectResponse(url="/")
     resp.delete_cookie("oidc_state", path="/")
+    resp.delete_cookie("oidc_nonce", path="/")
     _set_auth_cookies(resp, user)
     return resp
 

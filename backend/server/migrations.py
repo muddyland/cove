@@ -78,6 +78,33 @@ _MIGRATIONS: list[tuple[str, str]] = [
 ]
 
 
+def _encrypt_tailscale_auth_keys(conn) -> None:
+    """Encrypt any Tailscale pre-auth keys still stored as plaintext.
+
+    Idempotent: encrypt_secret-produced values carry a recognizable prefix, so
+    already-encrypted rows are skipped (and the migration is recorded so it only
+    runs once anyway).
+    """
+    from server.security import _SECRET_PREFIX, encrypt_secret
+
+    rows = conn.execute(
+        text("SELECT id, auth_key FROM user_tailscale WHERE auth_key IS NOT NULL")
+    ).fetchall()
+    for row in rows:
+        key = row[1]
+        if key and not key.startswith(_SECRET_PREFIX):
+            conn.execute(
+                text("UPDATE user_tailscale SET auth_key = :k WHERE id = :id"),
+                {"k": encrypt_secret(key), "id": row[0]},
+            )
+
+
+# Python data migrations (run after the SQL migrations): (name, callable).
+_DATA_MIGRATIONS = [
+    ("0014_encrypt_tailscale_auth_keys", _encrypt_tailscale_auth_keys),
+]
+
+
 def run_migrations() -> None:
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
@@ -97,6 +124,17 @@ def run_migrations() -> None:
                 msg = str(exc).lower()
                 if "duplicate column" not in msg and "already exists" not in msg:
                     raise
+            conn.execute(
+                text("INSERT INTO _migrations (name) VALUES (:name)"), {"name": name}
+            )
+
+        for name, fn in _DATA_MIGRATIONS:
+            exists = conn.execute(
+                text("SELECT 1 FROM _migrations WHERE name = :name"), {"name": name}
+            ).fetchone()
+            if exists:
+                continue
+            fn(conn)
             conn.execute(
                 text("INSERT INTO _migrations (name) VALUES (:name)"), {"name": name}
             )

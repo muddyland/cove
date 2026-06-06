@@ -41,7 +41,7 @@ async def fetch_jwks() -> dict:
     return _jwks
 
 
-def build_auth_url(redirect_uri: str, state: str) -> str:
+def build_auth_url(redirect_uri: str, state: str, nonce: Optional[str] = None) -> str:
     settings = get_settings()
     # Discovery is cached; we build synchronously from cached data if available
     # For the redirect, we need the authorization endpoint
@@ -54,6 +54,9 @@ def build_auth_url(redirect_uri: str, state: str) -> str:
         "scope": settings.oidc_scopes,
         "state": state,
     }
+    if nonce:
+        # Binds the id_token to this login attempt (defeats token replay/injection).
+        params["nonce"] = nonce
     return _discovery["authorization_endpoint"] + "?" + urlencode(params)
 
 
@@ -91,12 +94,13 @@ def _select_signing_key(jwks: dict, kid: Optional[str]) -> dict:
     raise JWTError("Token has no kid and JWKS has multiple keys")
 
 
-async def verify_id_token(id_token: str) -> dict:
+async def verify_id_token(id_token: str, nonce: Optional[str] = None) -> dict:
     """Verify an id_token's signature and standard claims; return the claims.
 
     Fetches JWKS + discovery, selects the signing key by the token header `kid`,
-    and verifies signature, audience (oidc_client_id) and issuer. Raises
-    jose.JWTError (or related) on any verification failure.
+    and verifies signature, audience (oidc_client_id) and issuer. When ``nonce``
+    is supplied, the token's ``nonce`` claim must match it (binds the token to
+    this login attempt). Raises jose.JWTError (or related) on any failure.
     """
     settings = get_settings()
     discovery = await fetch_discovery()
@@ -107,7 +111,7 @@ async def verify_id_token(id_token: str) -> dict:
 
     algorithms = discovery.get("id_token_signing_alg_values_supported") or ["RS256"]
 
-    return jwt.decode(
+    claims = jwt.decode(
         id_token,
         key=key,
         algorithms=algorithms,
@@ -115,6 +119,11 @@ async def verify_id_token(id_token: str) -> dict:
         issuer=discovery.get("issuer"),
         options={"verify_aud": True},
     )
+
+    if nonce is not None and claims.get("nonce") != nonce:
+        raise JWTError("id_token nonce mismatch")
+
+    return claims
 
 
 def generate_state() -> str:
