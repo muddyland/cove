@@ -16,9 +16,9 @@
       <p class="boot-text">BOOTING NODE<span class="ellipsis" /></p>
     </div>
 
-    <div class="frame-wrap" v-else-if="ws.status === 'running' && ws.stream_url">
+    <div class="frame-wrap" v-else-if="ws.status === 'running' && streamUrl">
       <iframe
-        :src="ws.stream_url"
+        :src="streamUrl"
         class="workspace-frame"
         allow="autoplay; clipboard-read; clipboard-write; fullscreen; camera; microphone"
         allowfullscreen
@@ -54,12 +54,27 @@ const ui = useUiStore()
 const wsId = computed(() => Number(route.params.id))
 const ws = computed(() => store.items.find(w => w.id === wsId.value))
 const stopping = ref(false)
+const streamUrl = ref<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadStreamUrl() {
+  // Mint the authenticated iframe URL. In subdomain mode this carries a one-time
+  // token that bootstraps a per-workspace stream cookie; in subpath mode it is
+  // the plain same-origin path. Never reuse the SPA session cookie cross-origin.
+  if (ws.value?.status !== 'running' || streamUrl.value) return
+  try {
+    const { url } = await workspacesApi.streamAuth(wsId.value)
+    streamUrl.value = url
+  } catch (e: any) {
+    ui.toast(e.message || 'Failed to open stream', 'error')
+  }
+}
 
 onMounted(async () => {
   document.body.classList.add('cove-immersive')
   if (!ws.value) await store.fetch()
   startPollIfNeeded()
+  await loadStreamUrl()
 })
 onUnmounted(() => {
   document.body.classList.remove('cove-immersive')
@@ -70,6 +85,7 @@ watch(() => ws.value?.status, (s) => {
   if (s === 'running' || s === 'error') {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   }
+  if (s === 'running') loadStreamUrl()
 })
 
 function startPollIfNeeded() {

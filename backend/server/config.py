@@ -16,14 +16,18 @@ class Settings(BaseSettings):
     # Token lifetimes
     access_token_minutes: int = 30
     refresh_token_days: int = 7
+    # Per-workspace stream token lifetime (subdomain mode). The stream cookie is
+    # scoped to a single workspace origin; this is how long a stream stays
+    # authenticated before the SPA must mint a fresh token.
+    stream_token_minutes: int = 720
 
     # Cookie settings
     cookie_secure: bool = True
     cookie_session_name: str = "cove_session"
     cookie_refresh_name: str = "cove_refresh"
-    # When set, the session/refresh cookies use this Domain so they reach
-    # workspace subdomains (empty -> None -> host-only cookie).
-    cookie_domain: Optional[str] = None
+    # Per-workspace stream auth cookie (subdomain mode). Set host-only on the
+    # workspace origin so the powerful session cookie never reaches it.
+    cookie_stream_name: str = "cove_stream"
 
     # When set, workspace streams route at their own origin
     # ``{public_id}.{workspace_domain}`` (subdomain mode). When unset, streams
@@ -55,7 +59,6 @@ class Settings(BaseSettings):
     @field_validator(
         "storage_path",
         "db_encryption_key",
-        "cookie_domain",
         "workspace_domain",
         "app_origin",
         mode="before",

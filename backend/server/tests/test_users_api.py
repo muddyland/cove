@@ -62,3 +62,26 @@ def test_clearing_auth_key(client):
     resp = client.put("/api/users/me/tailscale", json={"auth_key": ""})
     assert resp.status_code == 200
     assert resp.json()["has_auth_key"] is False
+
+
+def test_login_server_must_be_https(client):
+    setup_admin(client)
+    # Plain http:// is rejected (downgrades the control channel / can MITM).
+    resp = client.put("/api/users/me/tailscale", json={"login_server": "http://evil.example.com"})
+    assert resp.status_code == 400, resp.text
+    # A bare value with no scheme/host is rejected.
+    resp = client.put("/api/users/me/tailscale", json={"login_server": "evil.example.com"})
+    assert resp.status_code == 400, resp.text
+    # The rejected values must not have been persisted.
+    assert client.get("/api/users/me/tailscale").json()["login_server"] is None
+
+
+def test_login_server_https_accepted_and_clearable(client):
+    setup_admin(client)
+    resp = client.put("/api/users/me/tailscale", json={"login_server": "https://hs.example.com"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["login_server"] == "https://hs.example.com"
+    # Empty string clears it back to None.
+    resp = client.put("/api/users/me/tailscale", json={"login_server": ""})
+    assert resp.status_code == 200
+    assert resp.json()["login_server"] is None

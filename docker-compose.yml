@@ -117,6 +117,10 @@ services:
       - COVE_TRAEFIK_CONTAINER=cove-traefik
       - COVE_WORKSPACE_TZ=${TZ:-UTC}
       - COVE_STORAGE_PATH=${COVE_STORAGE_PATH:-/var/lib/cove/workspaces}
+      # INSECURE default: this base compose serves plain HTTP, so Secure cookies
+      # are off or browsers wouldn't send them. Safe for localhost only. For any
+      # networked/public deployment layer docker-compose.prod.yml (TLS) which sets
+      # this to true. The app logs a warning at startup while this is false.
       - COVE_COOKIE_SECURE=${COVE_COOKIE_SECURE:-false}
       # Only Traefik can reach cove:8080 (cove-net), so trust its forwarded
       # headers; the app also reads the real client from the rightmost XFF hop.
@@ -124,11 +128,10 @@ services:
       # Per-workspace subdomain isolation (optional). When COVE_WORKSPACE_DOMAIN
       # is set, each workspace streams at {public_id}.{domain} (its own origin,
       # so it can't read the SPA's token); unset → subpath /workspace/{id}/.
-      # Requires wildcard DNS + a wildcard TLS cert (see docker-compose.dns.yml)
-      # and COVE_COOKIE_DOMAIN set to a shared parent so the session cookie
-      # reaches the subdomains.
+      # Requires wildcard DNS + a wildcard TLS cert (see docker-compose.dns.yml).
+      # The SPA session cookie stays host-only and is never sent to workspace
+      # origins; streams authenticate with a separate per-workspace stream token.
       - COVE_WORKSPACE_DOMAIN=${COVE_WORKSPACE_DOMAIN:-}
-      - COVE_COOKIE_DOMAIN=${COVE_COOKIE_DOMAIN:-}
       # SPA origin allowed to iframe cross-origin workspace streams (subdomain
       # mode). In prod this is set automatically to https://${COVE_DOMAIN}.
       - COVE_APP_ORIGIN=${COVE_APP_ORIGIN:-}
