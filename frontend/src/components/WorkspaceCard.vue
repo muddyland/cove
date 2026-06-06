@@ -149,6 +149,7 @@ async function handleRemove() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  height: 100%;
   transition: border-color 0.2s, box-shadow 0.2s;
   position: relative;
   overflow: hidden;
@@ -222,5 +223,7 @@ async function handleRemove() {
   font-family: var(--font-mono);
 }
 
-.card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Pin the action row to the bottom so cards of varying body length keep
+   their buttons aligned across the row. */
+.card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
 </style>

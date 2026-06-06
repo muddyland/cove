@@ -6,45 +6,56 @@
         <span class="logo-text">COVE</span>
       </RouterLink>
 
-      <nav class="nav-links">
-        <RouterLink to="/" class="nav-link" :class="{ active: $route.path === '/' }">
-          <LayoutGrid class="nav-icon" :size="16" /> Dashboard
-        </RouterLink>
-        <RouterLink to="/files" class="nav-link" :class="{ active: $route.path === '/files' }">
-          <FolderOpen class="nav-icon" :size="16" /> Files
-        </RouterLink>
-        <template v-if="auth.isAdmin">
-          <RouterLink to="/admin/sessions" class="nav-link" :class="{ active: $route.path === '/admin/sessions' }">
-            <MonitorPlay class="nav-icon" :size="16" /> Sessions
-          </RouterLink>
-          <RouterLink to="/admin/users" class="nav-link" :class="{ active: $route.path === '/admin/users' }">
-            <Users class="nav-icon" :size="16" /> Users
-          </RouterLink>
-          <RouterLink to="/admin/images" class="nav-link" :class="{ active: $route.path === '/admin/images' }">
-            <Boxes class="nav-icon" :size="16" /> Images
-          </RouterLink>
-          <RouterLink to="/admin/audit" class="nav-link" :class="{ active: $route.path === '/admin/audit' }">
-            <ScrollText class="nav-icon" :size="16" /> Audit
-          </RouterLink>
-          <RouterLink to="/admin/settings" class="nav-link" :class="{ active: $route.path === '/admin/settings' }">
-            <Settings class="nav-icon" :size="16" /> Settings
-          </RouterLink>
-        </template>
-      </nav>
+      <button
+        class="menu-toggle"
+        :aria-expanded="mobileOpen"
+        aria-label="Toggle navigation"
+        @click="mobileOpen = !mobileOpen"
+      >
+        <component :is="mobileOpen ? X : Menu" :size="20" />
+      </button>
 
-      <div class="nav-right">
-        <button
-          class="crt-btn"
-          :class="{ active: ui.crt }"
-          :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
-          @click="ui.toggleCrt()"
-        ><ScanLine class="nav-icon" :size="14" /> CRT</button>
-        <RouterLink to="/preferences" class="user-chip" title="Preferences">
-          <UserRound class="nav-icon" :size="14" />
-          <span class="username">{{ auth.user?.username }}</span>
-          <span v-if="auth.user?.is_admin" class="admin-tag">ADMIN</span>
-        </RouterLink>
-        <button class="logout-btn" @click="handleLogout"><LogOut class="nav-icon" :size="14" /> EXIT</button>
+      <div class="nav-drawer" :class="{ open: mobileOpen }">
+        <nav class="nav-links">
+          <RouterLink to="/" class="nav-link" :class="{ active: $route.path === '/' }">
+            <LayoutGrid class="nav-icon" :size="16" /> Dashboard
+          </RouterLink>
+          <RouterLink to="/files" class="nav-link" :class="{ active: $route.path === '/files' }">
+            <FolderOpen class="nav-icon" :size="16" /> Files
+          </RouterLink>
+          <template v-if="auth.isAdmin">
+            <RouterLink to="/admin/sessions" class="nav-link" :class="{ active: $route.path === '/admin/sessions' }">
+              <MonitorPlay class="nav-icon" :size="16" /> Sessions
+            </RouterLink>
+            <RouterLink to="/admin/users" class="nav-link" :class="{ active: $route.path === '/admin/users' }">
+              <Users class="nav-icon" :size="16" /> Users
+            </RouterLink>
+            <RouterLink to="/admin/images" class="nav-link" :class="{ active: $route.path === '/admin/images' }">
+              <Boxes class="nav-icon" :size="16" /> Images
+            </RouterLink>
+            <RouterLink to="/admin/audit" class="nav-link" :class="{ active: $route.path === '/admin/audit' }">
+              <ScrollText class="nav-icon" :size="16" /> Audit
+            </RouterLink>
+            <RouterLink to="/admin/settings" class="nav-link" :class="{ active: $route.path === '/admin/settings' }">
+              <Settings class="nav-icon" :size="16" /> Settings
+            </RouterLink>
+          </template>
+        </nav>
+
+        <div class="nav-right">
+          <button
+            class="crt-btn"
+            :class="{ active: ui.crt }"
+            :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
+            @click="ui.toggleCrt()"
+          ><ScanLine class="nav-icon" :size="14" /> CRT</button>
+          <RouterLink to="/preferences" class="user-chip" title="Preferences">
+            <UserRound class="nav-icon" :size="14" />
+            <span class="username">{{ auth.user?.username }}</span>
+            <span v-if="auth.user?.is_admin" class="admin-tag">ADMIN</span>
+          </RouterLink>
+          <button class="logout-btn" @click="handleLogout"><LogOut class="nav-icon" :size="14" /> EXIT</button>
+        </div>
       </div>
     </header>
 
@@ -55,17 +66,23 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
-import { useRouter, RouterLink } from 'vue-router'
+import { useRouter, useRoute, RouterLink } from 'vue-router'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes,
-  ScrollText, Settings, ScanLine, UserRound, LogOut,
+  ScrollText, Settings, ScanLine, UserRound, LogOut, Menu, X,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const ui = useUiStore()
 const router = useRouter()
+const route = useRoute()
+
+const mobileOpen = ref(false)
+// Collapse the mobile drawer whenever navigation happens.
+watch(() => route.path, () => { mobileOpen.value = false })
 
 async function handleLogout() {
   await auth.logout()
@@ -119,6 +136,22 @@ async function handleLogout() {
   letter-spacing: 4px;
   color: var(--accent);
   text-shadow: var(--glow-sm);
+}
+
+/* On desktop the drawer is transparent — its children join the topnav flow. */
+.nav-drawer { display: contents; }
+
+.menu-toggle {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  padding: 6px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
 }
 
 .nav-links {
@@ -238,4 +271,57 @@ async function handleLogout() {
 .nav-link.active .nav-icon { filter: drop-shadow(var(--glow-sm)); }
 .crt-btn, .logout-btn { display: inline-flex; align-items: center; gap: 5px; }
 .crt-btn.active .nav-icon { filter: drop-shadow(var(--glow-sm)); }
+
+/* ── Mobile: collapse the nav into a hamburger-toggled drawer ───────────────── */
+@media (max-width: 860px) {
+  .topnav { padding: 0 16px; }
+  .logo { margin-right: 0; }
+
+  .menu-toggle { display: inline-flex; }
+
+  /* The drawer drops below the bar as a full-width panel. */
+  .nav-drawer {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    padding: 8px 0;
+    z-index: 100;
+  }
+  .nav-drawer.open { display: flex; }
+
+  .nav-links {
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
+    flex: none;
+  }
+  .nav-link {
+    height: 44px;
+    border-bottom: none;
+    border-left: 2px solid transparent;
+    padding: 0 20px;
+  }
+  .nav-link.active { border-bottom-color: transparent; border-left-color: var(--accent); }
+
+  .nav-right {
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 20px 4px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .content { padding: 16px; }
+}
 </style>
