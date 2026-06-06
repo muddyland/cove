@@ -21,6 +21,11 @@
         {{ ws.image_name }}
       </span>
       <span v-if="ws.target_url" class="target-url" :title="ws.target_url"><Globe :size="12" /> {{ truncateUrl(ws.target_url) }}</span>
+      <span
+        v-if="ws.use_tailscale"
+        class="ts-badge"
+        :title="ws.ts_exit_node ? `Routed through Tailscale · exit node: ${ws.ts_exit_node}` : 'Routed through Tailscale'"
+      ><Network :size="12" /> Tailscale<template v-if="ws.ts_exit_node"> · {{ ws.ts_exit_node }}</template></span>
     </div>
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
     <div class="card-actions" @click.stop>
@@ -58,7 +63,7 @@ import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import EditWorkspaceModal from './EditWorkspaceModal.vue'
-import { Globe, Play, Power, Square, Trash2, Pencil } from 'lucide-vue-next'
+import { Globe, Network, Play, Power, Square, Trash2, Pencil } from 'lucide-vue-next'
 import type { Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
@@ -204,6 +209,8 @@ async function handleRemove() {
 .image-logo { width: 20px; height: 20px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
 .target-url { font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .target-url svg { flex-shrink: 0; }
+.ts-badge { font-size: 11px; color: var(--accent-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
+.ts-badge svg { flex-shrink: 0; }
 
 .error-msg {
   font-size: 11px;
