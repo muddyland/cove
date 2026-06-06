@@ -125,7 +125,7 @@ async function handleStop() {
 </script>
 
 <style scoped>
-.workspace-page { display: flex; flex-direction: column; height: 100vh; background: #000; }
+.workspace-page { display: flex; flex-direction: column; height: 100vh; background: #000; overflow: hidden; }
 
 .top-bar {
   display: flex; align-items: center; gap: 16px;
@@ -154,7 +154,7 @@ async function handleStop() {
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-.frame-wrap { flex: 1; position: relative; }
+.frame-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; }
 .workspace-frame { width: 100%; height: 100%; border: none; display: block; }
 
 /* CRT effect over the stream: fine scanlines + a soft vignette + a faint
@@ -163,6 +163,10 @@ async function handleStop() {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* Clip the rolling ::after band — its translateY would otherwise extend past
+     the frame and inflate the page's scrollable height (a growing scrollbar that
+     resets each animation loop, very visible in Edge). */
+  overflow: hidden;
   z-index: 5;
   background:
     radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.35) 100%),
