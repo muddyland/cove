@@ -13,7 +13,8 @@
 
     <div v-if="!ws || ws.status === 'creating'" class="overlay-state">
       <img class="boot-icon" src="/favicon.svg" alt="" />
-      <p class="boot-text">BOOTING NODE<span class="ellipsis" /></p>
+      <p class="boot-text">{{ installing ? 'PROVISIONING NODE' : 'BOOTING NODE' }}<span class="ellipsis" /></p>
+      <p v-if="installing" class="boot-sub">Installing packages &amp; proot-apps — this can take a few minutes.</p>
     </div>
 
     <div class="frame-wrap" v-else-if="ws.status === 'running' && streamUrl">
@@ -53,6 +54,7 @@ const ui = useUiStore()
 
 const wsId = computed(() => Number(route.params.id))
 const ws = computed(() => store.items.find(w => w.id === wsId.value))
+const installing = computed(() => !!(ws.value?.install_packages || ws.value?.proot_apps))
 const stopping = ref(false)
 const streamUrl = ref<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -187,6 +189,13 @@ async function handleStop() {
   letter-spacing: 3px;
   color: var(--accent);
   text-shadow: var(--glow-sm);
+}
+.boot-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-top: -8px;
 }
 .ellipsis::after {
   content: '...';

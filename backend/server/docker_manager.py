@@ -323,6 +323,44 @@ class DockerManager:
             return container.attrs.get("State", {}).get("Status") == "running"
         return False
 
+    def _wait_for_http_ready(self, ws_id: int, port: int, timeout: int) -> bool:
+        """Wait until the workspace's web GUI actually answers on ``port``.
+
+        The container reports "running" almost immediately, but LinuxServer init
+        scripts (custom-cont-init.d — including our proot-apps / apt installs)
+        block the web service from starting, so the stream would 502 if we marked
+        the workspace running too early. We poll ``localhost:port`` from inside the
+        workspace's network namespace using a short-lived helper container (the
+        same netns trick as the egress guard), since the backend has no direct
+        route onto the per-workspace network.
+
+        Returns True once it answers, False on timeout. Fail-open (returns True)
+        if the probe itself can't run, so a probe failure never blocks launches.
+        """
+        target = f"cove-ws-{ws_id}"
+        script = (
+            f"end=$(($(date +%s)+{timeout})); "
+            f"while [ $(date +%s) -lt $end ]; do "
+            f"curl -sf -o /dev/null http://localhost:{port}/ && exit 0; sleep 3; done; exit 1"
+        )
+        try:
+            self._pull_image(EGRESS_GUARD_IMAGE)
+            self._client.containers.run(
+                EGRESS_GUARD_IMAGE,
+                network_mode=f"container:{target}",
+                remove=True,
+                detach=False,
+                entrypoint="/bin/sh",
+                command=["-c", script],
+            )
+            return True  # exited 0 => GUI answered
+        except docker.errors.ContainerError:
+            logger.warning("Workspace %s web GUI not ready after %ds", ws_id, timeout)
+            return False
+        except Exception as exc:
+            logger.warning("HTTP readiness probe failed for workspace %s: %s", ws_id, exc)
+            return True  # don't block the launch on probe infrastructure issues
+
     def launch_workspace(self, ws_id: int) -> None:
         db = self._get_db()
         try:
@@ -439,6 +477,13 @@ class DockerManager:
                     self._apply_egress_guard(ws.id)
 
                 ready = self._wait_for_ready(container)
+                if ready:
+                    # Then wait for the web GUI to actually answer. Per-workspace
+                    # package/proot installs run before the GUI starts and can take
+                    # minutes (large downloads), so allow much longer in that case.
+                    has_install = bool(ws.install_packages or ws.proot_apps)
+                    http_timeout = 900 if has_install else 180
+                    ready = self._wait_for_http_ready(ws.id, image.internal_port, http_timeout)
                 ws = db.get(Workspace, ws_id)  # re-fetch after wait
                 if ready:
                     ws.status = "running"
