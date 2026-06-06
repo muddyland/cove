@@ -28,8 +28,10 @@ def _create_engine():
         @event.listens_for(engine, "connect")
         def _set_pragmas_encrypted(conn, _):
             cur = conn.cursor()
-            # PRAGMA key must run first, before any other statement.
-            cur.execute(f"PRAGMA key = '{key}'")
+            # PRAGMA key must run first, before any other statement. Bind the key
+            # as a parameter rather than interpolating it so a key containing a
+            # quote cannot corrupt the statement.
+            cur.execute("PRAGMA key = ?", (key,))
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()

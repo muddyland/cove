@@ -27,20 +27,6 @@ router.beforeEach(async (to) => {
   if (!initialized) {
     await auth.init()
     initialized = true
-
-    // Handle OIDC callback token in URL hash
-    if (window.location.hash.startsWith('#token=')) {
-      const token = window.location.hash.slice(7)
-      auth.setToken(token)
-      try {
-        const { authApi } = await import('@/api/auth')
-        auth.user = await authApi.me()
-      } catch {
-        auth.clear()
-      }
-      window.history.replaceState(null, '', window.location.pathname)
-      return '/'
-    }
   }
 
   if (auth.needsSetup && to.path !== '/setup') return '/setup'

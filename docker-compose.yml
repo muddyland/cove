@@ -117,6 +117,10 @@ services:
       - COVE_TRAEFIK_CONTAINER=cove-traefik
       - COVE_WORKSPACE_TZ=${TZ:-UTC}
       - COVE_STORAGE_PATH=${COVE_STORAGE_PATH:-/var/lib/cove/workspaces}
+      # INSECURE default: this base compose serves plain HTTP, so Secure cookies
+      # are off or browsers wouldn't send them. Safe for localhost only. For any
+      # networked/public deployment layer docker-compose.prod.yml (TLS) which sets
+      # this to true. The app logs a warning at startup while this is false.
       - COVE_COOKIE_SECURE=${COVE_COOKIE_SECURE:-false}
       # Only Traefik can reach cove:8080 (cove-net), so trust its forwarded
       # headers; the app also reads the real client from the rightmost XFF hop.

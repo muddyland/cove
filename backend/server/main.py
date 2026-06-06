@@ -53,6 +53,13 @@ def record_audit(
 async def lifespan(app: FastAPI):
     run_migrations()
     settings = get_settings()
+    if not settings.cookie_secure:
+        logger.warning(
+            "COVE_COOKIE_SECURE is false: session cookies are sent over plaintext "
+            "HTTP and can be captured on the network. This is only safe for local "
+            "(localhost) use — for any networked or public deployment serve Cove "
+            "over HTTPS (docker-compose.prod.yml) and set COVE_COOKIE_SECURE=true."
+        )
     if settings.oidc_enabled:
         try:
             await oidc_module.fetch_discovery()

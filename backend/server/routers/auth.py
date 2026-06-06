@@ -38,6 +38,12 @@ _STREAM_RE = re.compile(r"^/workspace/([^/]+)/")
 # Module-level sliding-window rate limiter for login attempts, keyed by client IP.
 _login_attempts: dict[str, list[float]] = {}
 
+# A throwaway bcrypt hash used to equalize response timing on the login path when
+# the account doesn't exist (or isn't a local account). Verifying against it costs
+# the same as a real wrong-password check, so the absence of an account can't be
+# inferred from how fast the request fails.
+_DUMMY_PASSWORD_HASH = hash_password("cove-login-timing-equalizer")
+
 
 def _record_audit(db: Session, action: str, *, detail=None, user=None, ip=None) -> None:
     # Import lazily to avoid a circular import at module load time.
@@ -147,12 +153,15 @@ def login(body: LoginRequest, request: Request, db: DbSession):
         raise HTTPException(status_code=429, detail="Too many login attempts")
 
     user = db.scalar(select(User).where(User.username == body.username))
-    if (
-        not user
-        or user.auth_provider != "local"
-        or not user.password_hash
-        or not verify_password(body.password, user.password_hash)
-    ):
+    if user and user.auth_provider == "local" and user.password_hash:
+        password_ok = verify_password(body.password, user.password_hash)
+    else:
+        # No (local) account: still run a bcrypt verify against a dummy hash so the
+        # timing matches the wrong-password path and doesn't leak account existence.
+        verify_password(body.password, _DUMMY_PASSWORD_HASH)
+        password_ok = False
+
+    if not password_ok:
         _record_audit(db, "login.fail", detail=body.username, user=user, ip=ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 

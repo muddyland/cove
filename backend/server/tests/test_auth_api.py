@@ -54,6 +54,16 @@ def test_login_bad_credentials(client):
     assert resp.status_code == 401
 
 
+def test_login_unknown_user_rejected(client):
+    # A non-existent account returns the same uniform 401 as a wrong password
+    # (the dummy-hash verify keeps timing/behavior indistinguishable).
+    setup_admin(client)
+    client.cookies.clear()
+    resp = login(client, "no-such-user", "whatever-password")
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Invalid credentials"
+
+
 def test_me_with_bearer_token(client):
     token, _ = setup_admin(client)
     client.cookies.clear()

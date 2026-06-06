@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
 from server.deps import CurrentUser, DbSession
@@ -53,7 +54,15 @@ def update_my_tailscale(
         ts.auth_key = body.auth_key if body.auth_key else None
 
     if body.login_server is not None:
-        ts.login_server = body.login_server or None
+        login_server = body.login_server or None
+        if login_server:
+            parsed = urlparse(login_server)
+            if parsed.scheme != "https" or not parsed.hostname:
+                raise HTTPException(
+                    status_code=400,
+                    detail="login_server must be a valid https:// URL",
+                )
+        ts.login_server = login_server
     if body.enabled is not None:
         ts.enabled = body.enabled
 
