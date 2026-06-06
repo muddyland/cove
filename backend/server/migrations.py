@@ -75,6 +75,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0013_workspace_image_logo_url",
         "ALTER TABLE workspace_image ADD COLUMN logo_url TEXT",
     ),
+    # workspace.kiosk: open target_url in browser kiosk/full-screen mode.
+    (
+        "0015_workspace_kiosk",
+        "ALTER TABLE workspace ADD COLUMN kiosk INTEGER NOT NULL DEFAULT 0",
+    ),
 ]
 
 

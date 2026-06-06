@@ -87,6 +87,7 @@ class WorkspaceCreate(BaseModel):
     image_id: int
     workspace_type: str = "desktop"
     target_url: Optional[str] = None
+    kiosk: bool = False
     use_tailscale: bool = False
     # Per-workspace Tailscale routing options (stored regardless of use_tailscale).
     ts_exit_node: Optional[str] = None
@@ -104,6 +105,7 @@ class WorkspaceCreate(BaseModel):
 class WorkspaceUpdate(BaseModel):
     name: Optional[str] = None
     target_url: Optional[str] = None
+    kiosk: Optional[bool] = None
     use_tailscale: Optional[bool] = None
     ts_exit_node: Optional[str] = None
     ts_accept_routes: Optional[bool] = None
@@ -133,6 +135,7 @@ class WorkspaceOut(BaseModel):
     image_name: str
     image_logo: Optional[str]
     target_url: Optional[str]
+    kiosk: bool
     use_tailscale: bool
     ts_exit_node: Optional[str]
     ts_accept_routes: bool
@@ -173,6 +176,7 @@ class WorkspaceOut(BaseModel):
             image_name=ws.image.name if ws.image else "",
             image_logo=ws.image.logo_url if ws.image else None,
             target_url=ws.target_url,
+            kiosk=ws.kiosk,
             use_tailscale=ws.use_tailscale,
             ts_exit_node=ws.ts_exit_node,
             ts_accept_routes=ws.ts_accept_routes,

@@ -10,6 +10,10 @@
         <label>Target URL</label>
         <input v-model="form.target_url" type="url" placeholder="https://example.com" />
       </div>
+      <label v-if="urlCapable" class="checkbox-row">
+        <input type="checkbox" v-model="form.kiosk" />
+        <span>Kiosk mode (full-screen, no browser chrome)</span>
+      </label>
 
       <label class="checkbox-row">
         <input type="checkbox" v-model="form.use_tailscale" />
@@ -97,6 +101,7 @@ const urlCapable = computed(
 const form = reactive({
   name: '',
   target_url: '',
+  kiosk: false,
   use_tailscale: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -114,6 +119,7 @@ function parseProotApps(value: string | null): string[] {
 function resetFromWs() {
   form.name = props.ws.name
   form.target_url = props.ws.target_url ?? ''
+  form.kiosk = props.ws.kiosk
   form.use_tailscale = props.ws.use_tailscale
   form.ts_exit_node = props.ws.ts_exit_node ?? ''
   form.ts_accept_routes = props.ws.ts_accept_routes
@@ -142,6 +148,7 @@ async function handleSubmit() {
     await store.update(props.ws.id, {
       name: form.name,
       target_url: urlCapable.value ? form.target_url : undefined,
+      kiosk: urlCapable.value ? form.kiosk : undefined,
       use_tailscale: form.use_tailscale,
       ...(form.use_tailscale
         ? {

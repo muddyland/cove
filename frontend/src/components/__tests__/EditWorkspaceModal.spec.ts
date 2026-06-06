@@ -38,6 +38,7 @@ const desktopWs: Workspace = {
   image_name: 'Ubuntu Desktop',
   image_logo: null,
   target_url: null,
+  kiosk: false,
   stream_url: null,
   created_at: '2026-01-01T00:00:00Z',
   started_at: null,

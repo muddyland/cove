@@ -9,6 +9,7 @@ export const workspacesApi = {
     image_id: number
     workspace_type: string
     target_url?: string
+    kiosk?: boolean
     use_tailscale?: boolean
     ts_exit_node?: string
     ts_accept_routes?: boolean
@@ -22,6 +23,7 @@ export const workspacesApi = {
     payload: {
       name?: string
       target_url?: string
+      kiosk?: boolean
       use_tailscale?: boolean
       ts_exit_node?: string
       ts_accept_routes?: boolean

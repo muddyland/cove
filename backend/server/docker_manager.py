@@ -383,9 +383,11 @@ class DockerManager:
                 "TZ": settings.workspace_tz,
             }
             # Browser images open a startup URL via their native CLI env var
-            # (e.g. CHROME_CLI / BRAVE_CLI / FIREFOX_CLI).
+            # (e.g. CHROME_CLI / BRAVE_CLI / FIREFOX_CLI). Prepending --kiosk
+            # launches it full-screen with no browser chrome (Chromium/Brave and
+            # Firefox 71+ all accept --kiosk <url>).
             if ws.target_url and image.url_env:
-                env[image.url_env] = ws.target_url
+                env[image.url_env] = f"--kiosk {ws.target_url}" if ws.kiosk else ws.target_url
             elif ws.workspace_type == "link" and ws.target_url:
                 # Legacy webtop-based link workspaces use a custom init script.
                 env["LAUNCH_URL"] = ws.target_url

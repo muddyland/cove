@@ -74,6 +74,10 @@ class Workspace(Base):
     )
     image_id: Mapped[int] = mapped_column(Integer, ForeignKey("workspace_image.id"), nullable=False)
     target_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    # Open target_url in the browser's full-screen kiosk mode (no browser chrome).
+    kiosk: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     # Per-workspace distro packages (universal-package-install Docker Mod), free
     # text — pipe/comma/space separated package names.
     install_packages: Mapped[Optional[str]] = mapped_column(String, nullable=True)

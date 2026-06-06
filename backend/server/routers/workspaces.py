@@ -66,6 +66,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         workspace_type=image.image_type,
         image_id=body.image_id,
         target_url=target_url,
+        kiosk=body.kiosk,
         use_tailscale=body.use_tailscale,
         ts_exit_node=body.ts_exit_node or None,
         ts_accept_routes=body.ts_accept_routes,

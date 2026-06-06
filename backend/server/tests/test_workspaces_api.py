@@ -241,6 +241,22 @@ def test_create_persists_packages_and_sudo(client, fake_docker_manager):
         db.close()
 
 
+def test_create_kiosk_flag(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(
+        name="Chromium", image_type="browser", url_env="CHROME_CLI"
+    )
+    # Default is off.
+    d = client.post("/api/workspaces", json={"name": "plain", "image_id": image_id}).json()
+    assert d["kiosk"] is False
+    # Explicitly enabled.
+    k = client.post(
+        "/api/workspaces",
+        json={"name": "kioskws", "image_id": image_id, "kiosk": True, "target_url": "https://x.io"},
+    ).json()
+    assert k["kiosk"] is True
+
+
 def test_create_packages_defaults(client, fake_docker_manager):
     """Defaults: no packages/apps, sudo disabled (no-new-privileges on)."""
     setup_admin(client)

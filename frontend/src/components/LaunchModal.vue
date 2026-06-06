@@ -23,6 +23,10 @@
           :required="urlRequired"
         />
       </div>
+      <label v-if="urlCapable" class="checkbox-row">
+        <input type="checkbox" v-model="form.kiosk" />
+        <span>Kiosk mode (full-screen, no browser chrome)</span>
+      </label>
       <label class="checkbox-row">
         <input type="checkbox" v-model="form.use_tailscale" />
         <span>Route through Tailscale</span>
@@ -107,6 +111,7 @@ const form = reactive({
   name: '',
   image_id: '' as number | '',
   target_url: '',
+  kiosk: false,
   use_tailscale: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -135,6 +140,7 @@ async function handleSubmit() {
       image_id: form.image_id as number,
       workspace_type: selectedImage.value?.image_type ?? 'desktop',
       target_url: urlCapable.value && form.target_url ? form.target_url : undefined,
+      kiosk: urlCapable.value ? form.kiosk : false,
       use_tailscale: form.use_tailscale,
       ...(form.use_tailscale
         ? {
@@ -152,6 +158,7 @@ async function handleSubmit() {
     form.name = ''
     form.image_id = ''
     form.target_url = ''
+    form.kiosk = false
     form.use_tailscale = false
     form.ts_exit_node = ''
     form.ts_accept_routes = true
