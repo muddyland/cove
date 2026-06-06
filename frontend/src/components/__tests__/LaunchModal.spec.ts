@@ -7,6 +7,10 @@ vi.mock('@/api/images', () => ({
   imagesApi: { list: vi.fn() },
 }))
 
+vi.mock('@/api/proot', () => ({
+  prootApi: { list: vi.fn() },
+}))
+
 const launchMock = vi.fn()
 vi.mock('@/stores/workspaces', () => ({
   useWorkspacesStore: () => ({ launch: launchMock }),
@@ -22,6 +26,7 @@ vi.mock('@/components/BaseModal.vue', () => ({
 }))
 
 import { imagesApi } from '@/api/images'
+import { prootApi } from '@/api/proot'
 import LaunchModal from '@/components/LaunchModal.vue'
 
 const desktopImage: WorkspaceImage = {
@@ -42,6 +47,7 @@ describe('LaunchModal', () => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
     vi.mocked(imagesApi.list).mockResolvedValue([desktopImage])
+    vi.mocked(prootApi.list).mockResolvedValue({ apps: ['firefox', 'obs-studio', 'blender'] })
     launchMock.mockResolvedValue({ id: 99 })
   })
 
@@ -105,27 +111,26 @@ describe('LaunchModal', () => {
     expect(payload).not.toHaveProperty('proot_apps')
   })
 
-  it('includes install_packages / proot_apps (trimmed) and allow_sudo=false when set', async () => {
+  it('includes install_packages (trimmed) and the selected proot_apps', async () => {
     const wrapper = mount(LaunchModal, { props: { modelValue: true } })
     await flushPromises()
 
     await wrapper.find('input').setValue('My Desktop')
     await wrapper.find('select').setValue(7)
 
-    // The Advanced "Allow sudo" checkbox is the only non-Tailscale checkbox here.
-    const sudoToggle = wrapper.find('.advanced input[type="checkbox"]')
-    await sudoToggle.setValue(false)
+    await wrapper.find('input[placeholder="git vim htop"]').setValue('  git vim htop  ')
 
-    const advInputs = wrapper.findAll('.advanced input[type="text"]')
-    await advInputs[0].setValue('  git vim htop  ')
-    await advInputs[1].setValue('  firefox obs-studio  ')
+    // proot-apps is now a multi-select: tick firefox (0) and blender (2).
+    const boxes = wrapper.findAll('.proot-item input[type="checkbox"]')
+    expect(boxes).toHaveLength(3)
+    await boxes[0].setValue(true)
+    await boxes[2].setValue(true)
 
     await wrapper.find('form').trigger('submit.prevent')
     await flushPromises()
 
     const payload = launchMock.mock.calls[0][0]
-    expect(payload.allow_sudo).toBe(false)
     expect(payload.install_packages).toBe('git vim htop')
-    expect(payload.proot_apps).toBe('firefox obs-studio')
+    expect(payload.proot_apps).toBe('firefox blender')
   })
 })

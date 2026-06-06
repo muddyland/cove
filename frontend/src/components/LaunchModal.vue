@@ -65,21 +65,10 @@
 
           <div class="form-group">
             <label>proot-apps</label>
-            <input
-              v-model="form.proot_apps"
-              type="text"
-              placeholder="firefox blender bitwarden"
-              list="proot-apps-list"
-            />
-            <datalist id="proot-apps-list">
-              <option v-for="app in prootApps" :key="app" :value="app" />
-            </datalist>
+            <ProotAppsSelect v-model="form.proot_apps" />
             <p class="hint">
               Portable apps via LinuxServer <code>proot-apps</code> (desktop images).
-              <template v-if="prootApps.length">
-                {{ prootApps.length }} available — start typing to search (space-separated for
-                multiple).
-              </template>
+              Select one or more.
             </p>
           </div>
         </div>
@@ -98,8 +87,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
+import ProotAppsSelect from './ProotAppsSelect.vue'
 import { imagesApi } from '@/api/images'
-import { prootApi } from '@/api/proot'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
@@ -108,7 +97,6 @@ import type { WorkspaceImage } from '@/types'
 const open = defineModel<boolean>({ default: false })
 
 const images = ref<WorkspaceImage[]>([])
-const prootApps = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -125,7 +113,7 @@ const form = reactive({
   ts_accept_dns: true,
   allow_sudo: false,
   install_packages: '',
-  proot_apps: '',
+  proot_apps: [] as string[],
 })
 
 const selectedImage = computed(() => images.value.find(i => i.id === form.image_id))
@@ -136,11 +124,6 @@ const urlRequired = computed(() => selectedImage.value?.image_type === 'link')
 
 onMounted(async () => {
   images.value = await imagesApi.list()
-  try {
-    prootApps.value = (await prootApi.list()).apps
-  } catch {
-    /* catalog unavailable — field stays free-text */
-  }
 })
 
 async function handleSubmit() {
@@ -162,7 +145,7 @@ async function handleSubmit() {
         : {}),
       allow_sudo: form.allow_sudo,
       ...(form.install_packages.trim() ? { install_packages: form.install_packages.trim() } : {}),
-      ...(form.proot_apps.trim() ? { proot_apps: form.proot_apps.trim() } : {}),
+      ...(form.proot_apps.length ? { proot_apps: form.proot_apps.join(' ') } : {}),
     })
     open.value = false
     ui.toast(`Launching ${form.name}…`, 'info')
@@ -175,7 +158,7 @@ async function handleSubmit() {
     form.ts_accept_dns = true
     form.allow_sudo = false
     form.install_packages = ''
-    form.proot_apps = ''
+    form.proot_apps = []
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message

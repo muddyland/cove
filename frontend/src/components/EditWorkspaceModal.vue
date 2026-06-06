@@ -53,21 +53,10 @@
 
           <div class="form-group">
             <label>proot-apps</label>
-            <input
-              v-model="form.proot_apps"
-              type="text"
-              placeholder="firefox blender bitwarden"
-              list="edit-proot-apps-list"
-            />
-            <datalist id="edit-proot-apps-list">
-              <option v-for="app in prootApps" :key="app" :value="app" />
-            </datalist>
+            <ProotAppsSelect v-model="form.proot_apps" />
             <p class="hint">
               Portable apps via LinuxServer <code>proot-apps</code> (desktop images).
-              <template v-if="prootApps.length">
-                {{ prootApps.length }} available — start typing to search (space-separated for
-                multiple).
-              </template>
+              Select one or more.
             </p>
           </div>
         </div>
@@ -85,10 +74,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { reactive, computed, ref, watch, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
-import { prootApi } from '@/api/proot'
+import ProotAppsSelect from './ProotAppsSelect.vue'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import type { Workspace } from '@/types'
@@ -96,7 +85,6 @@ import type { Workspace } from '@/types'
 const props = defineProps<{ ws: Workspace }>()
 const open = defineModel<boolean>({ default: false })
 
-const prootApps = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -115,8 +103,13 @@ const form = reactive({
   ts_accept_dns: true,
   allow_sudo: false,
   install_packages: '',
-  proot_apps: '',
+  proot_apps: [] as string[],
 })
+
+// Stored proot_apps is a space/comma-separated string; the selector works on an array.
+function parseProotApps(value: string | null): string[] {
+  return value ? value.split(/[,\s]+/).filter(Boolean) : []
+}
 
 function resetFromWs() {
   form.name = props.ws.name
@@ -127,7 +120,7 @@ function resetFromWs() {
   form.ts_accept_dns = props.ws.ts_accept_dns
   form.allow_sudo = props.ws.allow_sudo
   form.install_packages = props.ws.install_packages ?? ''
-  form.proot_apps = props.ws.proot_apps ?? ''
+  form.proot_apps = parseProotApps(props.ws.proot_apps)
 }
 
 // Re-seed the form from the workspace whenever the modal is opened.
@@ -138,13 +131,8 @@ watch(open, value => {
   }
 })
 
-onMounted(async () => {
+onMounted(() => {
   resetFromWs()
-  try {
-    prootApps.value = (await prootApi.list()).apps
-  } catch {
-    /* catalog unavailable — field stays free-text */
-  }
 })
 
 async function handleSubmit() {
@@ -164,7 +152,7 @@ async function handleSubmit() {
         : {}),
       allow_sudo: form.allow_sudo,
       install_packages: form.install_packages.trim(),
-      proot_apps: form.proot_apps.trim(),
+      proot_apps: form.proot_apps.join(' '),
     })
     open.value = false
     ui.toast('Workspace updated', 'success')
