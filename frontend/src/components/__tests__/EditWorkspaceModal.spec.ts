@@ -54,6 +54,7 @@ const desktopWs: Workspace = {
   dns_servers: null,
   install_packages: null,
   proot_apps: null,
+  appimages: null,
   allow_sudo: true,
 }
 

@@ -109,6 +109,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         dns_servers=_clean_dns(body.dns_servers),
         install_packages=body.install_packages or None,
         proot_apps=body.proot_apps or None,
+        appimages=body.appimages or None,
         allow_sudo=body.allow_sudo,
         status="creating",
     )
@@ -210,7 +211,7 @@ def update_workspace(
         if not ts or not ts.auth_key:
             raise HTTPException(status_code=400, detail="Tailscale not configured")
 
-    nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "dns_servers"}
+    nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "appimages", "dns_servers"}
     for key, value in data.items():
         if key == "name" and not (value or "").strip():
             continue  # never blank the name

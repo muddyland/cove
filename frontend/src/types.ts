@@ -68,6 +68,7 @@ export interface Workspace {
   dns_servers: string | null
   install_packages: string | null
   proot_apps: string | null
+  appimages: string | null
   allow_sudo: boolean
 }
 

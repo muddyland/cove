@@ -21,6 +21,7 @@ export const workspacesApi = {
     dns_servers?: string
     install_packages?: string
     proot_apps?: string
+    appimages?: string
     allow_sudo?: boolean
   }) => api.post<Workspace>('/workspaces', payload),
   update: (
@@ -37,6 +38,7 @@ export const workspacesApi = {
       ts_accept_dns?: boolean
       install_packages?: string
       proot_apps?: string
+      appimages?: string
       allow_sudo?: boolean
     },
   ) => api.patch<Workspace>(`/workspaces/${id}`, payload),

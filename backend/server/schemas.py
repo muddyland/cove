@@ -101,6 +101,7 @@ class WorkspaceCreate(BaseModel):
     # Per-workspace package installation + sudo control.
     install_packages: Optional[str] = None
     proot_apps: Optional[str] = None
+    appimages: Optional[str] = None
     # Default off: workspaces get no-new-privileges (no in-container sudo/setuid
     # escalation) unless the creator explicitly opts in. Shrinks the blast radius
     # of an in-container compromise.
@@ -121,6 +122,7 @@ class WorkspaceUpdate(BaseModel):
     dns_servers: Optional[str] = None
     install_packages: Optional[str] = None
     proot_apps: Optional[str] = None
+    appimages: Optional[str] = None
     allow_sudo: Optional[bool] = None
 
 
@@ -165,6 +167,7 @@ class WorkspaceOut(BaseModel):
     dns_servers: Optional[str]
     install_packages: Optional[str]
     proot_apps: Optional[str]
+    appimages: Optional[str]
     allow_sudo: bool
     stream_url: Optional[str]
     created_at: datetime
@@ -210,6 +213,7 @@ class WorkspaceOut(BaseModel):
             dns_servers=ws.dns_servers,
             install_packages=ws.install_packages,
             proot_apps=ws.proot_apps,
+            appimages=ws.appimages,
             allow_sudo=ws.allow_sudo,
             stream_url=stream_url,
             created_at=ws.created_at,

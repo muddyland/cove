@@ -102,6 +102,19 @@
               Select one or more.
             </p>
           </div>
+
+          <div class="form-group">
+            <label>AppImage apps</label>
+            <textarea
+              v-model="form.appimages"
+              rows="2"
+              placeholder="https://example.com/App.AppImage"
+            />
+            <p class="hint">
+              One AppImage URL per line. Each is downloaded, extracted, and given a
+              desktop launcher (Electron apps run with <code>--no-sandbox</code>).
+            </p>
+          </div>
         </div>
       </details>
 
@@ -150,6 +163,7 @@ const form = reactive({
   allow_sudo: false,
   install_packages: '',
   proot_apps: [] as string[],
+  appimages: '',
 })
 
 function addDns(ip: string) {
@@ -196,6 +210,7 @@ async function handleSubmit() {
       allow_sudo: form.allow_sudo,
       ...(form.install_packages.trim() ? { install_packages: form.install_packages.trim() } : {}),
       ...(form.proot_apps.length ? { proot_apps: form.proot_apps.join(' ') } : {}),
+      ...(form.appimages.trim() ? { appimages: form.appimages.trim() } : {}),
     })
     open.value = false
     ui.toast(`Launching ${form.name}…`, 'info')
@@ -214,6 +229,7 @@ async function handleSubmit() {
     form.allow_sudo = false
     form.install_packages = ''
     form.proot_apps = []
+    form.appimages = ''
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message

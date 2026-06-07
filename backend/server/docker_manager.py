@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Where the helper scripts live inside the cove container (baked by the Dockerfile
 # / bind-mounted from the host checkout).
 _SCRIPTS_SRC_DIR = "/app/scripts"
-_HELPER_SCRIPTS = ("install-proot-apps.sh", "launch-url.sh")
+_HELPER_SCRIPTS = ("install-proot-apps.sh", "install-appimages.sh", "launch-url.sh")
 
 
 def _stage_helper_scripts() -> "Path":
@@ -543,6 +543,7 @@ class DockerManager:
             # Per-workspace package installation (applies to both launch paths).
             self._apply_package_env(env, ws.install_packages)
             self._apply_proot_apps(env, volumes, ws.proot_apps)
+            self._apply_appimages(env, volumes, ws.appimages)
 
             labels = self._build_traefik_labels(ws, image, net_name)
 
@@ -1008,6 +1009,23 @@ class DockerManager:
         env["PROOT_APPS"] = " ".join(apps)
         volumes[_helper_script_path("install-proot-apps.sh")] = {
             "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
+            "mode": "ro",
+        }
+
+    @staticmethod
+    def _apply_appimages(env: dict, volumes: dict, appimages: str | None) -> None:
+        """Wire AppImage app URLs into ``env``/``volumes``.
+
+        Sets COVE_APPIMAGES (space-separated URLs) and mounts the install init
+        script, which downloads + extracts each AppImage and writes a desktop
+        launcher. Mutates both dicts in place. No-op when there are no URLs.
+        """
+        urls = _split_packages(appimages)
+        if not urls:
+            return
+        env["COVE_APPIMAGES"] = " ".join(urls)
+        volumes[_helper_script_path("install-appimages.sh")] = {
+            "bind": "/custom-cont-init.d/97-install-appimages.sh",
             "mode": "ro",
         }
 

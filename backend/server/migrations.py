@@ -98,6 +98,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0019_workspace_dns_servers",
         "ALTER TABLE workspace ADD COLUMN dns_servers VARCHAR(256)",
     ),
+    # Per-workspace AppImage app URLs (extracted + launcher via init script).
+    (
+        "0020_workspace_appimages",
+        "ALTER TABLE workspace ADD COLUMN appimages VARCHAR",
+    ),
 ]
 
 

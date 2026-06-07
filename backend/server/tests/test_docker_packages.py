@@ -210,3 +210,27 @@ def test_apply_proot_apps_noop_when_empty():
     DockerManager._apply_proot_apps(env, volumes, None)
     assert env == {}
     assert volumes == {}
+
+# ── _apply_appimages ───────────────────────────────────────────────────────────
+
+def test_apply_appimages_sets_env_and_mount():
+    env: dict = {}
+    volumes: dict = {}
+    DockerManager._apply_appimages(
+        env, volumes, "https://x.io/A.AppImage\nhttps://y.io/B.AppImage"
+    )
+    assert env["COVE_APPIMAGES"] == "https://x.io/A.AppImage https://y.io/B.AppImage"
+    key = _helper_script_path("install-appimages.sh")
+    assert key.endswith("/.cove-scripts/install-appimages.sh")
+    assert volumes[key] == {
+        "bind": "/custom-cont-init.d/97-install-appimages.sh",
+        "mode": "ro",
+    }
+
+
+def test_apply_appimages_noop_when_empty():
+    env: dict = {}
+    volumes: dict = {}
+    DockerManager._apply_appimages(env, volumes, None)
+    assert env == {}
+    assert volumes == {}

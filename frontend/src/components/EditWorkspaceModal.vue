@@ -90,6 +90,20 @@
               Select one or more.
             </p>
           </div>
+
+          <div class="form-group">
+            <label>AppImage apps</label>
+            <textarea
+              v-model="form.appimages"
+              rows="2"
+              placeholder="https://example.com/App.AppImage"
+            />
+            <p class="hint">
+              One AppImage URL per line. Each is downloaded, extracted, and given a
+              desktop launcher (Electron apps run with <code>--no-sandbox</code>).
+              Applied on next boot.
+            </p>
+          </div>
         </div>
       </details>
 
@@ -140,6 +154,7 @@ const form = reactive({
   allow_sudo: false,
   install_packages: '',
   proot_apps: [] as string[],
+  appimages: '',
 })
 
 function addDns(ip: string) {
@@ -168,6 +183,7 @@ function resetFromWs() {
   form.allow_sudo = props.ws.allow_sudo
   form.install_packages = props.ws.install_packages ?? ''
   form.proot_apps = parseProotApps(props.ws.proot_apps)
+  form.appimages = props.ws.appimages ?? ''
 }
 
 // Re-seed the form from the workspace whenever the modal is opened.
@@ -207,6 +223,7 @@ async function handleSubmit() {
       allow_sudo: form.allow_sudo,
       install_packages: form.install_packages.trim(),
       proot_apps: form.proot_apps.join(' '),
+      appimages: form.appimages.trim(),
     })
     open.value = false
     ui.toast('Workspace updated', 'success')

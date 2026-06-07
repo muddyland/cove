@@ -99,6 +99,9 @@ class Workspace(Base):
     install_packages: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Per-workspace proot-apps (installed via the bundled init script), free text.
     proot_apps: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Per-workspace AppImage app URLs (downloaded + extracted + given a desktop
+    # launcher by the bundled init script). Free text — newline/comma/space sep.
+    appimages: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Whether in-container sudo is allowed. When False, the container gets the
     # no-new-privileges flag which blocks setuid (sudo).
     allow_sudo: Mapped[bool] = mapped_column(
