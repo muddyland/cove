@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 defineProps<{
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'warn'
   loading?: boolean
   disabled?: boolean
 }>()
@@ -71,6 +71,28 @@ defineProps<{
   color: var(--text-muted);
 }
 .ghost:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
+
+.success {
+  background: transparent;
+  color: var(--green);
+  border-color: rgba(0, 255, 157, 0.4);
+}
+.success:hover:not(:disabled) {
+  background: rgba(0, 255, 157, 0.1);
+  box-shadow: 0 0 8px var(--green), 0 0 20px rgba(0, 255, 157, 0.15);
+  color: #fff;
+}
+
+.warn {
+  background: transparent;
+  color: var(--amber);
+  border-color: rgba(255, 170, 0, 0.4);
+}
+.warn:hover:not(:disabled) {
+  background: rgba(255, 170, 0, 0.1);
+  box-shadow: 0 0 8px var(--amber), 0 0 20px rgba(255, 170, 0, 0.15);
+  color: #fff;
+}
 
 .spinner {
   width: 10px;

@@ -51,9 +51,9 @@
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
     <div class="card-actions" @click.stop>
       <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
-      <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" :loading="acting" @click="handleStart"><Power :size="14" /> BOOT</NeonButton>
-      <NeonButton v-if="ws.status === 'running'" variant="secondary" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
-      <NeonButton variant="ghost" :loading="removing" @click="openPurge"><Trash2 :size="14" /> PURGE</NeonButton>
+      <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="success" :loading="acting" @click="handleStart"><Power :size="14" /> BOOT</NeonButton>
+      <NeonButton v-if="ws.status === 'running'" variant="warn" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
+      <NeonButton variant="danger" :loading="removing" @click="openPurge"><Trash2 :size="14" /> PURGE</NeonButton>
     </div>
   </div>
   <ConfirmModal

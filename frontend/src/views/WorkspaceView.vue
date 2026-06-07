@@ -9,19 +9,20 @@
             <ChevronDown :size="14" class="chev" />
           </button>
           <div v-if="menuOpen" class="switch-menu" @click.stop>
-            <RouterLink
+            <button
               v-for="w in switchable"
               :key="w.id"
-              :to="`/workspace/${w.id}`"
+              type="button"
               class="switch-item"
               :class="{ current: w.id === wsId }"
-              @click="menuOpen = false"
+              @click="selectNode(w)"
             >
-              <span class="switch-dot" />
+              <span class="switch-dot" :class="w.status" />
               <span class="switch-name">{{ w.name }}</span>
               <span class="switch-img">{{ w.image_name }}</span>
-            </RouterLink>
-            <p v-if="!switchable.length" class="switch-empty">No running nodes</p>
+              <Power v-if="w.status !== 'running'" :size="12" class="switch-boot" />
+            </button>
+            <p v-if="!switchable.length" class="switch-empty">No nodes</p>
           </div>
         </div>
         <StatusBadge v-if="ws" :status="ws.status" />
@@ -82,7 +83,7 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { ScanLine, Maximize, Minimize, ChevronDown } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -98,10 +99,31 @@ const frameWrap = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-// Quick-switch dropdown: jump between running nodes without going via the grid.
+// Quick-switch dropdown: jump between nodes (and boot stopped ones) without
+// going via the grid. Running nodes first, then booting, then the rest.
 const menuOpen = ref(false)
-const switchable = computed(() => store.items.filter(w => w.status === 'running'))
+const switchable = computed(() => {
+  const rank = (s: string) => (s === 'running' ? 0 : s === 'creating' || s === 'stopping' ? 1 : 2)
+  return [...store.items].sort(
+    (a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name),
+  )
+})
 function closeMenu() { menuOpen.value = false }
+
+async function selectNode(w: { id: number; name: string; status: string }) {
+  menuOpen.value = false
+  if (w.id === wsId.value) return  // already viewing it
+  if (w.status !== 'running') {
+    try {
+      await store.start(w.id)
+      ui.toast(`Booting ${w.name}…`, 'info')
+    } catch (e: any) {
+      ui.toast(e.message || 'Failed to boot', 'error')
+      return
+    }
+  }
+  router.push(`/workspace/${w.id}`)
+}
 watch(menuOpen, (open) => {
   if (open) document.addEventListener('click', closeMenu)
   else document.removeEventListener('click', closeMenu)
@@ -254,18 +276,26 @@ async function handleStop() {
 }
 .switch-item {
   display: flex; align-items: center; gap: 8px;
+  width: 100%;
   padding: 7px 8px;
+  border: none;
+  background: none;
   border-radius: var(--radius-sm);
-  text-decoration: none;
+  text-align: left;
   color: var(--text);
+  cursor: pointer;
   transition: background 0.12s;
 }
 .switch-item:hover { background: var(--accent-dim); }
 .switch-item.current { background: rgba(0, 245, 255, 0.06); }
 .switch-dot {
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
-  background: var(--green); box-shadow: 0 0 6px var(--green);
+  background: var(--text-muted);
 }
+.switch-dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.switch-dot.creating, .switch-dot.stopping { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.switch-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.switch-boot { color: var(--green); flex-shrink: 0; }
 .switch-name {
   font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.5px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
