@@ -20,8 +20,9 @@ vi.mock('@/components/AppShell.vue', () => ({
 
 import { usersApi } from '@/api/users'
 import { authApi } from '@/api/auth'
+import { useAuthStore } from '@/stores/auth'
 import PreferencesView from '@/views/PreferencesView.vue'
-import type { TailscaleConfig } from '@/types'
+import type { TailscaleConfig, User } from '@/types'
 
 const baseConfig: TailscaleConfig = {
   enabled: true,
@@ -29,10 +30,17 @@ const baseConfig: TailscaleConfig = {
   login_server: 'https://login.example.com',
 }
 
+function setUser(provider: string) {
+  useAuthStore().user = {
+    id: 1, username: 'me', is_admin: false, auth_provider: provider,
+  } as User
+}
+
 describe('PreferencesView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
+    setUser('local')
   })
 
   it('loads the tailscale config on mount and populates fields', async () => {
@@ -101,5 +109,22 @@ describe('PreferencesView', () => {
 
     expect(authApi.changePassword).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('at least 8')
+  })
+
+  it('shows the change-password panel for local users', async () => {
+    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
+    const wrapper = mount(PreferencesView)
+    await flushPromises()
+    expect(wrapper.text()).toContain('CHANGE PASSWORD')
+  })
+
+  it('hides the change-password panel for SSO (OIDC) users', async () => {
+    setUser('oidc')
+    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
+    const wrapper = mount(PreferencesView)
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('CHANGE PASSWORD')
+    // Tailscale panel is still present.
+    expect(wrapper.text()).toContain('TAILSCALE')
   })
 })

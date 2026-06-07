@@ -5,7 +5,7 @@
     </div>
 
     <div class="panels">
-      <section class="panel">
+      <section v-if="isLocalUser" class="panel">
         <h3>// CHANGE PASSWORD</h3>
         <form class="form" @submit.prevent="handlePassword">
           <div class="form-group">
@@ -63,14 +63,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { authApi } from '@/api/auth'
 import { usersApi } from '@/api/users'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 
 const ui = useUiStore()
+const auth = useAuthStore()
+
+// SSO (OIDC) accounts have no local password — hide the change-password panel.
+const isLocalUser = computed(() => auth.user?.auth_provider === 'local')
 
 // --- Change password ---
 const pw = reactive({ current: '', next: '', confirm: '' })
