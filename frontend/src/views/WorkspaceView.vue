@@ -128,8 +128,18 @@ watch(menuOpen, (open) => {
   if (open) document.addEventListener('click', closeMenu)
   else document.removeEventListener('click', closeMenu)
 })
-// Close the menu when the route (active workspace) changes.
-watch(wsId, () => { menuOpen.value = false })
+// The router reuses this component instance across /workspace/:id changes, so
+// onMounted doesn't re-run. Re-initialise for the new node: drop the previous
+// node's stream URL (forcing the iframe to reload), restart polling if it's
+// booting, and mint a fresh stream URL if it's already running.
+watch(wsId, async () => {
+  menuOpen.value = false
+  streamUrl.value = null
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  if (!ws.value) await store.fetch()
+  startPollIfNeeded()
+  await loadStreamUrl()
+})
 
 // Fullscreen the whole frame wrapper (iframe + CRT overlay + branding), not
 // just the iframe, so the overlay stays in sync.
