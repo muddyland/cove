@@ -377,3 +377,47 @@ def test_delete_workspace_storage_refuses_outside_base(tmp_path):
 
     delete_workspace_storage(ws)
     assert victim.exists()  # outside base -> refused
+
+
+# ── start / recovery from error ───────────────────────────────────────────────
+
+def _set_status(ws_id: int, status: str):
+    db = SessionLocal()
+    try:
+        row = db.get(Workspace, ws_id)
+        row.status = status
+        row.error_message = "boom" if status == "error" else None
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_start_recovers_errored_workspace(client):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": "rec", "image_id": image_id}).json()
+    _set_status(ws["id"], "error")
+
+    resp = client.post(f"/api/workspaces/{ws['id']}/start")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "creating"
+    assert body["error_message"] is None
+
+
+def test_start_allowed_from_stopped(client):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": "st", "image_id": image_id}).json()
+    _set_status(ws["id"], "stopped")
+    resp = client.post(f"/api/workspaces/{ws['id']}/start")
+    assert resp.status_code == 200, resp.text
+
+
+def test_start_rejected_when_already_running(client):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": "run", "image_id": image_id}).json()
+    _set_status(ws["id"], "running")
+    resp = client.post(f"/api/workspaces/{ws['id']}/start")
+    assert resp.status_code == 400, resp.text

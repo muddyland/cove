@@ -243,7 +243,9 @@ def stop_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: BackgroundT
 @router.post("/{ws_id}/start", response_model=WorkspaceOut)
 def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: BackgroundTasks, request: Request):
     ws = _get_workspace_or_404(ws_id, user, db)
-    if ws.status != "stopped":
+    # Allow recovery from "error" too — re-launching recreates the container and
+    # reuses the persistent home. Only block states that are already in flight.
+    if ws.status not in ("stopped", "error"):
         raise HTTPException(status_code=400, detail=f"Cannot start workspace in state: {ws.status}")
     ws.status = "creating"
     ws.error_message = None
