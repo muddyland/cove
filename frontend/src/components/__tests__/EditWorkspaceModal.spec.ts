@@ -7,6 +7,10 @@ vi.mock('@/api/proot', () => ({
   prootApi: { list: vi.fn() },
 }))
 
+vi.mock('@/api/workspaces', () => ({
+  workspacesApi: { lanPolicy: vi.fn() },
+}))
+
 const updateMock = vi.fn()
 vi.mock('@/stores/workspaces', () => ({
   useWorkspacesStore: () => ({ update: updateMock }),
@@ -23,6 +27,7 @@ vi.mock('@/components/BaseModal.vue', () => ({
 }))
 
 import { prootApi } from '@/api/proot'
+import { workspacesApi } from '@/api/workspaces'
 import EditWorkspaceModal from '@/components/EditWorkspaceModal.vue'
 
 const desktopWs: Workspace = {
@@ -47,6 +52,7 @@ const desktopWs: Workspace = {
   stopped_at: null,
   error_message: null,
   use_tailscale: false,
+  lan_access: false,
   ts_exit_node: null,
   ts_accept_routes: true,
   ts_accept_dns: true,
@@ -63,6 +69,7 @@ describe('EditWorkspaceModal', () => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
     vi.mocked(prootApi.list).mockResolvedValue({ apps: ['firefox'] })
+    vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
     updateMock.mockResolvedValue({ ...desktopWs })
   })
 

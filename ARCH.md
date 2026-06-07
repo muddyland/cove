@@ -186,8 +186,15 @@ launch ──▶ creating ──▶ running ──▶ (halt) ──▶ stopped �
    `/dev/net/tun`, state volume) carrying the Traefik labels; the workspace
    container then joins the sidecar's netns (`network_mode=container:...`) so all
    egress flows through the tailnet (and exit node, if set).
-5. **Egress guard** (non-Tailscale): unless admin LAN access is on, install
-   IPv4 rules blocking RFC1918/link-local/metadata so workspaces are WAN-only.
+5. **Egress guard** (all workspaces): install IPv4 OUTPUT rules in the netns.
+   Docker-internal (`172.16.0.0/12`) and link-local/metadata (`169.254.0.0/16`)
+   are *always* dropped (backend/proxy/peer isolation); remaining private + CGNAT
+   ranges are dropped too, leaving WAN-only. Admin-configured LAN subnets are
+   allowed only when both the admin master toggle and the workspace's own
+   `lan_access` opt-in are set. For Tailscale workspaces the guard is applied to
+   the **sidecar netns before the workspace starts** (closing the startup race),
+   and `tailscale0` egress is allowed first — so tailnet peers, subnet routes,
+   and exit nodes keep working while the raw bridge stays firewalled.
 6. Wait for readiness (Docker-API only), then flip status to `running`.
 
 **In-container app installation** (LinuxServer `custom-cont-init.d` + Docker Mods,

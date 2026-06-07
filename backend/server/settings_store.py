@@ -4,6 +4,8 @@ These are runtime-configurable settings (managed by admins via the API),
 distinct from the environment-driven `server.config.Settings`.
 """
 
+import ipaddress
+import re
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from server.models import AppSetting
 # Setting keys.
 KEY_TAILSCALE_IMAGE = "tailscale_image"
 KEY_WORKSPACE_LAN_ACCESS = "workspace_lan_access"
+KEY_WORKSPACE_LAN_SUBNETS = "workspace_lan_subnets"
 KEY_WORKSPACE_NO_NEW_PRIVILEGES = "workspace_no_new_privileges"
 KEY_WORKSPACE_MAX_RUNTIME_HOURS = "workspace_max_runtime_hours"
 KEY_WORKSPACE_CPU_LIMIT = "workspace_cpu_limit"
@@ -21,6 +24,10 @@ KEY_WORKSPACE_MEMORY_LIMIT_MB = "workspace_memory_limit_mb"
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
 DEFAULT_WORKSPACE_LAN_ACCESS = False
+# Comma/space separated IPv4 CIDRs a workspace may reach directly over the bridge
+# when both the admin master toggle (LAN_ACCESS) and the per-workspace opt-in are
+# on. Empty = nothing extra is reachable (the default — direct LAN is denied).
+DEFAULT_WORKSPACE_LAN_SUBNETS = ""
 # Off by default: webtop desktops expect in-container sudo, which the
 # no-new-privileges flag blocks. Admins can enable it to harden.
 DEFAULT_WORKSPACE_NO_NEW_PRIVILEGES = False
@@ -58,6 +65,32 @@ def get_tailscale_image(db: Session) -> str:
 
 def get_workspace_lan_access(db: Session) -> bool:
     return _to_bool(get_setting(db, KEY_WORKSPACE_LAN_ACCESS), DEFAULT_WORKSPACE_LAN_ACCESS)
+
+
+def parse_lan_subnets(raw: Optional[str]) -> list[str]:
+    """Validate + normalize a comma/space separated list of IPv4 CIDRs.
+
+    Invalid or non-IPv4 entries are dropped (the egress guard is IPv4-only).
+    Returns deduplicated, normalized CIDR strings (e.g. "10.12.0.0/24").
+    """
+    out: list[str] = []
+    for part in re.split(r"[,\s]+", (raw or "").strip()):
+        if not part:
+            continue
+        try:
+            net = ipaddress.ip_network(part, strict=False)
+        except ValueError:
+            continue
+        if net.version != 4:
+            continue
+        s = str(net)
+        if s not in out:
+            out.append(s)
+    return out
+
+
+def get_workspace_lan_subnets(db: Session) -> list[str]:
+    return parse_lan_subnets(get_setting(db, KEY_WORKSPACE_LAN_SUBNETS, DEFAULT_WORKSPACE_LAN_SUBNETS))
 
 
 def get_workspace_no_new_privileges(db: Session) -> bool:
@@ -100,6 +133,7 @@ def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
         "workspace_lan_access": get_workspace_lan_access(db),
+        "workspace_lan_subnets": ", ".join(get_workspace_lan_subnets(db)),
         "workspace_no_new_privileges": get_workspace_no_new_privileges(db),
         "workspace_max_runtime_hours": get_workspace_max_runtime_hours(db),
         "workspace_cpu_limit": get_workspace_cpu_limit(db),

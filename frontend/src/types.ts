@@ -61,6 +61,7 @@ export interface Workspace {
   stopped_at: string | null
   error_message: string | null
   use_tailscale: boolean
+  lan_access: boolean
   ts_exit_node: string | null
   ts_accept_routes: boolean
   ts_accept_dns: boolean
@@ -70,6 +71,11 @@ export interface Workspace {
   proot_apps: string | null
   appimages: string | null
   allow_sudo: boolean
+}
+
+export interface LanPolicy {
+  enabled: boolean
+  subnets: string[]
 }
 
 export interface TailscaleConfig {
@@ -93,6 +99,7 @@ export interface FileListing {
 export interface AppSettings {
   tailscale_image: string
   workspace_lan_access: boolean
+  workspace_lan_subnets: string
   workspace_no_new_privileges: boolean
   workspace_max_runtime_hours: number
   workspace_cpu_limit: number

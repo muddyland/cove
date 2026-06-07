@@ -256,3 +256,43 @@ def test_resource_limits_partial(monkeypatch):
     monkeypatch.setattr(dm, "get_workspace_cpu_limit", lambda _db: 0.0)
     monkeypatch.setattr(dm, "get_workspace_memory_limit_mb", lambda _db: 512)
     assert dm._resource_limits(None) == {"mem_limit": "512m"}
+
+# ── _build_egress_rules (firewall policy) ──────────────────────────────────────
+
+def test_egress_rules_non_tailscale_blocks_all_internal():
+    script = DockerManager._build_egress_rules(tailscale=False, lan_subnets=[])
+    # Metadata + docker-internal always dropped.
+    assert "-d 169.254.0.0/16 -j DROP" in script
+    assert "-d 172.16.0.0/12 -j DROP" in script
+    # Remaining private + CGNAT dropped when nothing is granted.
+    assert "-d 10.0.0.0/8 -j DROP" in script
+    assert "-d 192.168.0.0/16 -j DROP" in script
+    assert "-d 100.64.0.0/10 -j DROP" in script
+    # No tailscale carve-out for a plain workspace.
+    assert "tailscale0" not in script
+    # Loopback + embedded DNS + established are accepted.
+    assert "-o lo -j ACCEPT" in script
+    assert "-d 127.0.0.11 -j ACCEPT" in script
+
+
+def test_egress_rules_tailscale_allows_tailnet_interface_first():
+    script = DockerManager._build_egress_rules(tailscale=True, lan_subnets=[])
+    # tailnet interface is accepted, and BEFORE the internal DROP rules so
+    # tailnet/subnet-router/exit-node traffic is never dropped.
+    assert "-o tailscale0 -j ACCEPT" in script
+    assert script.index("tailscale0") < script.index("169.254.0.0/16")
+    # Docker-internal still blocked even for tailscale (container isolation).
+    assert "-d 172.16.0.0/12 -j DROP" in script
+
+
+def test_egress_rules_lan_subnets_accepted_before_lan_block():
+    script = DockerManager._build_egress_rules(
+        tailscale=True, lan_subnets=["10.12.0.0/24"]
+    )
+    # The granted subnet is ACCEPTed, and that ACCEPT precedes the broad
+    # 10.0.0.0/8 DROP so the carve-out wins.
+    assert "-d 10.12.0.0/24 -j ACCEPT" in script
+    assert script.index("10.12.0.0/24") < script.index("-d 10.0.0.0/8 -j DROP")
+    # ...but docker-internal/metadata are dropped BEFORE the LAN accepts, so a
+    # granted subnet can never re-open the protected ranges.
+    assert script.index("172.16.0.0/12") < script.index("10.12.0.0/24")

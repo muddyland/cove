@@ -69,13 +69,30 @@
 
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_lan_access" />
-            <span>Workspace LAN access</span>
+            <span>Allow direct LAN access (opt-in per workspace)</span>
           </label>
           <p class="hint">
-            When <strong>off</strong> (default), workspaces are restricted to WAN only — private
-            RFC1918 ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) are blocked. When
-            <strong>on</strong>, workspaces may reach hosts on your local network.
+            Master switch for letting a workspace reach your LAN directly over the bridge. When
+            <strong>off</strong> (default), workspaces are WAN-only. When <strong>on</strong>, a
+            workspace may reach the ranges below <em>only if</em> its own "Allow direct LAN access"
+            box is also ticked. The Docker-internal range (172.16.0.0/12) and cloud metadata
+            (169.254.0.0/16) are <strong>always</strong> blocked, so workspaces can never reach the
+            Cove backend, the socket proxy, or each other. Tailscale tailnet/subnet-routed access is
+            independent of this.
           </p>
+          <div v-if="form.workspace_lan_access" class="form-group">
+            <label>// allowed LAN subnets</label>
+            <input
+              v-model="form.workspace_lan_subnets"
+              type="text"
+              placeholder="10.12.0.0/24, 192.168.1.0/24"
+              autocomplete="off"
+            />
+            <p class="hint">
+              Comma/space separated IPv4 CIDRs a workspace may reach directly. Bare IPs become
+              <code>/32</code>; invalid entries are dropped on save. Leave empty to grant nothing.
+            </p>
+          </div>
 
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_no_new_privileges" />
@@ -147,6 +164,7 @@ const envEntries = ref<EnvEntry[]>([])
 const form = reactive({
   tailscale_image: '',
   workspace_lan_access: false,
+  workspace_lan_subnets: '',
   workspace_no_new_privileges: false,
   workspace_max_runtime_hours: 24,
   workspace_cpu_limit: 0,
@@ -158,6 +176,7 @@ onMounted(async () => {
     const settings = await adminApi.settings.get()
     form.tailscale_image = settings.tailscale_image
     form.workspace_lan_access = settings.workspace_lan_access
+    form.workspace_lan_subnets = settings.workspace_lan_subnets
     form.workspace_no_new_privileges = settings.workspace_no_new_privileges
     form.workspace_max_runtime_hours = settings.workspace_max_runtime_hours
     form.workspace_cpu_limit = settings.workspace_cpu_limit
@@ -185,6 +204,7 @@ async function handleSave() {
     const updated = await adminApi.settings.update({
       tailscale_image: form.tailscale_image,
       workspace_lan_access: form.workspace_lan_access,
+      workspace_lan_subnets: form.workspace_lan_subnets,
       workspace_no_new_privileges: form.workspace_no_new_privileges,
       workspace_max_runtime_hours: form.workspace_max_runtime_hours,
       workspace_cpu_limit: form.workspace_cpu_limit,
@@ -192,6 +212,7 @@ async function handleSave() {
     })
     form.tailscale_image = updated.tailscale_image
     form.workspace_lan_access = updated.workspace_lan_access
+    form.workspace_lan_subnets = updated.workspace_lan_subnets
     form.workspace_no_new_privileges = updated.workspace_no_new_privileges
     form.workspace_max_runtime_hours = updated.workspace_max_runtime_hours
     form.workspace_cpu_limit = updated.workspace_cpu_limit

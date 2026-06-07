@@ -27,7 +27,7 @@ Cove lets you spin up full Linux desktops (XFCE, KDE, MATE, i3 on Ubuntu/Debian/
 - **User preferences** — a self-service page to change your password and manage Tailscale settings.
 - **File browser** — browse, upload, download, and delete files in your workspace storage areas.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
-- **Egress policy** — workspaces are WAN-only by default (private/LAN ranges blocked); admins can allow LAN access per deployment.
+- **Egress policy** — workspaces are WAN-only by default. Docker-internal and cloud-metadata ranges are *always* blocked (so workspaces can never reach the Cove backend, the socket proxy, or each other); admins can allow specific LAN subnets that a workspace then opts into per launch. Tailscale workspaces keep tailnet/subnet-routed/exit-node access while their raw-bridge egress is still firewalled.
 - **Admin settings** — pin/override the Tailscale image, toggle LAN access, force-disable sudo, set max runtime and CPU/memory limits, plus a read-only summary of env-configured settings.
 - **Optional subdomain isolation** — set `COVE_WORKSPACE_DOMAIN` to stream each workspace from its own origin (`{id}.domain`) so it can't reach the SPA's token; unset falls back to subpath routing.
 - **Installable PWA** — add Cove to your home screen / desktop; offline-aware app shell (the live stream and API are never cached).

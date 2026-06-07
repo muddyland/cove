@@ -11,6 +11,7 @@ from server.deps import CurrentUser, DbSession
 from server.models import UserTailscale, Workspace, WorkspaceImage
 from server.net import client_ip
 from server.schemas import (
+    LanPolicyOut,
     StreamAuthOut,
     WorkspaceCreate,
     WorkspaceOut,
@@ -102,6 +103,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         kiosk_dark=body.kiosk_dark,
         kiosk_menu=body.kiosk_menu,
         use_tailscale=body.use_tailscale,
+        lan_access=body.lan_access,
         ts_exit_node=body.ts_exit_node or None,
         ts_accept_routes=body.ts_accept_routes,
         ts_accept_dns=body.ts_accept_dns,
@@ -165,6 +167,22 @@ def workspace_stats(user: CurrentUser, db: DbSession):
         for ws_id, data in raw.items()
     }
     return results
+
+
+@router.get("/lan-policy", response_model=LanPolicyOut)
+def lan_policy(user: CurrentUser, db: DbSession):
+    """Direct-LAN egress policy for the workspace modals.
+
+    Lets the SPA show/hide the per-workspace "Allow direct LAN access" checkbox
+    and the ranges it grants. ``enabled`` is the admin master toggle; ``subnets``
+    are the admin-configured CIDRs a workspace may reach over the raw bridge.
+    """
+    from server import settings_store
+
+    return LanPolicyOut(
+        enabled=settings_store.get_workspace_lan_access(db),
+        subnets=settings_store.get_workspace_lan_subnets(db),
+    )
 
 
 @router.get("/{ws_id}", response_model=WorkspaceOut)

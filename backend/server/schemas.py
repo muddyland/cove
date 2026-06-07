@@ -91,6 +91,9 @@ class WorkspaceCreate(BaseModel):
     kiosk_dark: bool = False
     kiosk_menu: bool = False
     use_tailscale: bool = False
+    # Opt-in for direct LAN egress (only effective when the admin enables LAN
+    # access and configures subnets). Tailnet-routed LAN is independent of this.
+    lan_access: bool = False
     # Per-workspace Tailscale routing options (stored regardless of use_tailscale).
     ts_exit_node: Optional[str] = None
     ts_accept_routes: bool = True
@@ -115,6 +118,7 @@ class WorkspaceUpdate(BaseModel):
     kiosk_dark: Optional[bool] = None
     kiosk_menu: Optional[bool] = None
     use_tailscale: Optional[bool] = None
+    lan_access: Optional[bool] = None
     ts_exit_node: Optional[str] = None
     ts_accept_routes: Optional[bool] = None
     ts_accept_dns: Optional[bool] = None
@@ -124,6 +128,14 @@ class WorkspaceUpdate(BaseModel):
     proot_apps: Optional[str] = None
     appimages: Optional[str] = None
     allow_sudo: Optional[bool] = None
+
+
+class LanPolicyOut(BaseModel):
+    # Admin master toggle for direct (raw-bridge) LAN egress, plus the CIDRs a
+    # workspace may reach when it opts in. Surfaced to non-admin users so the
+    # launch/edit modals can show the per-workspace checkbox + its ranges.
+    enabled: bool
+    subnets: list[str]
 
 
 class StreamAuthOut(BaseModel):
@@ -160,6 +172,7 @@ class WorkspaceOut(BaseModel):
     kiosk_dark: bool
     kiosk_menu: bool
     use_tailscale: bool
+    lan_access: bool
     ts_exit_node: Optional[str]
     ts_accept_routes: bool
     ts_accept_dns: bool
@@ -206,6 +219,7 @@ class WorkspaceOut(BaseModel):
             kiosk_dark=ws.kiosk_dark,
             kiosk_menu=ws.kiosk_menu,
             use_tailscale=ws.use_tailscale,
+            lan_access=ws.lan_access,
             ts_exit_node=ws.ts_exit_node,
             ts_accept_routes=ws.ts_accept_routes,
             ts_accept_dns=ws.ts_accept_dns,
@@ -242,6 +256,7 @@ class AdminUserUpdate(BaseModel):
 class AppSettingsOut(BaseModel):
     tailscale_image: str
     workspace_lan_access: bool
+    workspace_lan_subnets: str
     workspace_no_new_privileges: bool
     workspace_max_runtime_hours: int
     workspace_cpu_limit: float
@@ -260,6 +275,7 @@ class EnvSummaryOut(BaseModel):
 class AppSettingsUpdate(BaseModel):
     tailscale_image: Optional[str] = None
     workspace_lan_access: Optional[bool] = None
+    workspace_lan_subnets: Optional[str] = None
     workspace_no_new_privileges: Optional[bool] = None
     workspace_max_runtime_hours: Optional[int] = None
     workspace_cpu_limit: Optional[float] = None

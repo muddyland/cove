@@ -16,6 +16,7 @@ def test_settings_defaults(client):
     assert resp.json() == {
         "tailscale_image": "tailscale/tailscale:latest",
         "workspace_lan_access": False,
+        "workspace_lan_subnets": "",
         "workspace_no_new_privileges": False,
         "workspace_max_runtime_hours": 24,
         "workspace_cpu_limit": 0.0,
@@ -33,6 +34,7 @@ def test_settings_put_updates_both(client):
     assert resp.json() == {
         "tailscale_image": "tailscale/tailscale:v1.2",
         "workspace_lan_access": True,
+        "workspace_lan_subnets": "",
         "workspace_no_new_privileges": False,
         "workspace_max_runtime_hours": 24,
         "workspace_cpu_limit": 0.0,
@@ -59,6 +61,21 @@ def test_settings_cpu_and_memory_limits(client):
     got = client.get("/api/admin/settings").json()
     assert got["workspace_cpu_limit"] == 0.0
     assert got["workspace_memory_limit_mb"] == 0
+
+
+def test_settings_lan_subnets_validates_and_normalizes(client):
+    setup_admin(client)
+    # Mixed valid/invalid: valid IPv4 CIDRs are normalized+deduped; bare IPs get
+    # a /32; garbage and IPv6 are dropped.
+    resp = client.put(
+        "/api/admin/settings",
+        json={"workspace_lan_subnets": "10.12.0.0/24, 192.168.1.5, nonsense, fd00::/8, 10.12.0.0/24"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["workspace_lan_subnets"] == "10.12.0.0/24, 192.168.1.5/32"
+    # Persisted.
+    got = client.get("/api/admin/settings").json()
+    assert got["workspace_lan_subnets"] == "10.12.0.0/24, 192.168.1.5/32"
 
 
 def test_settings_no_new_privileges_toggle(client):

@@ -203,6 +203,14 @@ def update_app_settings(
             settings_store.KEY_WORKSPACE_LAN_ACCESS,
             "true" if body.workspace_lan_access else "false",
         )
+    if body.workspace_lan_subnets is not None:
+        # Validate + normalize; silently drops malformed/non-IPv4 entries so a
+        # bad paste can't inject raw iptables args downstream.
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_LAN_SUBNETS,
+            ", ".join(settings_store.parse_lan_subnets(body.workspace_lan_subnets)),
+        )
     if body.workspace_no_new_privileges is not None:
         settings_store.set_setting(
             db,

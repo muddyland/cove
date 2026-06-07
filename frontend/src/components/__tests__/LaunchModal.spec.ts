@@ -11,6 +11,10 @@ vi.mock('@/api/proot', () => ({
   prootApi: { list: vi.fn() },
 }))
 
+vi.mock('@/api/workspaces', () => ({
+  workspacesApi: { lanPolicy: vi.fn() },
+}))
+
 const launchMock = vi.fn()
 vi.mock('@/stores/workspaces', () => ({
   useWorkspacesStore: () => ({ launch: launchMock }),
@@ -27,6 +31,7 @@ vi.mock('@/components/BaseModal.vue', () => ({
 
 import { imagesApi } from '@/api/images'
 import { prootApi } from '@/api/proot'
+import { workspacesApi } from '@/api/workspaces'
 import LaunchModal from '@/components/LaunchModal.vue'
 
 const desktopImage: WorkspaceImage = {
@@ -48,6 +53,7 @@ describe('LaunchModal', () => {
     setActivePinia(createPinia())
     vi.mocked(imagesApi.list).mockResolvedValue([desktopImage])
     vi.mocked(prootApi.list).mockResolvedValue({ apps: ['firefox', 'obs-studio', 'blender'] })
+    vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
     launchMock.mockResolvedValue({ id: 99 })
   })
 
@@ -132,5 +138,30 @@ describe('LaunchModal', () => {
     const payload = launchMock.mock.calls[0][0]
     expect(payload.install_packages).toBe('git vim htop')
     expect(payload.proot_apps).toBe('firefox blender')
+  })
+
+  it('hides the LAN checkbox when the admin policy is disabled', async () => {
+    const wrapper = mount(LaunchModal, { props: { modelValue: true } })
+    await flushPromises()
+    const lanRow = wrapper.findAll('.checkbox-row').find(r => r.text().includes('direct LAN'))
+    expect(lanRow).toBeUndefined()
+  })
+
+  it('includes lan_access when the admin enables it and the box is ticked', async () => {
+    vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: true, subnets: ['10.12.0.0/24'] })
+    const wrapper = mount(LaunchModal, { props: { modelValue: true } })
+    await flushPromises()
+
+    await wrapper.find('input').setValue('My Desktop')
+    await wrapper.find('select').setValue(7)
+
+    const lanRow = wrapper.findAll('.checkbox-row').find(r => r.text().includes('Allow direct LAN access'))
+    expect(lanRow).toBeTruthy()
+    await lanRow!.find('input[type="checkbox"]').setValue(true)
+
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(launchMock.mock.calls[0][0].lan_access).toBe(true)
   })
 })

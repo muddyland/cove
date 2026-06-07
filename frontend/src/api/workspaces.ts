@@ -1,9 +1,10 @@
 import { api } from './client'
-import type { Workspace, WorkspaceStats } from '@/types'
+import type { LanPolicy, Workspace, WorkspaceStats } from '@/types'
 
 export const workspacesApi = {
   list: () => api.get<Workspace[]>('/workspaces'),
   stats: () => api.get<Record<number, WorkspaceStats>>('/workspaces/stats'),
+  lanPolicy: () => api.get<LanPolicy>('/workspaces/lan-policy'),
   get: (id: number) => api.get<Workspace>(`/workspaces/${id}`),
   create: (payload: {
     name: string
@@ -14,6 +15,7 @@ export const workspacesApi = {
     kiosk_dark?: boolean
     kiosk_menu?: boolean
     use_tailscale?: boolean
+    lan_access?: boolean
     ts_exit_node?: string
     ts_accept_routes?: boolean
     ts_accept_dns?: boolean
@@ -33,9 +35,12 @@ export const workspacesApi = {
       kiosk_dark?: boolean
       kiosk_menu?: boolean
       use_tailscale?: boolean
+      lan_access?: boolean
       ts_exit_node?: string
       ts_accept_routes?: boolean
       ts_accept_dns?: boolean
+      custom_dns?: boolean
+      dns_servers?: string
       install_packages?: string
       proot_apps?: string
       appimages?: string

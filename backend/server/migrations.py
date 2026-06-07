@@ -103,6 +103,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0020_workspace_appimages",
         "ALTER TABLE workspace ADD COLUMN appimages VARCHAR",
     ),
+    # Per-workspace opt-in for direct (raw-bridge) LAN egress.
+    (
+        "0021_workspace_lan_access",
+        "ALTER TABLE workspace ADD COLUMN lan_access BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

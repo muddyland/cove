@@ -241,6 +241,42 @@ def test_create_persists_packages_and_sudo(client, fake_docker_manager):
         db.close()
 
 
+def test_create_persists_lan_access_flag(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    # Default off.
+    d = client.post("/api/workspaces", json={"name": "plain", "image_id": image_id}).json()
+    assert d["lan_access"] is False
+    # Explicitly opted in.
+    e = client.post(
+        "/api/workspaces",
+        json={"name": "lan-ws", "image_id": image_id, "lan_access": True},
+    ).json()
+    assert e["lan_access"] is True
+    db = SessionLocal()
+    try:
+        assert db.get(Workspace, e["id"]).lan_access is True
+    finally:
+        db.close()
+
+
+def test_lan_policy_reflects_admin_settings(client, fake_docker_manager):
+    admin_token, _ = setup_admin(client)
+    # Default: disabled, no subnets.
+    pol = client.get("/api/workspaces/lan-policy").json()
+    assert pol == {"enabled": False, "subnets": []}
+    # After the admin enables it and configures ranges, a normal user sees them.
+    client.put(
+        "/api/admin/settings",
+        json={"workspace_lan_access": True, "workspace_lan_subnets": "10.12.0.0/24 192.168.0.0/16"},
+    )
+    create_user_via_admin(client, admin_token, "alice")
+    client.cookies.clear()
+    alice_token = login(client, "alice", "password123").json()["access_token"]
+    pol = client.get("/api/workspaces/lan-policy", headers=auth_header(alice_token)).json()
+    assert pol == {"enabled": True, "subnets": ["10.12.0.0/24", "192.168.0.0/16"]}
+
+
 def test_create_kiosk_flag(client, fake_docker_manager):
     setup_admin(client)
     image_id = add_image(

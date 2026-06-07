@@ -25,87 +25,7 @@
         </label>
       </template>
 
-      <label class="checkbox-row">
-        <input type="checkbox" v-model="form.use_tailscale" />
-        <span>Route through Tailscale</span>
-      </label>
-      <template v-if="form.use_tailscale">
-        <div class="form-group ts-field">
-          <label>Exit node (optional)</label>
-          <input v-model="form.ts_exit_node" type="text" placeholder="us-nyc-1 or 100.x.y.z" />
-        </div>
-        <label class="checkbox-row ts-field">
-          <input type="checkbox" v-model="form.ts_accept_routes" />
-          <span>Accept routes</span>
-        </label>
-        <label class="checkbox-row ts-field">
-          <input type="checkbox" v-model="form.ts_accept_dns" />
-          <span>Accept DNS</span>
-        </label>
-      </template>
-
-      <template v-if="!form.use_tailscale">
-        <label class="checkbox-row">
-          <input type="checkbox" v-model="form.custom_dns" />
-          <span>Use custom DNS (public resolvers)</span>
-        </label>
-        <div v-if="form.custom_dns" class="form-group ts-field">
-          <label>DNS servers</label>
-          <input v-model="form.dns_servers" type="text" placeholder="1.1.1.1 9.9.9.9" />
-          <div class="dns-presets">
-            <button type="button" @click="addDns('1.1.1.1')">+ Cloudflare</button>
-            <button type="button" @click="addDns('9.9.9.9')">+ Quad9</button>
-            <button type="button" @click="addDns('8.8.8.8')">+ Google</button>
-          </div>
-          <p class="hint">Space/comma separated IPs. Leave empty to use 1.1.1.1 + 9.9.9.9.</p>
-        </div>
-      </template>
-
-      <details class="advanced">
-        <summary>Advanced</summary>
-        <div class="advanced-body">
-          <label class="checkbox-row">
-            <input type="checkbox" v-model="form.allow_sudo" />
-            <span>Allow sudo</span>
-          </label>
-          <p class="hint">
-            Allow in-container <code>sudo</code>. Admins can force-disable sudo globally in
-            Settings, which overrides this choice.
-          </p>
-
-          <div class="form-group">
-            <label>Install packages</label>
-            <input v-model="form.install_packages" type="text" placeholder="git vim htop" />
-            <p class="hint">
-              Distro packages installed at launch via the LinuxServer
-              <code>universal-package-install</code> mod.
-            </p>
-          </div>
-
-          <div class="form-group">
-            <label>proot-apps</label>
-            <ProotAppsSelect v-model="form.proot_apps" />
-            <p class="hint">
-              Portable apps via LinuxServer <code>proot-apps</code> (desktop images).
-              Select one or more.
-            </p>
-          </div>
-
-          <div class="form-group">
-            <label>AppImage apps</label>
-            <textarea
-              v-model="form.appimages"
-              rows="2"
-              placeholder="https://example.com/App.AppImage"
-            />
-            <p class="hint">
-              One AppImage URL per line. Each is downloaded, extracted, and given a
-              desktop launcher (Electron apps run with <code>--no-sandbox</code>).
-              Applied on next boot.
-            </p>
-          </div>
-        </div>
-      </details>
+      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" />
 
       <p class="apply-note">Changes apply the next time the workspace boots.</p>
 
@@ -122,16 +42,18 @@
 import { reactive, computed, ref, watch, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
-import ProotAppsSelect from './ProotAppsSelect.vue'
+import WorkspaceOptionsFields from './WorkspaceOptionsFields.vue'
+import { workspacesApi } from '@/api/workspaces'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
-import type { Workspace } from '@/types'
+import type { LanPolicy, Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
 const open = defineModel<boolean>({ default: false })
 
 const loading = ref(false)
 const error = ref('')
+const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
 const store = useWorkspacesStore()
 const ui = useUiStore()
 
@@ -146,6 +68,7 @@ const form = reactive({
   kiosk_dark: false,
   kiosk_menu: false,
   use_tailscale: false,
+  lan_access: false,
   ts_exit_node: '',
   ts_accept_routes: true,
   ts_accept_dns: true,
@@ -156,12 +79,6 @@ const form = reactive({
   proot_apps: [] as string[],
   appimages: '',
 })
-
-function addDns(ip: string) {
-  const list = form.dns_servers.split(/[,\s]+/).filter(Boolean)
-  if (!list.includes(ip)) list.push(ip)
-  form.dns_servers = list.join(' ')
-}
 
 // Stored proot_apps is a space/comma-separated string; the selector works on an array.
 function parseProotApps(value: string | null): string[] {
@@ -175,6 +92,7 @@ function resetFromWs() {
   form.kiosk_dark = props.ws.kiosk_dark
   form.kiosk_menu = props.ws.kiosk_menu
   form.use_tailscale = props.ws.use_tailscale
+  form.lan_access = props.ws.lan_access
   form.ts_exit_node = props.ws.ts_exit_node ?? ''
   form.ts_accept_routes = props.ws.ts_accept_routes
   form.ts_accept_dns = props.ws.ts_accept_dns
@@ -186,16 +104,26 @@ function resetFromWs() {
   form.appimages = props.ws.appimages ?? ''
 }
 
+async function loadLanPolicy() {
+  try {
+    lanPolicy.value = await workspacesApi.lanPolicy()
+  } catch {
+    // Non-fatal: the LAN checkbox just stays hidden if the policy can't load.
+  }
+}
+
 // Re-seed the form from the workspace whenever the modal is opened.
 watch(open, value => {
   if (value) {
     error.value = ''
     resetFromWs()
+    loadLanPolicy()
   }
 })
 
 onMounted(() => {
   resetFromWs()
+  loadLanPolicy()
 })
 
 async function handleSubmit() {
@@ -209,6 +137,7 @@ async function handleSubmit() {
       kiosk_dark: urlCapable.value ? form.kiosk_dark : undefined,
       kiosk_menu: urlCapable.value ? form.kiosk_menu : undefined,
       use_tailscale: form.use_tailscale,
+      lan_access: form.lan_access,
       ...(form.use_tailscale
         ? {
             ts_exit_node: form.ts_exit_node || undefined,
@@ -244,49 +173,6 @@ async function handleSubmit() {
 }
 .checkbox-row input { width: auto; margin: 0; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
-.advanced {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-}
-.advanced > summary {
-  cursor: pointer;
-  font-size: 12px;
-  letter-spacing: 0.5px;
-  color: var(--text);
-  user-select: none;
-}
-.advanced-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-top: 16px;
-}
-.hint {
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  margin: 4px 0 0;
-}
-.hint code {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--accent);
-}
-.dns-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.dns-presets button {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  padding: 3px 8px;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-.dns-presets button:hover { color: var(--accent); border-color: var(--accent); }
 .apply-note {
   font-size: 11px;
   line-height: 1.5;

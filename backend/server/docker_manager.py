@@ -20,6 +20,7 @@ from server.settings_store import (
     get_tailscale_image,
     get_workspace_cpu_limit,
     get_workspace_lan_access,
+    get_workspace_lan_subnets,
     get_workspace_max_runtime_hours,
     get_workspace_memory_limit_mb,
     get_workspace_no_new_privileges,
@@ -81,12 +82,21 @@ def _build_browser_cli(ws) -> str:
 # netshoot ships iptables; it runs briefly and is removed immediately.
 EGRESS_GUARD_IMAGE = "nicolaka/netshoot:latest"
 
-# Private/link-local/CGNAT ranges blocked for WAN-only workspaces (by destination).
-_PRIVATE_RANGES = [
+# Destinations blocked for EVERY workspace, even Tailscale ones and even when
+# direct LAN access is granted: cloud/link-local metadata and the Docker-internal
+# range where the Cove backend, socket proxies, Traefik, and OTHER workspaces
+# live. Keeps container/backend isolation intact regardless of routing mode.
+_ALWAYS_BLOCK = [
+    "169.254.0.0/16",  # link-local / cloud metadata (169.254.169.254)
+    "172.16.0.0/12",   # Docker bridge networks (backend, proxies, Traefik, peers)
+]
+# Remaining private + CGNAT ranges. Blocked on the raw bridge unless a workspace
+# is granted direct access to a specific subnet within them. For Tailscale
+# workspaces the tailnet (carried on tailscale0) is allowed first, so tailnet
+# peers and subnet-router-advertised LAN inside these ranges still work.
+_LAN_BLOCK = [
     "10.0.0.0/8",
-    "172.16.0.0/12",
     "192.168.0.0/16",
-    "169.254.0.0/16",
     "100.64.0.0/10",
 ]
 
@@ -592,6 +602,15 @@ class DockerManager:
                 # Admin-configured CPU/memory caps (empty = uncapped).
                 limits = _resource_limits(db)
 
+                # Direct (raw-bridge) LAN subnets this workspace may reach: only
+                # when the admin master toggle AND the per-workspace opt-in are
+                # both on. Tailnet-routed LAN (Tailscale) is independent of this.
+                lan_subnets = (
+                    get_workspace_lan_subnets(db)
+                    if ws.lan_access and get_workspace_lan_access(db)
+                    else []
+                )
+
                 if ws.use_tailscale:
                     ts_cfg = db.scalar(
                         select(UserTailscale).where(UserTailscale.user_id == ws.user_id)
@@ -599,6 +618,16 @@ class DockerManager:
                     ts_image = get_tailscale_image(db)
                     self._launch_tailscale_sidecar(
                         ws, image, net_name, labels, ts_cfg, ts_image
+                    )
+                    # Firewall the sidecar's netns BEFORE the workspace joins it,
+                    # so rules are in place before the workload emits any traffic
+                    # (closes the startup race). tailscale0 traffic is allowed, so
+                    # the tailnet/exit-node/subnet routes keep working.
+                    self._apply_egress_guard(
+                        ws.id,
+                        tailscale=True,
+                        lan_subnets=lan_subnets,
+                        target=self._ts_sidecar_name(ws.id),
                     )
                     # The workspace container shares the sidecar's netns. No own
                     # network, no traefik labels (the sidecar carries routing).
@@ -642,10 +671,12 @@ class DockerManager:
                 ws.volume_name = mount_source
                 db.commit()
 
-                # EGRESS GUARD: WAN-only enforcement for non-tailscale workspaces.
-                # Tailscale workspaces route through the sidecar and are skipped.
-                if not ws.use_tailscale and not get_workspace_lan_access(db):
-                    self._apply_egress_guard(ws.id)
+                # EGRESS GUARD for non-Tailscale workspaces. Applied to every one
+                # (not skipped on LAN access): docker-internal + metadata stay
+                # blocked, and only admin-granted LAN subnets are allowed through.
+                # Tailscale workspaces were already guarded above (before start).
+                if not ws.use_tailscale:
+                    self._apply_egress_guard(ws.id, lan_subnets=lan_subnets)
 
                 started = self._wait_for_ready(container)
                 ws = db.get(Workspace, ws_id)  # re-fetch after wait
@@ -880,36 +911,69 @@ class DockerManager:
             except Exception as exc:
                 logger.warning("Auto-stop of workspace %s failed: %s", ws_id, exc)
 
-    def _apply_egress_guard(self, ws_id: int) -> None:
-        """Apply WAN-only egress firewall rules inside the workspace netns.
+    @staticmethod
+    def _build_egress_rules(tailscale: bool, lan_subnets: list[str]) -> str:
+        """Build the iptables OUTPUT script for a workspace netns.
 
-        Runs a short-lived helper container that shares the workspace
-        container's network namespace and installs iptables rules dropping
-        traffic destined for RFC1918 / link-local / CGNAT ranges. Allowed:
-        loopback, the embedded Docker DNS (127.0.0.11), ESTABLISHED/RELATED,
-        and everything else (i.e. the public internet / WAN).
+        Filtering is by DESTINATION on OUTPUT, so the WAN stays reachable through
+        the RFC1918 default gateway (the gateway is only the L2 next hop — the
+        packet's destination is the public host, which is allowed).
 
-        Filtering is by DESTINATION address, so a workspace can still reach the
-        WAN through its RFC1918 default gateway (the gateway is only the L2 next
-        hop — the packet's destination IP is the public host, which is allowed).
-
-        Best-effort: any failure is logged and never aborts the launch. Note
-        there is a brief startup race — rules are applied just after the
-        container starts running, so a packet sent in that window could slip
-        through. For a home-lab egress control this is acceptable.
+        Rule order matters:
+          1. loopback + embedded Docker DNS + ESTABLISHED/RELATED → ACCEPT.
+          2. (Tailscale only) anything egressing tailscale0 → ACCEPT. This covers
+             the tailnet, tailnet peers (incl. other Tailscale workspaces), exit
+             nodes, and subnet-router-advertised LAN — all before any DROP.
+          3. _ALWAYS_BLOCK (metadata + Docker-internal) → DROP. Applied to every
+             workspace so container/backend isolation holds regardless of mode.
+          4. Admin-granted LAN subnets → ACCEPT (raw-bridge direct LAN).
+          5. _LAN_BLOCK (remaining private + CGNAT) → DROP.
+          6. Default policy ACCEPT → WAN.
         """
-        target = f"cove-ws-{ws_id}"
-        # Build the iptables script. Drop private destinations on OUTPUT while
-        # allowing loopback, embedded DNS, and established/related flows.
         rules = [
             "iptables -P OUTPUT ACCEPT",
             "iptables -A OUTPUT -o lo -j ACCEPT",
+        ]
+        if tailscale:
+            # tailscale0 may not exist yet when this runs; iptables accepts the
+            # interface name regardless and the rule matches once it appears.
+            rules.append("iptables -A OUTPUT -o tailscale0 -j ACCEPT")
+        rules += [
             "iptables -A OUTPUT -d 127.0.0.11 -j ACCEPT",
             "iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
         ]
-        for cidr in _PRIVATE_RANGES:
+        for cidr in _ALWAYS_BLOCK:
             rules.append(f"iptables -A OUTPUT -d {cidr} -j DROP")
-        script = " && ".join(rules)
+        for cidr in lan_subnets:
+            rules.append(f"iptables -A OUTPUT -d {cidr} -j ACCEPT")
+        for cidr in _LAN_BLOCK:
+            rules.append(f"iptables -A OUTPUT -d {cidr} -j DROP")
+        return " && ".join(rules)
+
+    def _apply_egress_guard(
+        self,
+        ws_id: int,
+        *,
+        tailscale: bool = False,
+        lan_subnets: list[str] | None = None,
+        target: str | None = None,
+    ) -> None:
+        """Install the egress firewall in a workspace's network namespace.
+
+        Runs a short-lived helper container sharing the target's netns and
+        applies the rules from :meth:`_build_egress_rules`. ``target`` is the
+        container whose netns to enter — the workspace container for plain
+        workspaces, or the Tailscale sidecar (which owns the shared netns) for
+        Tailscale workspaces.
+
+        Best-effort: any failure is logged and never aborts the launch. For
+        non-Tailscale workspaces this runs just after the container starts, so a
+        packet in that brief window could slip through; for Tailscale workspaces
+        it runs against the sidecar BEFORE the workspace container starts, so the
+        rules are in place before the workload can emit any traffic.
+        """
+        target = target or f"cove-ws-{ws_id}"
+        script = self._build_egress_rules(tailscale, lan_subnets or [])
 
         try:
             self._pull_image(EGRESS_GUARD_IMAGE)
@@ -922,7 +986,10 @@ class DockerManager:
                 entrypoint="/bin/sh",
                 command=["-c", script],
             )
-            logger.info("Applied egress guard (WAN-only) for workspace %s", ws_id)
+            logger.info(
+                "Applied egress guard for workspace %s (tailscale=%s, lan=%s)",
+                ws_id, tailscale, ",".join(lan_subnets or []) or "none",
+            )
         except Exception as exc:
             logger.warning("Egress guard failed for workspace %s: %s", ws_id, exc)
 
