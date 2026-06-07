@@ -9,12 +9,18 @@
       <div class="top-actions">
         <button
           v-if="ws?.status === 'running'"
-          class="crt-btn"
+          class="bar-btn crt-btn"
           :class="{ active: ui.crt }"
           :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
           @click="ui.toggleCrt()"
         ><ScanLine :size="14" /> CRT</button>
-        <NeonButton v-if="ws?.status === 'running'" variant="secondary" :loading="stopping" @click="handleStop">HALT</NeonButton>
+        <button
+          v-if="ws?.status === 'running'"
+          class="bar-btn fs-btn"
+          :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          @click="toggleFullscreen"
+        ><component :is="isFullscreen ? Minimize : Maximize" :size="14" /> {{ isFullscreen ? 'WINDOW' : 'FULL' }}</button>
+        <NeonButton v-if="ws?.status === 'running'" variant="danger" :loading="stopping" @click="handleStop">HALT</NeonButton>
       </div>
     </div>
 
@@ -24,7 +30,7 @@
       <p v-if="installing" class="boot-sub">Installing packages &amp; proot-apps — this can take a few minutes.</p>
     </div>
 
-    <div class="frame-wrap" v-else-if="ws.status === 'running' && streamUrl">
+    <div class="frame-wrap" v-else-if="ws.status === 'running' && streamUrl" ref="frameWrap">
       <iframe
         :src="streamUrl"
         class="workspace-frame"
@@ -56,7 +62,7 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { ScanLine } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -68,7 +74,22 @@ const ws = computed(() => store.items.find(w => w.id === wsId.value))
 const installing = computed(() => !!(ws.value?.install_packages || ws.value?.proot_apps))
 const stopping = ref(false)
 const streamUrl = ref<string | null>(null)
+const frameWrap = ref<HTMLElement | null>(null)
+const isFullscreen = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+// Fullscreen the whole frame wrapper (iframe + CRT overlay + branding), not
+// just the iframe, so the overlay stays in sync.
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.()
+  } else {
+    frameWrap.value?.requestFullscreen?.().catch(() => {})
+  }
+}
+function onFullscreenChange() {
+  isFullscreen.value = document.fullscreenElement === frameWrap.value
+}
 
 async function loadStreamUrl() {
   // Mint the authenticated iframe URL. In subdomain mode this carries a one-time
@@ -84,11 +105,13 @@ async function loadStreamUrl() {
 }
 
 onMounted(async () => {
+  document.addEventListener('fullscreenchange', onFullscreenChange)
   if (!ws.value) await store.fetch()
   startPollIfNeeded()
   await loadStreamUrl()
 })
 onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
   if (pollTimer) clearInterval(pollTimer)
 })
 
@@ -145,10 +168,21 @@ async function handleStop() {
 }
 
 .back-link {
+  display: inline-flex; align-items: center;
   font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
-  color: var(--text-muted); text-decoration: none; flex-shrink: 0;
+  color: var(--accent); text-decoration: none; flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 245, 255, 0.4);
+  border-radius: var(--radius-sm);
+  text-shadow: var(--glow-sm);
+  transition: all 0.15s;
 }
-.back-link:hover { color: var(--accent); }
+.back-link:hover {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: var(--glow-sm);
+}
 
 .ws-info { display: flex; align-items: center; gap: 10px; flex: 1; }
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
@@ -200,7 +234,8 @@ async function handleStop() {
   100% { transform: translateY(430%); }
 }
 
-.crt-btn {
+/* Shared base for the small top-bar toggle buttons (CRT, fullscreen). */
+.bar-btn {
   background: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -215,13 +250,34 @@ async function handleStop() {
   align-items: center;
   gap: 5px;
 }
-.crt-btn:hover { color: var(--text); border-color: var(--text-muted); }
-.crt-btn.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  text-shadow: var(--glow-sm);
+
+/* CRT — amber/retro. Outlined when off, filled when on. */
+.crt-btn {
+  color: var(--amber);
+  border-color: rgba(255, 170, 0, 0.45);
 }
-.crt-btn.active svg { filter: drop-shadow(var(--glow-sm)); }
+.crt-btn:hover {
+  color: #fff;
+  border-color: var(--amber);
+  box-shadow: 0 0 8px rgba(255, 170, 0, 0.5);
+}
+.crt-btn.active {
+  color: #1a1206;
+  background: var(--amber);
+  border-color: var(--amber);
+  box-shadow: 0 0 10px rgba(255, 170, 0, 0.6);
+}
+
+/* Fullscreen — green. */
+.fs-btn {
+  color: var(--green);
+  border-color: rgba(0, 255, 157, 0.45);
+}
+.fs-btn:hover {
+  color: #fff;
+  border-color: var(--green);
+  box-shadow: 0 0 8px rgba(0, 255, 157, 0.5);
+}
 
 .branding {
   position: absolute;
