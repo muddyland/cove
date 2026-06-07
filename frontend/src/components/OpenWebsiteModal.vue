@@ -30,6 +30,14 @@
           <span>Accept DNS</span>
         </label>
       </template>
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="ephemeral" />
+        <span>Ephemeral (no saved data — wiped when halted)</span>
+      </label>
+      <p v-if="ephemeral" class="hint ts-field">
+        Cookies, history, and downloads live only in the container and are
+        discarded on halt. Nothing is written to persistent storage.
+      </p>
       <div v-if="error" class="form-error">⚠ {{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -58,6 +66,7 @@ const useTailscale = ref(false)
 const tsExitNode = ref('')
 const tsAcceptRoutes = ref(true)
 const tsAcceptDns = ref(true)
+const ephemeral = ref(false)
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -88,6 +97,7 @@ async function handleSubmit() {
       image_id: browserId.value as number,
       workspace_type: 'browser',
       target_url: url.value,
+      ephemeral: ephemeral.value,
       use_tailscale: useTailscale.value,
       ...(useTailscale.value
         ? {
@@ -104,6 +114,7 @@ async function handleSubmit() {
     tsExitNode.value = ''
     tsAcceptRoutes.value = true
     tsAcceptDns.value = true
+    ephemeral.value = false
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
@@ -122,4 +133,5 @@ async function handleSubmit() {
 }
 .checkbox-row input { width: auto; margin: 0; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
+.hint { font-size: 11px; line-height: 1.5; color: var(--text-muted); margin: 0; }
 </style>
