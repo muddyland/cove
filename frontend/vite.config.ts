@@ -7,8 +7,12 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // 'prompt' so a new deploy surfaces a "Reload" pill instead of either
+      // silently reloading mid-task or (on iOS standalone) only updating on a
+      // full close/reopen. We register the SW ourselves (src/pwa.ts) to add
+      // periodic + on-foreground update checks.
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Cove',
