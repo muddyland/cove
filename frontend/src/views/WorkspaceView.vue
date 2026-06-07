@@ -25,7 +25,7 @@
             <p v-if="!switchable.length" class="switch-empty">No nodes</p>
           </div>
         </div>
-        <StatusBadge v-if="ws" :status="ws.status" />
+        <StatusBadge v-if="ws" :status="ws.status" class="ws-status" />
       </div>
       <RouterLink to="/" class="brand-center" title="Back to grid">
         <img src="/favicon.svg" alt="" />
@@ -335,7 +335,7 @@ async function handleStop() {
   font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
   padding: 8px; text-align: center;
 }
-.top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
 .frame-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; }
 .workspace-frame { width: 100%; height: 100%; border: none; display: block; }
@@ -467,7 +467,10 @@ async function handleStop() {
   .bar-btn .bar-label { display: none; }        /* CRT / FULL become icon-only */
   .bar-btn { padding: 6px 8px; }                /* keep a comfortable tap target */
   .top-actions { gap: 6px; }
-  .ws-switch-btn .ws-name { max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The ONLINE badge is redundant on the stream (you're connected) and is the
+     main thing crowding the actions — drop it so the buttons get their space. */
+  .ws-status { display: none; }
+  .ws-switch-btn .ws-name { max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 .overlay-state {
