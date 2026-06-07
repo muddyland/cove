@@ -83,13 +83,21 @@ async function handleLogout() {
 </script>
 
 <style scoped>
-.shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
 
 .topnav {
   display: flex;
   align-items: center;
   gap: 0;
   padding: 0 24px;
+  /* Sit clear of the iOS status bar / notch (the PWA uses a black-translucent
+     status bar + viewport-fit=cover, so content draws underneath it). The insets
+     are 0 on devices without a notch, so desktop is unaffected. content-box keeps
+     the 52px bar height while the top inset is added above it. */
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+  box-sizing: content-box;
   height: 52px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -246,7 +254,14 @@ async function handleLogout() {
 
 /* ── Mobile: collapse the nav into a hamburger-toggled drawer ───────────────── */
 @media (max-width: 860px) {
-  .topnav { padding: 0 16px; }
+  /* Keep the safe-area top/side insets (don't use the `padding` shorthand, which
+     would zero out the status-bar offset on exactly the devices that need it). */
+  .topnav {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
   .logo { margin-right: 0; }
 
   .menu-toggle { display: inline-flex; }
