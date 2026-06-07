@@ -97,11 +97,16 @@ for url in $raw; do
   icon="$(find "${dest}" -maxdepth 3 \( -name '*.png' -o -name '*.svg' \) 2>/dev/null | head -1)"
 
   out="${DESKTOP_DIR}/cove-${slug}.desktop"
+  # Set APPDIR explicitly. Extracted AppImages auto-detect their AppDir by
+  # walking up from $0 looking for a dir containing $1 — but $1 here is
+  # "--no-sandbox", which matches nothing, so detection collapses to "" and the
+  # app binary path becomes "/<bin>" (works from a CLI with no args, fails from
+  # the menu). Exporting APPDIR skips that broken auto-detection entirely.
   run_as tee "${out}" >/dev/null <<EOF
 [Desktop Entry]
 Type=Application
 Name=${disp}
-Exec=${dest}/AppRun --no-sandbox %U
+Exec=env APPDIR=${dest} ${dest}/AppRun --no-sandbox %U
 Icon=${icon}
 Terminal=false
 Categories=AudioVideo;Network;Utility;
