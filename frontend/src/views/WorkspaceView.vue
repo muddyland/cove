@@ -1,7 +1,7 @@
 <template>
   <div class="workspace-page">
     <div class="top-bar">
-      <RouterLink to="/" class="back-link">← GRID</RouterLink>
+      <RouterLink to="/" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
       <div class="ws-info">
         <div class="ws-switcher">
           <button class="ws-switch-btn" :class="{ open: menuOpen }" @click.stop="menuOpen = !menuOpen">
@@ -38,13 +38,13 @@
           :class="{ active: ui.crt }"
           :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
           @click="ui.toggleCrt()"
-        ><ScanLine :size="14" /> CRT</button>
+        ><ScanLine :size="14" /><span class="bar-label"> CRT</span></button>
         <button
           v-if="ws?.status === 'running'"
           class="bar-btn fs-btn"
           :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
           @click="toggleFullscreen"
-        ><component :is="isFullscreen ? Minimize : Maximize" :size="14" /> {{ isFullscreen ? 'WINDOW' : 'FULL' }}</button>
+        ><component :is="isFullscreen ? Minimize : Maximize" :size="14" /><span class="bar-label"> {{ isFullscreen ? 'WINDOW' : 'FULL' }}</span></button>
         <NeonButton v-if="ws?.status === 'running'" variant="danger" :loading="stopping" @click="handleStop">HALT</NeonButton>
       </div>
     </div>
@@ -211,11 +211,26 @@ async function handleStop() {
 </script>
 
 <style scoped>
-.workspace-page { display: flex; flex-direction: column; height: 100vh; background: #000; overflow: hidden; }
+/* Use the dynamic viewport unit so mobile browser chrome (the collapsing URL
+   bar) can't push the bottom of the stream out of view; 100vh is the fallback
+   for browsers without dvh. overscroll-behavior:none kills iOS rubber-banding. */
+.workspace-page {
+  display: flex; flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  background: #000; overflow: hidden;
+  overscroll-behavior: none;
+}
 
 .top-bar {
   display: flex; align-items: center; gap: 16px;
   padding: 0 16px;
+  /* Sit clear of the iOS notch / status bar (black-translucent makes the page
+     draw underneath it). The inset is 0 on devices without a notch. */
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-top: env(safe-area-inset-top);
+  box-sizing: content-box;
   height: 44px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -274,6 +289,7 @@ async function handleStop() {
   top: calc(100% + 6px);
   left: 0;
   min-width: 240px;
+  max-width: calc(100vw - 24px);
   max-height: 60vh;
   overflow-y: auto;
   background: var(--surface);
@@ -439,6 +455,19 @@ async function handleStop() {
 /* Hide the centered logo on narrow screens so it can't overlap the controls. */
 @media (max-width: 700px) {
   .brand-center { display: none; }
+}
+
+/* Phone layout: the top bar is the tightest spot — back-link + switcher + status
+   + CRT/FULL/HALT must fit ~360px. Collapse text labels to icons, tighten gaps,
+   and let the switcher name (the only flexible item) absorb the remaining width. */
+@media (max-width: 560px) {
+  .top-bar { gap: 8px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+  .back-link { padding: 4px 8px; }
+  .back-link .bl-label { display: none; }      /* show just the ← arrow */
+  .bar-btn .bar-label { display: none; }        /* CRT / FULL become icon-only */
+  .bar-btn { padding: 6px 8px; }                /* keep a comfortable tap target */
+  .top-actions { gap: 6px; }
+  .ws-switch-btn .ws-name { max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 .overlay-state {
