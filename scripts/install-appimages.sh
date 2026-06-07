@@ -26,10 +26,22 @@ run_as() { s6-setuidgid "${USER_NAME}" "$@"; }
 
 run_as mkdir -p "${APPS_DIR}" "${DESKTOP_DIR}"
 
-# proot/AppImage downloads have no built-in timeout; cap each so a stalled CDN
-# can't hang container init forever.
+# Downloads have no built-in timeout; cap each so a stalled CDN can't hang
+# container init forever.
 timeout_cmd=""
 command -v timeout >/dev/null 2>&1 && timeout_cmd="timeout 600"
+
+# LinuxServer images ship curl but not always wget — prefer whichever exists.
+download() {  # download <url> <dest>
+  if command -v curl >/dev/null 2>&1; then
+    run_as ${timeout_cmd} curl -fsSL -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    run_as ${timeout_cmd} wget -q -O "$2" "$1"
+  else
+    echo "[cove] appimage: neither curl nor wget is available"
+    return 1
+  fi
+}
 
 for url in $raw; do
   case "$url" in
@@ -51,7 +63,7 @@ for url in $raw; do
 
   appimage="${APPS_DIR}/${slug}.AppImage"
   echo "[cove] appimage: downloading ${url}"
-  if ! run_as ${timeout_cmd} wget -q -O "${appimage}" "${url}"; then
+  if ! download "${url}" "${appimage}"; then
     echo "[cove] appimage: download failed for ${url}"
     rm -f "${appimage}"
     continue
@@ -62,10 +74,12 @@ for url in $raw; do
   tmp="${APPS_DIR}/.extract-${slug}"
   rm -rf "${tmp}" "${dest}"
   run_as mkdir -p "${tmp}"
-  # --appimage-extract drops 'squashfs-root' into the CWD.
-  if ! ( cd "${tmp}" && run_as "${appimage}" --appimage-extract >/dev/null 2>&1 ) \
-       || [ ! -d "${tmp}/squashfs-root" ]; then
-    echo "[cove] appimage: extract failed for ${slug}"
+  # --appimage-extract drops 'squashfs-root' into the CWD. Some AppImage
+  # runtimes exit non-zero even on a complete extraction, so judge success by
+  # whether a runnable AppRun landed rather than by the exit code.
+  ( cd "${tmp}" && run_as "${appimage}" --appimage-extract >/dev/null 2>&1 )
+  if [ ! -x "${tmp}/squashfs-root/AppRun" ]; then
+    echo "[cove] appimage: extract failed for ${slug} (out of disk?)"
     rm -rf "${tmp}" "${appimage}"
     continue
   fi
