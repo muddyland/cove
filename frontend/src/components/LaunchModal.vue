@@ -15,19 +15,24 @@
         </select>
       </div>
       <div v-if="urlCapable" class="form-group">
-        <label>{{ urlRequired ? 'Target URL' : 'Open URL (optional)' }}</label>
-        <input
+        <label>{{ urlRequired ? 'Target URL(s)' : 'Open URL(s) (optional)' }}</label>
+        <textarea
           v-model="form.target_url"
-          type="url"
+          rows="2"
           placeholder="https://example.com"
           :required="urlRequired"
         />
+        <p class="hint">One URL per line — each opens in its own tab (up to 6).</p>
       </div>
-      <label v-if="urlCapable" class="checkbox-row">
+      <label v-if="urlCapable && urlCount <= 1" class="checkbox-row">
         <input type="checkbox" v-model="form.kiosk" />
         <span>Kiosk mode (full-screen, no browser chrome)</span>
       </label>
-      <template v-if="urlCapable && form.kiosk">
+      <p v-if="urlCapable && urlCount > 1" class="hint">
+        Multiple tabs open full-screen with a tab bar — kiosk lock is unavailable
+        (it would hide the tabs).
+      </p>
+      <template v-if="urlCapable && urlCount <= 1 && form.kiosk">
         <label class="checkbox-row ts-field">
           <input type="checkbox" v-model="form.kiosk_dark" />
           <span>Dark mode</span>
@@ -109,6 +114,7 @@ const urlCapable = computed(() =>
   !!selectedImage.value && (!!selectedImage.value.url_env || selectedImage.value.image_type === 'link'),
 )
 const urlRequired = computed(() => selectedImage.value?.image_type === 'link')
+const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
 
 onMounted(async () => {
   images.value = await imagesApi.list()
@@ -134,9 +140,9 @@ async function handleSubmit() {
       image_id: form.image_id as number,
       workspace_type: selectedImage.value?.image_type ?? 'desktop',
       target_url: urlCapable.value && form.target_url ? form.target_url : undefined,
-      kiosk: urlCapable.value ? form.kiosk : false,
-      kiosk_dark: urlCapable.value && form.kiosk ? form.kiosk_dark : false,
-      kiosk_menu: urlCapable.value && form.kiosk ? form.kiosk_menu : false,
+      kiosk: urlCapable.value && urlCount.value <= 1 ? form.kiosk : false,
+      kiosk_dark: urlCapable.value && urlCount.value <= 1 && form.kiosk ? form.kiosk_dark : false,
+      kiosk_menu: urlCapable.value && urlCount.value <= 1 && form.kiosk ? form.kiosk_menu : false,
       use_tailscale: form.use_tailscale,
       use_gluetun: form.use_gluetun,
       ephemeral: urlCapable.value ? form.ephemeral : false,

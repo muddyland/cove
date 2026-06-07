@@ -2,8 +2,15 @@
   <BaseModal v-model="open" title="Open Website">
     <form @submit.prevent="handleSubmit" class="form">
       <div class="form-group">
-        <label>// website url</label>
-        <input v-model="url" type="url" placeholder="https://app.example.com" required autofocus />
+        <label>// website url(s)</label>
+        <textarea
+          v-model="url"
+          rows="3"
+          placeholder="https://app.example.com&#10;https://another.example.com"
+          required
+          autofocus
+        />
+        <p class="hint">One URL per line — each opens in its own tab (up to 6). Multiple tabs open full-screen with a tab bar.</p>
       </div>
       <div class="form-group">
         <label>// browser</label>
@@ -110,8 +117,9 @@ onMounted(async () => {
 })
 
 function deriveName(u: string): string {
+  const first = u.trim().split(/\s+/)[0] || ''
   try {
-    return new URL(u).hostname.replace(/^www\./, '')
+    return new URL(first).hostname.replace(/^www\./, '')
   } catch {
     return 'website'
   }

@@ -656,3 +656,37 @@ def test_gluetun_single_connection_enforced(client, fake_docker_manager):
         "/api/workspaces", json={"name": "g3", "image_id": image_id, "use_gluetun": True}
     )
     assert third.status_code == 201, third.text
+
+
+def test_browser_workspace_accepts_multiple_urls(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Chromium", image_type="browser", url_env="CHROME_CLI")
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "tabs", "image_id": image_id,
+              "target_url": "https://a.io\nhttps://b.io\nhttps://c.io"},
+    )
+    assert resp.status_code == 201, resp.text
+    # Stored canonically newline-joined.
+    assert resp.json()["target_url"] == "https://a.io\nhttps://b.io\nhttps://c.io"
+
+
+def test_browser_workspace_rejects_too_many_urls(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Chromium", image_type="browser", url_env="CHROME_CLI")
+    many = "\n".join(f"https://s{i}.io" for i in range(7))
+    resp = client.post(
+        "/api/workspaces", json={"name": "many", "image_id": image_id, "target_url": many}
+    )
+    assert resp.status_code == 400, resp.text
+
+
+def test_browser_workspace_rejects_bad_url_among_many(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Chromium", image_type="browser", url_env="CHROME_CLI")
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "mix", "image_id": image_id,
+              "target_url": "https://ok.io\nhttps://x.io/ --proxy=evil"},
+    )
+    assert resp.status_code == 400, resp.text

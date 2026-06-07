@@ -374,3 +374,23 @@ def test_gluetun_env_wireguard_override_and_no_ovpn_keys():
     assert env["FIREWALL_INPUT_PORTS"] == "6901"
     assert "FIREWALL_OUTBOUND_SUBNETS" not in env  # no subnet provided
     assert "OPENVPN_CUSTOM_CONFIG" not in env
+
+# ── _build_browser_cli multi-URL (tabs) ───────────────────────────────────────
+
+def test_browser_cli_multiple_urls_opens_tabs_fullscreen():
+    ws = _ws(target_url="https://a.io https://b.io https://c.io", kiosk=True, kiosk_menu=False)
+    cli = _build_browser_cli(ws)
+    # Locked --kiosk is NOT used for multi-URL (it hides the tab bar).
+    assert "--kiosk" not in cli.split()
+    assert "--start-fullscreen" in cli
+    assert cli.endswith("https://a.io https://b.io https://c.io")
+
+
+def test_browser_cli_single_url_unchanged():
+    assert _build_browser_cli(_ws(target_url="https://x.io", kiosk=True)) == "--kiosk https://x.io"
+
+
+def test_target_url_lan_ips_multiple():
+    from server.docker_manager import _target_url_lan_ips
+    ips = _target_url_lan_ips("https://10.0.0.5/ https://8.8.8.8/ https://192.168.1.9:3000/")
+    assert ips == ["10.0.0.5/32", "192.168.1.9/32"]  # public host excluded

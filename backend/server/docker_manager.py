@@ -67,20 +67,27 @@ def _helper_script_path(name: str) -> str:
 def _build_browser_cli(ws) -> str:
     """Assemble the browser CLI string (the *_CLI env value) for a URL workspace.
 
+    ``target_url`` may hold several whitespace/newline-separated URLs; the browser
+    opens each in its own tab. Each URL was validated at the API boundary
+    (http/https + host, no whitespace/control chars), so the space-joined result
+    can't smuggle extra CLI args.
+
     Chromium/Brave flags:
-      --kiosk           full-screen, locked (no context menu / shortcuts)
-      --start-fullscreen full-screen but keeps the right-click menu + refresh
+      --kiosk           full-screen, locked (no context menu / shortcuts / tab bar)
+      --start-fullscreen full-screen but keeps the menu + tab bar
       --force-dark-mode --enable-features=WebContentsForceDark  force dark pages
-    (Firefox ignores the Chromium-specific flags; --kiosk still applies.)
     """
+    urls = (ws.target_url or "").split()
     flags = []
-    if ws.kiosk:
-        # kiosk_menu keeps the context menu (right-click → Reload) and F5 by using
-        # functional full-screen instead of the locked-down kiosk mode.
+    if len(urls) > 1:
+        # Multiple tabs need the tab bar — locked --kiosk would hide it, so we
+        # never use it for multi-URL launches (use functional full-screen instead).
+        flags.append("--start-fullscreen")
+    elif ws.kiosk:
         flags.append("--start-fullscreen" if ws.kiosk_menu else "--kiosk")
     if ws.kiosk_dark:
         flags += ["--force-dark-mode", "--enable-features=WebContentsForceDark"]
-    return " ".join([*flags, ws.target_url]) if flags else ws.target_url
+    return " ".join([*flags, *urls])
 
 # Helper image used to apply egress firewall rules inside a workspace netns.
 # netshoot ships iptables; it runs briefly and is removed immediately.
@@ -108,19 +115,8 @@ _LAN_BLOCK = [
 _LAN_BLOCK_NETS = [ipaddress.ip_network(c) for c in _LAN_BLOCK]
 
 
-def _target_url_lan_ips(target_url: str | None) -> list[str]:
-    """Private /32s a workspace must reach to load a LAN ``target_url``.
-
-    A kiosk/browser workspace pointed at a LAN address won't load while the
-    egress guard blocks RFC1918, so we punch through exactly the target host (as
-    a /32 — narrow enough that it can't be a general-purpose LAN pivot). Only the
-    allowlist-governed ranges (10/8, 192.168/16, CGNAT) qualify; the Docker-
-    internal and metadata ranges stay blocked. Hostnames are resolved
-    best-effort. Returns [] for public hosts (already reachable) or on failure.
-    """
-    if not target_url:
-        return []
-    host = urlparse(target_url).hostname
+def _one_url_lan_ips(url: str) -> list[str]:
+    host = urlparse(url).hostname
     if not host:
         return []
     try:
@@ -136,6 +132,26 @@ def _target_url_lan_ips(target_url: str | None) -> list[str]:
     for ip in candidates:
         if ip.version == 4 and any(ip in net for net in _LAN_BLOCK_NETS):
             cidr = f"{ip}/32"
+            if cidr not in out:
+                out.append(cidr)
+    return out
+
+
+def _target_url_lan_ips(target_url: str | None) -> list[str]:
+    """Private /32s a workspace must reach to load its LAN ``target_url``(s).
+
+    A browser workspace pointed at a LAN address won't load while the egress
+    guard blocks RFC1918, so we punch through exactly the target host(s) (each as
+    a /32 — narrow enough that it can't be a general-purpose LAN pivot). Only the
+    allowlist-governed ranges (10/8, 192.168/16, CGNAT) qualify; the Docker-
+    internal and metadata ranges stay blocked. Hostnames are resolved
+    best-effort. ``target_url`` may list several URLs (multi-tab); each is checked.
+    """
+    if not target_url:
+        return []
+    out: list[str] = []
+    for url in target_url.split():
+        for cidr in _one_url_lan_ips(url):
             if cidr not in out:
                 out.append(cidr)
     return out

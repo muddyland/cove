@@ -69,6 +69,27 @@ def _validate_target_url(url: str) -> None:
         raise HTTPException(status_code=400, detail="target_url must be a valid http/https URL")
 
 
+# A browser workspace can open several URLs (one tab each). Capped to keep the
+# command line + resource use sane.
+_MAX_TARGET_URLS = 6
+
+
+def _normalize_target_urls(raw: str, *, link: bool = False) -> str:
+    """Split a (possibly multi-line) target_url into validated URLs and return the
+    canonical newline-joined form. Each URL is validated individually, so the
+    space-joined browser CLI can't be injected with extra args."""
+    urls = [u for u in re.split(r"\s+", raw.strip()) if u]
+    if not urls:
+        return ""
+    if link and len(urls) > 1:
+        raise HTTPException(status_code=400, detail="Link workspaces support a single URL")
+    if len(urls) > _MAX_TARGET_URLS:
+        raise HTTPException(status_code=400, detail=f"At most {_MAX_TARGET_URLS} URLs are allowed")
+    for u in urls:
+        _validate_target_url(u)
+    return "\n".join(urls)
+
+
 # Package / proot-app names: alphanumerics plus a safe punctuation subset. This
 # deliberately excludes every shell metacharacter and whitespace, so a token can
 # never break out of the install command (the values flow into init-script env
@@ -166,7 +187,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     url_capable = bool(image.url_env) or image.image_type == "link"
     target_url = body.target_url if url_capable else None
     if target_url:
-        _validate_target_url(target_url)
+        target_url = _normalize_target_urls(target_url, link=image.image_type == "link") or None
     if image.image_type == "link" and not target_url:
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
 
@@ -382,7 +403,9 @@ def update_workspace(
     data = body.model_dump(exclude_unset=True)
 
     if data.get("target_url"):
-        _validate_target_url(data["target_url"])
+        data["target_url"] = _normalize_target_urls(
+            data["target_url"], link=ws.workspace_type == "link"
+        )
     _validate_app_fields(
         data.get("install_packages"), data.get("proot_apps"), data.get("appimages")
     )

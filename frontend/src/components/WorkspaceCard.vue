@@ -148,12 +148,16 @@ async function copyIp(ip: string) {
 }
 
 function truncateUrl(url: string) {
+  const urls = url.trim().split(/\s+/).filter(Boolean)
+  const first = urls[0] ?? url
+  let label: string
   try {
-    const u = new URL(url)
-    return u.hostname + (u.pathname !== '/' ? u.pathname.slice(0, 20) : '')
+    const u = new URL(first)
+    label = u.hostname + (u.pathname !== '/' ? u.pathname.slice(0, 20) : '')
   } catch {
-    return url.slice(0, 30)
+    label = first.slice(0, 30)
   }
+  return urls.length > 1 ? `${label} +${urls.length - 1} more` : label
 }
 
 function open() {

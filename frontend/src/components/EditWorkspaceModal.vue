@@ -7,14 +7,18 @@
       </div>
 
       <div v-if="urlCapable" class="form-group">
-        <label>Target URL</label>
-        <input v-model="form.target_url" type="url" placeholder="https://example.com" />
+        <label>Target URL(s)</label>
+        <textarea v-model="form.target_url" rows="2" placeholder="https://example.com" />
+        <p class="hint">One URL per line — each opens in its own tab (up to 6).</p>
       </div>
-      <label v-if="urlCapable" class="checkbox-row">
+      <label v-if="urlCapable && urlCount <= 1" class="checkbox-row">
         <input type="checkbox" v-model="form.kiosk" />
         <span>Kiosk mode (full-screen, no browser chrome)</span>
       </label>
-      <template v-if="urlCapable && form.kiosk">
+      <p v-if="urlCapable && urlCount > 1" class="hint">
+        Multiple tabs open full-screen with a tab bar — kiosk lock is unavailable.
+      </p>
+      <template v-if="urlCapable && urlCount <= 1 && form.kiosk">
         <label class="checkbox-row ts-field">
           <input type="checkbox" v-model="form.kiosk_dark" />
           <span>Dark mode</span>
@@ -66,6 +70,7 @@ const ui = useUiStore()
 const urlCapable = computed(
   () => props.ws.workspace_type === 'browser' || props.ws.workspace_type === 'link',
 )
+const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
 
 const form = reactive({
   name: '',
@@ -149,9 +154,9 @@ async function handleSubmit() {
     await store.update(props.ws.id, {
       name: form.name,
       target_url: urlCapable.value ? form.target_url : undefined,
-      kiosk: urlCapable.value ? form.kiosk : undefined,
-      kiosk_dark: urlCapable.value ? form.kiosk_dark : undefined,
-      kiosk_menu: urlCapable.value ? form.kiosk_menu : undefined,
+      kiosk: urlCapable.value ? (urlCount.value <= 1 ? form.kiosk : false) : undefined,
+      kiosk_dark: urlCapable.value ? (urlCount.value <= 1 ? form.kiosk_dark : false) : undefined,
+      kiosk_menu: urlCapable.value ? (urlCount.value <= 1 ? form.kiosk_menu : false) : undefined,
       ephemeral: urlCapable.value ? form.ephemeral : undefined,
       use_tailscale: form.use_tailscale,
       use_gluetun: form.use_gluetun,
@@ -191,6 +196,7 @@ async function handleSubmit() {
 }
 .checkbox-row input { width: auto; margin: 0; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
+.hint { font-size: 11px; line-height: 1.5; color: var(--text-muted); margin: 0; }
 .apply-note {
   font-size: 11px;
   line-height: 1.5;
