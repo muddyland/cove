@@ -14,21 +14,27 @@ Cove lets you spin up full Linux desktops (XFCE, KDE, MATE, i3 on Ubuntu/Debian/
 ## Features
 
 - **One-click workspaces** — launch a desktop or browser container and stream it to your browser.
-- **Open-a-website flow** — paste a URL, pick a browser, and Cove boots a kiosk-style browser pointed at it (web-app delivery).
-- **Auto-populated catalog** — images are pulled from the [LinuxServer.io API](https://docs.linuxserver.io/API/) on first run and via a one-click admin sync.
-- **Authentication** — local accounts (bcrypt) *and* OIDC/Authentik SSO when configured.
+- **Open-a-website flow** — paste a URL, pick a browser, and Cove boots a kiosk-style browser pointed at it (web-app delivery), with optional dark mode and menu/full-screen variants.
+- **Live dashboard** — workspaces split into Active/Offline, with per-container **CPU & memory** stats on running cards, and the **Tailscale IP** shown (and copyable) for tailnet-routed nodes.
+- **In-stream controls** — fullscreen, a CRT toggle, HALT, and a **quick-switch menu** to jump between (or boot) other nodes without leaving the stream.
+- **Auto-populated catalog** — images are pulled from the [LinuxServer.io API](https://docs.linuxserver.io/API/) on first run and via a one-click admin sync; logos are auto-fetched.
+- **Manual image pulls** — pull/re-pull catalog images from the admin UI with live download status; delete the local image only or the catalog entry too.
+- **Per-workspace apps** — install distro packages (`universal-package-install`), LinuxServer **proot-apps**, and **AppImages** (auto-extracted with a desktop launcher) at launch.
+- **Authentication** — local accounts (bcrypt) *and* OIDC/Authentik SSO; an optional **OIDC-only** mode disables local login. Password management is hidden/blocked for SSO accounts.
 - **Per-user Tailscale routing** — opt a workspace into routing through a per-workspace Tailscale sidecar using your own preauth key, with exit-node selection, accept-routes/DNS, and a custom login (control) server.
+- **Custom DNS** — point a (non-Tailscale) workspace at public resolvers (e.g. `1.1.1.1`, `9.9.9.9`) instead of local DNS.
+- **Resource limits** — admin-set default **CPU (cores)** and **memory (MB)** caps applied to workspace containers (0 = unlimited).
 - **User preferences** — a self-service page to change your password and manage Tailscale settings.
 - **File browser** — browse, upload, download, and delete files in your workspace storage areas.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
 - **Egress policy** — workspaces are WAN-only by default (private/LAN ranges blocked); admins can allow LAN access per deployment.
-- **Admin settings** — pin/override the Tailscale image and toggle workspace LAN access from the UI, plus a read-only summary of env-configured settings.
+- **Admin settings** — pin/override the Tailscale image, toggle LAN access, force-disable sudo, set max runtime and CPU/memory limits, plus a read-only summary of env-configured settings.
 - **Optional subdomain isolation** — set `COVE_WORKSPACE_DOMAIN` to stream each workspace from its own origin (`{id}.domain`) so it can't reach the SPA's token; unset falls back to subpath routing.
 - **Installable PWA** — add Cove to your home screen / desktop; offline-aware app shell (the live stream and API are never cached).
 - **Security-first** — ForwardAuth-gated streams, per-workspace isolated Docker networks, split read-only/write Docker socket proxies, verified OIDC tokens, dropped capabilities, short-lived JWTs with refresh, real-client-IP rate limiting, audit logging, and optional at-rest DB encryption.
 - **Persistent storage** — per-workspace home directories that survive restarts.
 - **Admin UI** — manage users, images, live sessions, and the audit log.
-- **Cyberpunk UI** — neon theme with an optional CRT toggle.
+- **Cyberpunk UI** — neon theme with an optional CRT toggle on the stream.
 
 ## Testing
 
@@ -60,6 +66,8 @@ CI runs lint, both test suites, a frontend build, and a Docker image build (see 
 - **Frontend** — Vue 3 + TypeScript + Vite + Pinia.
 - **Proxy** — Traefik v3 (label-based, auto-routes each workspace; TLS via Let's Encrypt, TLS-ALPN or DNS-01).
 - **Workspaces** — `lscr.io/linuxserver/*` images (port 3000, `/config`).
+
+A full breakdown — runtime topology, auth/stream flows, the workspace lifecycle, and the data model — is in **[ARCH.md](ARCH.md)**.
 
 ## Quick start
 

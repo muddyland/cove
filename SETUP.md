@@ -34,12 +34,18 @@ Then browse to <http://localhost>:
 | `TZ` | `UTC` | Timezone passed to workspace containers. |
 | `COVE_COOKIE_SECURE` | `false` | Mark auth cookies `Secure`. **Set `true` in production (HTTPS).** |
 | `COVE_STORAGE_PATH` | _(unset)_ | Host path for persistent workspace homes (see below). |
+| `COVE_DNS_PRIMARY` / `COVE_DNS_SECONDARY` | `1.1.1.1` / `9.9.9.9` | Resolvers pinned for the **cove** container itself. Set to your **LAN DNS** if internal services (e.g. a split-horizon OIDC issuer) only resolve there — otherwise OIDC discovery and the LinuxServer API can fail with "Temporary failure in name resolution". |
 | `COVE_DOMAIN` | _(unset)_ | Public hostname (production HTTPS). |
+| `COVE_WORKSPACE_DOMAIN` | _(unset)_ | Enables per-workspace **subdomain isolation** (`<id>.domain`); unset = subpath routing (see §6b2). |
 | `COVE_ACME_EMAIL` | _(unset)_ | Let's Encrypt account email. |
 | `COVE_ACME_DNS_PROVIDER` | _(unset)_ | Traefik DNS provider for DNS-01 (e.g. `cloudflare`). |
 | `COVE_DB_ENCRYPTION_KEY` | _(unset)_ | Enables SQLCipher at-rest DB encryption when set. |
 
 OIDC and provider-credential variables are documented inline in `.env.example`.
+
+> Runtime knobs that **don't** need an env var / restart — workspace **CPU &
+> memory limits**, max runtime, LAN access, force-disable sudo, and the Tailscale
+> image — live in **Admin → Settings** and apply to newly started workspaces.
 
 ## 4. Persistent storage
 
@@ -102,9 +108,15 @@ COVE_OIDC_CLIENT_ID=...
 COVE_OIDC_CLIENT_SECRET=...
 COVE_OIDC_ADMIN_GROUP=cove-admins        # group claim → admin
 COVE_OIDC_PROVIDER_NAME=Authentik        # button label
+COVE_OIDC_ONLY=false                      # true = disable local login entirely (SSO only)
 ```
 
 In your IdP, set the redirect URI to `https://<your-domain>/api/auth/oidc/callback`.
+
+`COVE_OIDC_ONLY=true` removes the local username/password form and local user
+creation (accounts are provisioned on first SSO login). It only takes effect when
+OIDC is correctly configured, so a broken config can't lock you out — set it back
+to `false` on the server to restore the local login form.
 
 ## 6b. Tailscale routing (per user)
 
