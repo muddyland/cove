@@ -53,7 +53,7 @@ def _reset_database() -> None:
 def _clean_db():
     """Give every test a fresh schema + empty rate-limit buckets."""
     _reset_database()
-    auth_router._login_attempts.clear()
+    auth_router._rate_buckets.clear()
     yield
 
 

@@ -120,6 +120,74 @@ def test_login_rate_limit_returns_429(client):
     assert resp.status_code == 429
 
 
+def test_change_password_rate_limited(client):
+    setup_admin(client)  # leaves the session cookie in the jar
+    settings = get_settings()
+    body = {"current_password": "wrong-password", "new_password": "newpassword123"}
+    for _ in range(settings.login_rate_limit):
+        client.post("/api/auth/change-password", json=body)
+    resp = client.post("/api/auth/change-password", json=body)
+    assert resp.status_code == 429
+
+
+def test_refresh_rate_limited(client):
+    setup_admin(client)  # sets the refresh cookie
+    settings = get_settings()
+    for _ in range(settings.login_rate_limit):
+        client.post("/api/auth/refresh")
+    assert client.post("/api/auth/refresh").status_code == 429
+
+
+# ── CSRF / cross-origin protection ──────────────────────────────────────────────
+
+def test_csrf_blocks_cookie_mutation_from_foreign_origin(client):
+    setup_admin(client)  # session cookie is in the jar
+    resp = client.post(
+        "/api/auth/logout",
+        headers={"Origin": "https://evil.example.com", "X-Forwarded-Proto": "https"},
+    )
+    assert resp.status_code == 403
+
+
+def test_csrf_allows_cookie_mutation_from_same_origin(client):
+    setup_admin(client)
+    resp = client.post(
+        "/api/auth/logout",
+        headers={"Origin": "https://testserver", "X-Forwarded-Proto": "https"},
+    )
+    assert resp.status_code == 200
+
+
+def test_csrf_skips_bearer_auth_even_with_foreign_origin(client):
+    token, _ = setup_admin(client)
+    client.cookies.clear()  # bearer-only, no ambient cookie
+    resp = client.post(
+        "/api/auth/logout",
+        headers={"Authorization": f"Bearer {token}", "Origin": "https://evil.example.com"},
+    )
+    assert resp.status_code == 200
+
+
+def test_csrf_allows_when_no_origin_or_referer(client):
+    # Non-browser cookie client (the default TestClient case) is allowed, since a
+    # real CSRF attack from a browser always carries Origin.
+    setup_admin(client)
+    assert client.post("/api/auth/logout").status_code == 200
+
+
+def test_forward_auth_rejects_foreign_host(client, monkeypatch):
+    monkeypatch.setenv("COVE_FORWARD_AUTH_HOST", "cove:8080")
+    get_settings.cache_clear()
+    try:
+        # Default TestClient Host ("testserver") isn't the internal authority → 404.
+        assert client.get("/api/auth/forward").status_code == 404
+        # The genuine internal authority is accepted (then 401: no stream creds).
+        resp = client.get("/api/auth/forward", headers={"host": "cove:8080"})
+        assert resp.status_code == 401
+    finally:
+        get_settings.cache_clear()
+
+
 def test_oidc_only_disables_local_auth(client, monkeypatch):
     """When COVE_OIDC_ONLY is set (with OIDC configured), local login + setup are
     rejected and /config reports oidc_only=True."""

@@ -135,6 +135,10 @@ services:
       - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.41}
       - COVE_TRAEFIK_NETWORK=cove-net
       - COVE_TRAEFIK_CONTAINER=cove-traefik
+      # Internal authority of the ForwardAuth address below (http://cove:8080/...).
+      # /api/auth/forward rejects any request whose Host isn't this, so the
+      # endpoint can't be probed directly through the public router.
+      - COVE_FORWARD_AUTH_HOST=cove:8080
       - COVE_WORKSPACE_TZ=${TZ:-UTC}
       - COVE_STORAGE_PATH=${COVE_STORAGE_PATH:-/var/lib/cove/workspaces}
       # INSECURE default: this base compose serves plain HTTP, so Secure cookies

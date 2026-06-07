@@ -41,6 +41,12 @@ class Settings(BaseSettings):
 
     traefik_network: str = "cove-net"
     traefik_container: str = "cove-traefik"
+    # Internal authority Traefik's ForwardAuth uses to reach this app (the host
+    # of the forwardauth `address`, e.g. "cove:8080"). When set, /api/auth/forward
+    # rejects any request whose Host header isn't this value — a public request
+    # routed through Traefik arrives with the public Host, so it can't reach the
+    # endpoint. Unset (dev/tests) = no host enforcement. (empty -> None)
+    forward_auth_host: Optional[str] = None
     workspace_puid: int = 1000
     workspace_pgid: int = 1000
     workspace_tz: str = "UTC"
@@ -61,6 +67,7 @@ class Settings(BaseSettings):
         "db_encryption_key",
         "workspace_domain",
         "app_origin",
+        "forward_auth_host",
         mode="before",
     )
     @classmethod

@@ -36,8 +36,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _STREAM_RE = re.compile(r"^/workspace/([^/]+)/")
 
-# Module-level sliding-window rate limiter for login attempts, keyed by client IP.
-_login_attempts: dict[str, list[float]] = {}
+# Module-level sliding-window rate limiter for sensitive auth endpoints, keyed by
+# "<scope>:<client IP>" so each endpoint family throttles independently.
+_rate_buckets: dict[str, list[float]] = {}
 
 # A throwaway bcrypt hash used to equalize response timing on the login path when
 # the account doesn't exist (or isn't a local account). Verifying against it costs
@@ -86,24 +87,29 @@ def _clear_auth_cookies(resp: Response) -> None:
     resp.delete_cookie(settings.cookie_refresh_name, path="/api/auth")
 
 
-def _check_rate_limit(ip: str) -> bool:
-    """Return True if the request is allowed, False if the limit is exceeded."""
+def _check_rate_limit(ip: str, scope: str = "login") -> bool:
+    """Return True if the request is allowed, False if the limit is exceeded.
+
+    ``scope`` partitions the limiter per endpoint family (login, refresh, pwchange,
+    oidc) so one doesn't starve another; the same per-IP limit/window applies.
+    """
     settings = get_settings()
     now = time.monotonic()
     window = settings.login_rate_window_seconds
+    key = f"{scope}:{ip}"
     # Bound memory: periodically evict buckets whose attempts have all aged out,
     # so a flood of distinct source IPs can't grow the map without limit.
-    if len(_login_attempts) > 512:
-        for stale_ip in [
-            k for k, ts in _login_attempts.items() if all(now - t >= window for t in ts)
+    if len(_rate_buckets) > 512:
+        for stale_key in [
+            k for k, ts in _rate_buckets.items() if all(now - t >= window for t in ts)
         ]:
-            del _login_attempts[stale_ip]
-    bucket = [t for t in _login_attempts.get(ip, []) if now - t < window]
+            del _rate_buckets[stale_key]
+    bucket = [t for t in _rate_buckets.get(key, []) if now - t < window]
     if len(bucket) >= settings.login_rate_limit:
-        _login_attempts[ip] = bucket
+        _rate_buckets[key] = bucket
         return False
     bucket.append(now)
-    _login_attempts[ip] = bucket
+    _rate_buckets[key] = bucket
     return True
 
 
@@ -185,6 +191,8 @@ def login(body: LoginRequest, request: Request, db: DbSession):
 @router.post("/refresh")
 def refresh(request: Request, db: DbSession):
     settings = get_settings()
+    if not _check_rate_limit(client_ip(request), "refresh"):
+        raise HTTPException(status_code=429, detail="Too many requests")
     token = request.cookies.get(settings.cookie_refresh_name)
     if not token:
         raise HTTPException(status_code=401, detail="No refresh token")
@@ -229,7 +237,13 @@ def logout(user: CurrentUser, request: Request, db: DbSession):
 
 
 @router.post("/change-password")
-def change_password(body: ChangePasswordRequest, user: CurrentUser, db: DbSession):
+def change_password(
+    body: ChangePasswordRequest, user: CurrentUser, db: DbSession, request: Request
+):
+    # Throttle the bcrypt verify below: it both resists online guessing of the
+    # current password (for a hijacked session) and caps the CPU-DoS amplification.
+    if not _check_rate_limit(client_ip(request), "pwchange"):
+        raise HTTPException(status_code=429, detail="Too many requests")
     if user.auth_provider != "local":
         raise HTTPException(status_code=400, detail="Cannot change password for SSO accounts")
     if not verify_password(body.current_password, user.password_hash or ""):
@@ -251,6 +265,8 @@ async def oidc_login(request: Request):
     settings = get_settings()
     if not settings.oidc_enabled:
         raise HTTPException(status_code=404, detail="OIDC not configured")
+    if not _check_rate_limit(client_ip(request), "oidc"):
+        raise HTTPException(status_code=429, detail="Too many requests")
     await oidc_module.fetch_discovery()
     signed = sign_state(oidc_module.generate_state())
     # A distinct nonce, sent to the IdP and echoed back in the id_token, binds
@@ -291,6 +307,8 @@ async def oidc_callback(
     settings = get_settings()
     if not settings.oidc_enabled:
         raise HTTPException(status_code=404, detail="OIDC not configured")
+    if not _check_rate_limit(client_ip(request), "oidc"):
+        raise HTTPException(status_code=429, detail="Too many requests")
 
     cookie_state = request.cookies.get("oidc_state")
     if (
@@ -478,6 +496,13 @@ def forward_auth(request: Request, db: DbSession):
     Robust: any missing piece results in 401.
     """
     settings = get_settings()
+    # Only Traefik's internal ForwardAuth subrequest may reach this endpoint. That
+    # subrequest carries the internal authority (e.g. "cove:8080") as its Host;
+    # a public request routed through Traefik arrives with the public Host, so it
+    # is rejected here — closing the endpoint as an external enumeration surface.
+    if settings.forward_auth_host:
+        if request.headers.get("host") != settings.forward_auth_host:
+            return Response(status_code=404)
     try:
         uri = request.headers.get("X-Forwarded-Uri") or request.headers.get("X-Forwarded-Path")
 

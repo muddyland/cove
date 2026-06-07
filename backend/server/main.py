@@ -4,9 +4,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
@@ -151,8 +152,69 @@ async def _status_monitor(dm):
             logger.warning("Status monitor error: %s", exc)
 
 
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+
+def _allowed_origins(request: Request, settings) -> set[str]:
+    """Origins permitted to make cookie-authenticated, state-changing API calls.
+
+    The app's own origin (derived from the forwarded proto + Host that Traefik
+    passes through) plus an optional explicitly-configured SPA origin.
+    """
+    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    if not proto:
+        proto = "https" if settings.cookie_secure else "http"
+    host = request.headers.get("host", "")
+    allowed = {f"{proto}://{host}"} if host else set()
+    if settings.app_origin:
+        allowed.add(settings.app_origin.rstrip("/"))
+    return allowed
+
+
+def _csrf_origin_ok(request: Request, settings) -> bool:
+    """Verify the request's Origin/Referer against the allowed set.
+
+    Browsers always attach Origin to credentialed cross-origin mutations, so a
+    workspace origin ({id}.{domain}) — which is *same-site* to the SPA and would
+    otherwise carry the host-only session cookie — is rejected here. When neither
+    Origin nor Referer is present (a non-browser client, never a CSRF vector) the
+    request is allowed; bearer-token requests skip this check entirely.
+    """
+    allowed = _allowed_origins(request, settings)
+    origin = request.headers.get("origin")
+    if origin is not None:
+        return origin.rstrip("/") in allowed
+    referer = request.headers.get("referer")
+    if referer:
+        parts = urlsplit(referer)
+        return f"{parts.scheme}://{parts.netloc}" in allowed
+    return True
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Cove", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def csrf_protect(request: Request, call_next):
+        """Reject cross-origin, cookie-authenticated state-changing API requests.
+
+        Only applies to mutating methods on /api/** that rely on an ambient auth
+        cookie (no Authorization header). This is the defense against a hostile
+        workspace origin acting as a confused deputy with the victim's session.
+        """
+        settings = get_settings()
+        if (
+            request.method.upper() not in _CSRF_SAFE_METHODS
+            and request.url.path.startswith("/api/")
+            and (
+                request.cookies.get(settings.cookie_session_name)
+                or request.cookies.get(settings.cookie_refresh_name)
+            )
+            and not request.headers.get("authorization")
+            and not _csrf_origin_ok(request, settings)
+        ):
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin request blocked"})
+        return await call_next(request)
 
     app.include_router(auth.router)
     app.include_router(images.router)
