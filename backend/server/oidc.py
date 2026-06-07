@@ -15,6 +15,17 @@ _USERNAME_CHARSET_RE = re.compile(r"[^a-zA-Z0-9._-]")
 _discovery: Optional[dict] = None
 _jwks: Optional[dict] = None
 
+# Asymmetric signing algorithms we accept for ID tokens. The allowed set is a
+# verifier-side policy decision and is NEVER taken from the (network-fetched,
+# cacheable) discovery document: trusting that list would let an IdP — or a
+# poisoned/misconfigured metadata response — advertise HS256 or "none" and open
+# an RS/HS key-confusion forgery (sign with the public JWKS key as the HMAC
+# secret). We intersect discovery's advertised algs with this allowlist so real
+# IdPs keep working, but symmetric/none can never slip in.
+_ALLOWED_ID_TOKEN_ALGS = frozenset(
+    {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512"}
+)
+
 
 async def fetch_discovery() -> dict:
     global _discovery
@@ -109,7 +120,9 @@ async def verify_id_token(id_token: str, nonce: Optional[str] = None) -> dict:
     header = jwt.get_unverified_header(id_token)
     key = _select_signing_key(jwks, header.get("kid"))
 
-    algorithms = discovery.get("id_token_signing_alg_values_supported") or ["RS256"]
+    # Pin to our asymmetric allowlist; never honor HS*/none even if advertised.
+    advertised = discovery.get("id_token_signing_alg_values_supported") or []
+    algorithms = [a for a in advertised if a in _ALLOWED_ID_TOKEN_ALGS] or ["RS256"]
 
     claims = jwt.decode(
         id_token,

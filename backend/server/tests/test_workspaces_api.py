@@ -79,6 +79,26 @@ def test_browser_workspace_rejects_invalid_target_url(client):
     assert resp.status_code == 400, resp.text
 
 
+def test_browser_workspace_rejects_whitespace_in_target_url(client, fake_docker_manager):
+    """A space in target_url would inject extra browser CLI flags — reject it."""
+    setup_admin(client)
+    image_id = add_image(
+        name="Chromium",
+        docker_image="lscr.io/linuxserver/chromium:latest",
+        image_type="browser",
+        url_env="CHROME_CLI",
+    )
+    resp = client.post(
+        "/api/workspaces",
+        json={
+            "name": "inj",
+            "image_id": image_id,
+            "target_url": "https://x.io/ --proxy-server=evil:8080",
+        },
+    )
+    assert resp.status_code == 400, resp.text
+
+
 def test_desktop_workspace_ignores_target_url(client):
     """A non-url-capable image must not store a startup URL even if supplied."""
     setup_admin(client)

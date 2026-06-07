@@ -19,7 +19,12 @@ class Settings(BaseSettings):
     # Per-workspace stream token lifetime (subdomain mode). The stream cookie is
     # scoped to a single workspace origin; this is how long a stream stays
     # authenticated before the SPA must mint a fresh token.
-    stream_token_minutes: int = 720
+    stream_token_minutes: int = 480
+    # Lifetime of the one-time bootstrap token carried in the ``?__cove_t`` URL.
+    # Kept short because it rides in a URL (logs/Referer/history): it is consumed
+    # exactly once to set the stream cookie, then useless. Distinct from the
+    # cookie token above, which is minted fresh on a successful bootstrap.
+    stream_bootstrap_minutes: int = 5
 
     # Cookie settings
     cookie_secure: bool = True

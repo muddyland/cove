@@ -99,11 +99,19 @@ services:
       - traefik.http.middlewares.cove-errors.errors.status=502-504
       - traefik.http.middlewares.cove-errors.errors.service=cove
       - traefik.http.middlewares.cove-errors.errors.query=/__cove_error/{status}
-      # Security headers (cove-headers@docker). No CSP (breaks webtop), no HSTS (HTTP local).
+      # Security headers (cove-headers@docker). Applied to the SPA/API router only
+      # — NOT to workspace routers (those get their own per-workspace headers), so
+      # the CSP below can't break webtop streams. No HSTS here (HTTP local; prod
+      # override adds it).
       - traefik.http.middlewares.cove-headers.headers.contentTypeNosniff=true
       - traefik.http.middlewares.cove-headers.headers.referrerPolicy=strict-origin-when-cross-origin
       - traefik.http.middlewares.cove-headers.headers.customResponseHeaders.X-Frame-Options=SAMEORIGIN
       - traefik.http.middlewares.cove-headers.headers.customResponseHeaders.X-Cove=1
+      # CSP for the app origin (defense-in-depth vs XSS in the SPA). The built SPA
+      # has no inline scripts, so script-src 'self' is safe; styles need
+      # unsafe-inline (Vue :style bindings) + Google Fonts; frame-src allows the
+      # workspace stream iframes (own subdomain in subdomain mode).
+      - "traefik.http.middlewares.cove-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-src 'self' https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
       # Rate limit for login.
       - traefik.http.middlewares.cove-ratelimit.ratelimit.average=5
       - traefik.http.middlewares.cove-ratelimit.ratelimit.period=1m
@@ -146,8 +154,11 @@ services:
       # networked/public deployment layer docker-compose.prod.yml (TLS) which sets
       # this to true. The app logs a warning at startup while this is false.
       - COVE_COOKIE_SECURE=${COVE_COOKIE_SECURE:-false}
-      # Only Traefik can reach cove:8080 (cove-net), so trust its forwarded
-      # headers; the app also reads the real client from the rightmost XFF hop.
+      # cove:8080 is only reachable from Traefik (cove-net, not published), so
+      # trusting forwarded headers here is safe — needed so request.base_url is
+      # https for the OIDC redirect_uri. Note this "*" is NOT a rate-limit/audit
+      # spoofing risk: client_ip() derives the client from the RIGHTMOST XFF hop
+      # (the one Traefik appends), which a client can't forge, independent of this.
       - FORWARDED_ALLOW_IPS=*
       # Per-workspace subdomain isolation (optional). When COVE_WORKSPACE_DOMAIN
       # is set, each workspace streams at {public_id}.{domain} (its own origin,

@@ -15,10 +15,20 @@ def _create_workspace(client, image_id, name="ws1"):
     return resp.json()
 
 
+def _mark_running(ws_id: int) -> None:
+    db = SessionLocal()
+    try:
+        db.get(Workspace, ws_id).status = "running"
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_forward_auth_flow(client):
     setup_admin(client)  # client jar now holds the owner's session cookie
     image_id = add_image()
     ws = _create_workspace(client, image_id)
+    _mark_running(ws["id"])
     public_id = ws["public_id"]
     uri = f"/workspace/{public_id}/"
 
@@ -62,6 +72,7 @@ def test_forward_auth_other_users_workspace_denied(client):
     image_id = add_image()
     # Admin owns a workspace.
     ws = _create_workspace(client, image_id, name="admin-ws")
+    _mark_running(ws["id"])  # running, so the 401 is specifically cross-user denial
 
     # Create a normal user owning a *different* workspace.
     from server.tests.helpers import create_user_via_admin

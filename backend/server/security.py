@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -122,6 +123,27 @@ def create_stream_token(user_id: int, public_id: str) -> str:
         "sub": str(user_id),
         "ws": public_id,
         "type": "stream",
+        "iat": now,
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
+
+
+def create_stream_bootstrap_token(user_id: int, public_id: str) -> str:
+    """Mint a one-time bootstrap token for the ``?__cove_t`` URL (subdomain mode).
+
+    Short-lived and carries a unique ``jti`` so the ForwardAuth endpoint can
+    consume it exactly once before swapping it for a fresh stream *cookie* token.
+    Distinct ``type`` so it can never be presented as a cookie session token.
+    """
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.stream_bootstrap_minutes)
+    payload = {
+        "sub": str(user_id),
+        "ws": public_id,
+        "type": "stream_bootstrap",
+        "jti": uuid.uuid4().hex,
         "iat": now,
         "exp": expire,
     }

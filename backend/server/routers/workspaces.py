@@ -18,7 +18,7 @@ from server.schemas import (
     WorkspaceStats,
     WorkspaceUpdate,
 )
-from server.security import create_stream_token
+from server.security import create_stream_bootstrap_token
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -53,6 +53,21 @@ def _clean_dns(raw: str | None) -> str | None:
     return " ".join(cleaned) if cleaned else None
 
 
+def _validate_target_url(url: str) -> None:
+    """Reject anything that isn't a clean http(s) URL.
+
+    Beyond scheme/host, reject whitespace and control characters: the URL is
+    appended to the browser's command line (e.g. ``CHROME_CLI``), so a space
+    would split it into extra argv tokens (``--proxy-server=…``,
+    ``--disable-web-security``, …), silently undoing the kiosk lockdown.
+    """
+    if re.search(r"[\s\x00-\x1f\x7f]", url):
+        raise HTTPException(status_code=400, detail="target_url must not contain whitespace")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="target_url must be a valid http/https URL")
+
+
 def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
     ws = db.get(Workspace, ws_id)
     if not ws:
@@ -82,9 +97,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     url_capable = bool(image.url_env) or image.image_type == "link"
     target_url = body.target_url if url_capable else None
     if target_url:
-        parsed = urlparse(target_url)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            raise HTTPException(status_code=400, detail="target_url must be a valid http/https URL")
+        _validate_target_url(target_url)
     if image.image_type == "link" and not target_url:
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
 
@@ -208,7 +221,9 @@ def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
     if not settings.workspace_domain:
         return StreamAuthOut(url=f"/workspace/{ws.public_id}/")
 
-    token = create_stream_token(user.id, ws.public_id)
+    # One-time, short-lived bootstrap token for the URL — swapped for a fresh
+    # stream cookie by ForwardAuth on first hit, then dead.
+    token = create_stream_bootstrap_token(user.id, ws.public_id)
     host = settings.workspace_host(ws.public_id)
     return StreamAuthOut(url=f"//{host}/?__cove_t={token}")
 
@@ -221,9 +236,7 @@ def update_workspace(
     data = body.model_dump(exclude_unset=True)
 
     if data.get("target_url"):
-        parsed = urlparse(data["target_url"])
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            raise HTTPException(status_code=400, detail="target_url must be a valid http/https URL")
+        _validate_target_url(data["target_url"])
     if data.get("use_tailscale"):
         ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == ws.user_id))
         if not ts or not ts.auth_key:

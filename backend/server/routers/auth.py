@@ -24,6 +24,7 @@ from server.schemas import (
 from server.security import (
     create_access_token,
     create_refresh_token,
+    create_stream_token,
     decode_token,
     hash_password,
     sign_state,
@@ -381,13 +382,21 @@ def _authorize_ws(db: Session, public_id: str, user: User) -> bool:
     ws = db.scalar(select(Workspace).where(Workspace.public_id == public_id))
     if not ws:
         return False
+    # Bind to the live workspace: a stopped/errored workspace's token or cookie
+    # must not authenticate (a captured credential dies when the workspace does).
+    if ws.status != "running":
+        return False
     return ws.user_id == user.id or user.is_admin
 
 
-def _resolve_stream_user(db: Session, token: str, public_id: str) -> User | None:
-    """Validate a stream token and confirm it is scoped to this workspace."""
+def _resolve_stream_user(db: Session, token: str, public_id: str, *, kind: str = "stream") -> User | None:
+    """Validate a stream token (``kind``) and confirm it is scoped to this workspace.
+
+    ``kind`` is the required ``type`` claim: "stream" for the cookie token,
+    "stream_bootstrap" for the one-time ``?__cove_t`` URL token.
+    """
     payload = decode_token(token)
-    if not payload or payload.get("type") != "stream":
+    if not payload or payload.get("type") != kind:
         return None
     if payload.get("ws") != public_id:
         return None
@@ -400,6 +409,26 @@ def _resolve_stream_user(db: Session, token: str, public_id: str) -> User | None
     if not user or not _check_revocation(user, payload):
         return None
     return user
+
+
+# One-time-use ledger for bootstrap-token jti values: {jti: expiry_monotonic}.
+# Best-effort (process-local, cleared on restart) — paired with the token's short
+# lifetime, a leaked ?__cove_t URL can't be replayed to mint a stream cookie.
+_used_bootstrap_jti: dict[str, float] = {}
+
+
+def _consume_bootstrap_jti(jti: str | None) -> bool:
+    """Return True if this jti is fresh (and record it); False if already used."""
+    if not jti:
+        return False
+    now = time.monotonic()
+    if len(_used_bootstrap_jti) > 1024:
+        for k in [k for k, exp in _used_bootstrap_jti.items() if exp <= now]:
+            del _used_bootstrap_jti[k]
+    if jti in _used_bootstrap_jti and _used_bootstrap_jti[jti] > now:
+        return False
+    _used_bootstrap_jti[jti] = now + get_settings().stream_bootstrap_minutes * 60
+    return True
 
 
 def _stream_token_from_uri(uri: str | None) -> str | None:
@@ -441,15 +470,24 @@ def _forward_auth_subdomain(request, db, settings, public_id: str, uri: str | No
 
     token = _stream_token_from_uri(uri)
     if token:
-        user = _resolve_stream_user(db, token, public_id)
-        if user and _authorize_ws(db, public_id, user):
+        payload = decode_token(token)
+        user = _resolve_stream_user(db, token, public_id, kind="stream_bootstrap")
+        # Single-use: consume the jti so a leaked ?__cove_t URL can't be replayed.
+        if (
+            user
+            and _consume_bootstrap_jti(payload.get("jti") if payload else None)
+            and _authorize_ws(db, public_id, user)
+        ):
+            # Mint a FRESH, longer-lived cookie token — the short-lived bootstrap
+            # token is never persisted as the session cookie.
+            cookie_token = create_stream_token(user.id, public_id)
             resp = Response(
                 status_code=302,
                 headers={"Location": _clean_stream_url(request, settings, uri)},
             )
             resp.set_cookie(
                 settings.cookie_stream_name,
-                token,
+                cookie_token,
                 httponly=True,
                 secure=settings.cookie_secure,
                 samesite="lax",

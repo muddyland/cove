@@ -14,7 +14,7 @@ from server.config import get_settings
 from server.db import SessionLocal
 from server.models import Workspace
 from server.schemas import WorkspaceOut
-from server.security import create_stream_token
+from server.security import create_stream_bootstrap_token, create_stream_token
 from server.tests.helpers import add_image, setup_admin
 
 DOMAIN = "ws.example.com"
@@ -100,7 +100,7 @@ def test_forward_auth_subdomain_stream_cookie_authorizes(client, subdomain_env):
     setup_admin(client)
     image_id = add_image()
     ws = _create_workspace(client, image_id)
-    public_id = ws["public_id"]
+    public_id = _mark_running(ws["id"])
     host = f"{public_id}.{DOMAIN}"
     token = create_stream_token(ws["user_id"], public_id)
 
@@ -126,9 +126,9 @@ def test_forward_auth_subdomain_bootstrap_redirects_and_sets_cookie(client, subd
     setup_admin(client)
     image_id = add_image()
     ws = _create_workspace(client, image_id)
-    public_id = ws["public_id"]
+    public_id = _mark_running(ws["id"])
     host = f"{public_id}.{DOMAIN}"
-    token = create_stream_token(ws["user_id"], public_id)
+    token = create_stream_bootstrap_token(ws["user_id"], public_id)
 
     client.cookies.clear()
     resp = client.get(
@@ -148,6 +148,35 @@ def test_forward_auth_subdomain_bootstrap_redirects_and_sets_cookie(client, subd
     set_cookies = resp.headers.get_list("set-cookie")
     assert any(_stream_cookie_name() in c for c in set_cookies), set_cookies
     assert all("domain=" not in c.lower() for c in set_cookies), set_cookies
+
+
+def test_forward_auth_bootstrap_token_is_single_use(client, subdomain_env):
+    setup_admin(client)
+    image_id = add_image()
+    ws = _create_workspace(client, image_id)
+    public_id = _mark_running(ws["id"])
+    host = f"{public_id}.{DOMAIN}"
+    token = create_stream_bootstrap_token(ws["user_id"], public_id)
+    headers = {"X-Forwarded-Host": host, "X-Forwarded-Uri": f"/?__cove_t={token}",
+               "X-Forwarded-Proto": "https"}
+    client.cookies.clear()
+    # First use bootstraps the cookie (302); replay of the same URL token is denied.
+    assert client.get("/api/auth/forward", headers=headers, follow_redirects=False).status_code == 302
+    client.cookies.clear()
+    assert client.get("/api/auth/forward", headers=headers, follow_redirects=False).status_code == 401
+
+
+def test_forward_auth_denied_when_workspace_not_running(client, subdomain_env):
+    setup_admin(client)
+    image_id = add_image()
+    ws = _create_workspace(client, image_id)  # status 'creating'
+    public_id = ws["public_id"]
+    host = f"{public_id}.{DOMAIN}"
+    token = create_stream_token(ws["user_id"], public_id)
+    client.cookies.clear()
+    client.cookies.set(_stream_cookie_name(), token)
+    # Valid cookie, but the workspace isn't running -> denied.
+    assert client.get("/api/auth/forward", headers={"X-Forwarded-Host": host}).status_code == 401
 
 
 def test_forward_auth_subdomain_token_scoped_to_one_workspace(client, subdomain_env):
@@ -180,6 +209,7 @@ def test_forward_auth_subdomain_falls_back_to_subpath(client, subdomain_env):
     setup_admin(client)
     image_id = add_image()
     ws = _create_workspace(client, image_id)
+    _mark_running(ws["id"])
     resp = client.get(
         "/api/auth/forward",
         headers={"X-Forwarded-Uri": f"/workspace/{ws['public_id']}/"},

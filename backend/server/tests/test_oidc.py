@@ -108,3 +108,39 @@ def test_missing_nonce_claim_rejected_when_expected(oidc_setup):
     token = _encode(oidc_setup, {"sub": "abc", "aud": _AUD, "iss": _ISSUER})
     with pytest.raises(JWTError):
         asyncio.run(oidc_module.verify_id_token(token, nonce="n-123"))
+
+
+def test_id_token_algs_pinned_even_if_discovery_advertises_hs256(monkeypatch):
+    """Discovery advertising HS256/none must NOT widen our accepted algorithms —
+    otherwise an attacker could forge an HS256 token using the public JWKS key as
+    the HMAC secret (RS/HS confusion)."""
+    priv_pem, pub_jwk = _make_keypair()
+
+    async def fake_discovery():
+        return {
+            "issuer": _ISSUER,
+            "id_token_signing_alg_values_supported": ["RS256", "HS256", "none"],
+        }
+
+    async def fake_jwks():
+        return {"keys": [pub_jwk]}
+
+    monkeypatch.setattr(oidc_module, "fetch_discovery", fake_discovery)
+    monkeypatch.setattr(oidc_module, "fetch_jwks", fake_jwks)
+    from server.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "oidc_client_id", _AUD)
+
+    captured = {}
+    real_decode = oidc_module.jwt.decode
+
+    def spy_decode(token, key, algorithms, **kw):
+        captured["algorithms"] = algorithms
+        return real_decode(token, key=key, algorithms=algorithms, **kw)
+
+    monkeypatch.setattr(oidc_module.jwt, "decode", spy_decode)
+
+    token = _encode(priv_pem, {"sub": "abc", "aud": _AUD, "iss": _ISSUER})
+    asyncio.run(oidc_module.verify_id_token(token))
+    # HS256/none are filtered out; only the asymmetric alg survives.
+    assert captured["algorithms"] == ["RS256"]
