@@ -21,14 +21,15 @@ Cove lets you spin up full Linux desktops (XFCE, KDE, MATE, i3 on Ubuntu/Debian/
 - **Manual image pulls** — pull/re-pull catalog images from the admin UI with live download status; delete the local image only or the catalog entry too.
 - **Per-workspace apps** — install distro packages (`universal-package-install`), LinuxServer **proot-apps**, and **AppImages** (auto-extracted with a desktop launcher) at launch.
 - **Authentication** — local accounts (bcrypt) *and* OIDC/Authentik SSO; an optional **OIDC-only** mode disables local login. Password management is hidden/blocked for SSO accounts.
-- **Per-user Tailscale routing** — opt a workspace into routing through a per-workspace Tailscale sidecar using your own preauth key, with exit-node selection, accept-routes/DNS, and a custom login (control) server.
-- **Custom DNS** — point a (non-Tailscale) workspace at public resolvers (e.g. `1.1.1.1`, `9.9.9.9`) instead of local DNS.
+- **Per-user Tailscale routing** — opt a workspace into routing through a per-workspace [Tailscale](https://tailscale.com/) sidecar using your own preauth key, with exit-node selection, accept-routes/DNS, and a custom login (control) server.
+- **Per-user VPN routing via Gluetun** — route a workspace's egress through a per-workspace [Gluetun](https://github.com/qdm12/gluetun) VPN sidecar. Upload a custom OpenVPN/WireGuard config (stored encrypted), optionally override the WireGuard private key or OpenVPN username/password as direct secrets; one active VPN connection at a time.
+- **Custom DNS** — point a (non-VPN) workspace at public resolvers (e.g. `1.1.1.1`, `9.9.9.9`) instead of local DNS.
 - **Resource limits** — admin-set default **CPU (cores)** and **memory (MB)** caps applied to workspace containers (0 = unlimited).
 - **User preferences** — a self-service page to change your password and manage Tailscale settings.
 - **File browser** — browse, upload, download, and delete files in your workspace storage areas.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
 - **Egress policy** — workspaces are WAN-only by default. Docker-internal and cloud-metadata ranges are *always* blocked (so workspaces can never reach the Cove backend, the socket proxy, or each other); admins can allow specific LAN subnets that a workspace then opts into per launch. Tailscale workspaces keep tailnet/subnet-routed/exit-node access while their raw-bridge egress is still firewalled.
-- **Admin settings** — pin/override the Tailscale image, toggle LAN access, force-disable sudo, set max runtime and CPU/memory limits, plus a read-only summary of env-configured settings.
+- **Admin settings** — pin/override the Tailscale and Gluetun sidecar images, toggle LAN access, force-disable sudo, set max runtime and CPU/memory limits, plus a read-only summary of env-configured settings.
 - **Optional subdomain isolation** — set `COVE_WORKSPACE_DOMAIN` to stream each workspace from its own origin (`{id}.domain`) so it can't reach the SPA's token; unset falls back to subpath routing.
 - **Installable PWA** — add Cove to your home screen / desktop; offline-aware app shell (the live stream and API are never cached).
 - **Security-first** — ForwardAuth-gated streams, per-workspace isolated Docker networks, split read-only/write Docker socket proxies, verified OIDC tokens, dropped capabilities, short-lived JWTs with refresh, real-client-IP rate limiting, audit logging, and optional at-rest DB encryption.
@@ -68,6 +69,21 @@ CI runs lint, both test suites, a frontend build, and a Docker image build (see 
 - **Workspaces** — `lscr.io/linuxserver/*` images (port 3000, `/config`).
 
 A full breakdown — runtime topology, auth/stream flows, the workspace lifecycle, and the data model — is in **[ARCH.md](ARCH.md)**.
+
+## Built on / Acknowledgements
+
+Cove is glue around excellent open-source projects — all credit to their authors and maintainers:
+
+- **[LinuxServer.io](https://www.linuxserver.io/)** ([images](https://docs.linuxserver.io/)) — the webtop/desktop & browser container images, the `universal-package-install` Docker mod, and [proot-apps](https://github.com/linuxserver/proot-apps). Workspaces stream via **[KasmVNC](https://github.com/kasmtech/KasmVNC)** (Kasm Technologies) and **[Selkies](https://github.com/selkies-project/selkies)**.
+- **[Tailscale](https://tailscale.com/)** ([tailscale/tailscale](https://github.com/tailscale/tailscale)) — the per-workspace tailnet routing sidecar.
+- **[Gluetun](https://github.com/qdm12/gluetun)** by Quentin McGaw ([@qdm12](https://github.com/qdm12)) — the per-workspace VPN (OpenVPN/WireGuard) sidecar.
+- **[Traefik](https://traefik.io/)** (Traefik Labs) — reverse proxy, ForwardAuth, and ACME/Let's Encrypt TLS.
+- **[tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy)** — the filtered Docker API proxy.
+- **[netshoot](https://github.com/nicolaka/netshoot)** by Nicola Kabar — the short-lived helper used to apply per-workspace egress firewall rules.
+- **WireGuard** is a registered trademark of Jason A. Donenfeld.
+- Built with **[FastAPI](https://fastapi.tiangolo.com/)**, **[SQLAlchemy](https://www.sqlalchemy.org/)**, **[Vue](https://vuejs.org/)**, **[Vite](https://vite.dev/)**, **[Pinia](https://pinia.vuejs.org/)**, and **[lucide](https://lucide.dev/)** icons.
+
+These projects are independent of Cove and are not affiliated with it; trademarks belong to their respective owners.
 
 ## Quick start
 

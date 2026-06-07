@@ -26,6 +26,9 @@
         class="ts-badge"
         :title="ws.ts_exit_node ? `Routed through Tailscale · exit node: ${ws.ts_exit_node}` : 'Routed through Tailscale'"
       ><Network :size="12" /> Tailscale<template v-if="ws.ts_exit_node"> · {{ ws.ts_exit_node }}</template></span>
+      <span v-if="ws.use_gluetun" class="vpn-badge" title="Routed through Gluetun VPN">
+        <ShieldCheck :size="12" /> VPN
+      </span>
     </div>
     <div v-if="stats" class="stats">
       <div class="stat">
@@ -49,9 +52,17 @@
     </div>
 
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
+    <div v-if="vpnLocked" class="vpn-lock-msg"><Lock :size="11" /> VPN in use by another workspace</div>
     <div class="card-actions" @click.stop>
       <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
-      <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="success" :loading="acting" @click="handleStart"><Power :size="14" /> BOOT</NeonButton>
+      <NeonButton
+        v-if="ws.status === 'stopped' || ws.status === 'error'"
+        variant="success"
+        :loading="acting"
+        :disabled="vpnLocked"
+        :title="vpnLocked ? 'Another VPN workspace is active — only one VPN connection at a time. Stop it first.' : ''"
+        @click="handleStart"
+      ><component :is="vpnLocked ? Lock : Power" :size="14" /> BOOT</NeonButton>
       <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" @click="showClone = true"><CopyPlus :size="14" /> CLONE</NeonButton>
       <NeonButton v-if="ws.status === 'running'" variant="warn" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
       <NeonButton variant="danger" :loading="removing" @click="openPurge"><Trash2 :size="14" /> PURGE</NeonButton>
@@ -78,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
@@ -87,7 +98,7 @@ import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import EditWorkspaceModal from './EditWorkspaceModal.vue'
 import CloneModal from './CloneModal.vue'
-import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus } from 'lucide-vue-next'
+import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock } from 'lucide-vue-next'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -105,6 +116,16 @@ function barWidth(pct: number): string {
 const store = useWorkspacesStore()
 const ui = useUiStore()
 const router = useRouter()
+
+// A Gluetun config allows a single connection, so a stopped/errored VPN
+// workspace can't boot while another VPN workspace is already active.
+const vpnLocked = computed(() =>
+  props.ws.use_gluetun &&
+  (props.ws.status === 'stopped' || props.ws.status === 'error') &&
+  store.items.some(
+    w => w.id !== props.ws.id && w.use_gluetun && (w.status === 'running' || w.status === 'creating'),
+  ),
+)
 
 const acting = ref(false)
 const removing = ref(false)
@@ -257,6 +278,16 @@ async function handleRemove() {
 .target-url svg { flex-shrink: 0; }
 .ts-badge { font-size: 11px; color: var(--accent-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
 .ts-badge svg { flex-shrink: 0; }
+.vpn-badge { font-size: 11px; color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); letter-spacing: 0.5px; }
+.vpn-badge svg { flex-shrink: 0; }
+.vpn-lock-msg {
+  font-size: 11px; color: var(--amber); font-family: var(--font-mono);
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(255, 170, 0, 0.06);
+  border: 1px solid rgba(255, 170, 0, 0.2);
+  border-radius: var(--radius-sm); padding: 6px 8px;
+}
+.vpn-lock-msg svg { flex-shrink: 0; }
 
 .stats { display: flex; flex-direction: column; gap: 8px; }
 .stat { display: flex; flex-direction: column; gap: 4px; }
