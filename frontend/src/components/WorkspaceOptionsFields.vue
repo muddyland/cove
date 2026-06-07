@@ -26,14 +26,16 @@
         </label>
       </template>
 
-      <label class="checkbox-row">
-        <input type="checkbox" :checked="form.use_gluetun" @change="pickGluetun($event)" />
-        <span>Route through Gluetun (VPN)</span>
-      </label>
-      <p v-if="form.use_gluetun" class="hint ts-field">
-        Uses your Gluetun VPN config (set it in Preferences → Gluetun). All egress
-        goes through the VPN tunnel.
-      </p>
+      <template v-if="gluetunReady || form.use_gluetun">
+        <label class="checkbox-row">
+          <input type="checkbox" :checked="form.use_gluetun" @change="pickGluetun($event)" />
+          <span>Route through Gluetun (VPN)</span>
+        </label>
+        <p v-if="form.use_gluetun" class="hint ts-field">
+          Uses your Gluetun VPN config (set it in Preferences → Gluetun). All egress
+          goes through the VPN tunnel.
+        </p>
+      </template>
 
       <template v-if="!form.use_tailscale && !form.use_gluetun">
         <label class="checkbox-row">
@@ -136,7 +138,12 @@ export interface WorkspaceOptionsForm {
   appimages: string
 }
 
-const props = defineProps<{ form: WorkspaceOptionsForm; lanPolicy: LanPolicy }>()
+const props = defineProps<{
+  form: WorkspaceOptionsForm
+  lanPolicy: LanPolicy
+  // Only offer the Gluetun toggle when the user has a usable VPN profile.
+  gluetunReady?: boolean
+}>()
 
 const networkSummary = computed(() => {
   const parts: string[] = []

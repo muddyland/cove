@@ -47,7 +47,7 @@
           discarded on halt. Nothing is written to persistent storage.
         </p>
       </template>
-      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" />
+      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" :gluetun-ready="gluetunReady" />
 
       <div v-if="error" class="form-error">{{ error }}</div>
       <div class="form-actions">
@@ -65,6 +65,7 @@ import NeonButton from './NeonButton.vue'
 import WorkspaceOptionsFields from './WorkspaceOptionsFields.vue'
 import { imagesApi } from '@/api/images'
 import { workspacesApi } from '@/api/workspaces'
+import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
@@ -74,6 +75,7 @@ const open = defineModel<boolean>({ default: false })
 
 const images = ref<WorkspaceImage[]>([])
 const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
+const gluetunReady = ref(false)
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -114,6 +116,12 @@ onMounted(async () => {
     lanPolicy.value = await workspacesApi.lanPolicy()
   } catch {
     // Non-fatal: the LAN checkbox just stays hidden if the policy can't load.
+  }
+  try {
+    const g = await usersApi.getGluetun()
+    gluetunReady.value = g.enabled && g.has_config
+  } catch {
+    // Non-fatal: Gluetun toggle just stays hidden.
   }
 })
 

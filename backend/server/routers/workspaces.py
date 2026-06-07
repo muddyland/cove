@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
@@ -119,6 +119,24 @@ def _validate_routing(db, user_id: int, use_tailscale: bool, use_gluetun: bool) 
             )
 
 
+def _check_gluetun_single_connection(db, user_id: int, exclude_ws_id: int | None = None) -> None:
+    """A Gluetun VPN config typically allows only one simultaneous connection, so
+    permit at most one active Gluetun workspace per user at a time."""
+    q = select(func.count()).select_from(Workspace).where(
+        Workspace.user_id == user_id,
+        Workspace.use_gluetun.is_(True),
+        Workspace.status.in_(("running", "creating")),
+    )
+    if exclude_ws_id is not None:
+        q = q.where(Workspace.id != exclude_ws_id)
+    if db.scalar(q):
+        raise HTTPException(
+            status_code=409,
+            detail="A Gluetun VPN workspace is already active — only one connection is "
+            "allowed at a time. Stop it first.",
+        )
+
+
 def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
     ws = db.get(Workspace, ws_id)
     if not ws:
@@ -155,6 +173,8 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     _validate_app_fields(body.install_packages, body.proot_apps, body.appimages)
 
     _validate_routing(db, user.id, body.use_tailscale, body.use_gluetun)
+    if body.use_gluetun:
+        _check_gluetun_single_connection(db, user.id)
 
     ws = Workspace(
         user_id=user.id,
@@ -269,6 +289,8 @@ def clone_workspace(
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
 
     _validate_routing(db, user.id, src.use_tailscale, src.use_gluetun)
+    if src.use_gluetun:
+        _check_gluetun_single_connection(db, user.id)
 
     clone = Workspace(
         user_id=user.id,
@@ -408,6 +430,8 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
     # reuses the persistent home. Only block states that are already in flight.
     if ws.status not in ("stopped", "error"):
         raise HTTPException(status_code=400, detail=f"Cannot start workspace in state: {ws.status}")
+    if ws.use_gluetun:
+        _check_gluetun_single_connection(db, user.id, exclude_ws_id=ws.id)
     ws.status = "creating"
     ws.error_message = None
     db.commit()

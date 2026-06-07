@@ -30,14 +30,16 @@
           <span>Accept DNS</span>
         </label>
       </template>
-      <label class="checkbox-row">
-        <input type="checkbox" :checked="useGluetun" @change="pickGluetun($event)" />
-        <span>Route through Gluetun (VPN)</span>
-      </label>
-      <p v-if="useGluetun" class="hint ts-field">
-        Uses your Gluetun VPN config (Preferences → Gluetun). All egress goes
-        through the VPN tunnel.
-      </p>
+      <template v-if="gluetunReady">
+        <label class="checkbox-row">
+          <input type="checkbox" :checked="useGluetun" @change="pickGluetun($event)" />
+          <span>Route through Gluetun (VPN)</span>
+        </label>
+        <p v-if="useGluetun" class="hint ts-field">
+          Uses your Gluetun VPN config (Preferences → Gluetun). All egress goes
+          through the VPN tunnel.
+        </p>
+      </template>
       <label class="checkbox-row">
         <input type="checkbox" v-model="ephemeral" />
         <span>Ephemeral (no saved data — wiped when halted)</span>
@@ -60,6 +62,7 @@ import { ref, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
 import { imagesApi } from '@/api/images'
+import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
@@ -76,6 +79,7 @@ const tsAcceptRoutes = ref(true)
 const tsAcceptDns = ref(true)
 const ephemeral = ref(false)
 const useGluetun = ref(false)
+const gluetunReady = ref(false)
 
 // Tailscale and Gluetun are mutually exclusive routing modes.
 function pickTailscale(e: Event) {
@@ -97,6 +101,12 @@ const browsers = computed(() => images.value.filter(i => i.image_type === 'brows
 onMounted(async () => {
   images.value = await imagesApi.list()
   if (browsers.value.length) browserId.value = browsers.value[0].id
+  try {
+    const g = await usersApi.getGluetun()
+    gluetunReady.value = g.enabled && g.has_config
+  } catch {
+    // Non-fatal: Gluetun toggle just stays hidden.
+  }
 })
 
 function deriveName(u: string): string {

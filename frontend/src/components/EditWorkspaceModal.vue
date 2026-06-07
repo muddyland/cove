@@ -29,7 +29,7 @@
         <span>Ephemeral (no saved data — wiped when halted)</span>
       </label>
 
-      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" />
+      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" :gluetun-ready="gluetunReady" />
 
       <p class="apply-note">Changes apply the next time the workspace boots.</p>
 
@@ -48,6 +48,7 @@ import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
 import WorkspaceOptionsFields from './WorkspaceOptionsFields.vue'
 import { workspacesApi } from '@/api/workspaces'
+import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import type { LanPolicy, Workspace } from '@/types'
@@ -58,6 +59,7 @@ const open = defineModel<boolean>({ default: false })
 const loading = ref(false)
 const error = ref('')
 const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
+const gluetunReady = ref(false)
 const store = useWorkspacesStore()
 const ui = useUiStore()
 
@@ -117,6 +119,12 @@ async function loadLanPolicy() {
     lanPolicy.value = await workspacesApi.lanPolicy()
   } catch {
     // Non-fatal: the LAN checkbox just stays hidden if the policy can't load.
+  }
+  try {
+    const g = await usersApi.getGluetun()
+    gluetunReady.value = g.enabled && g.has_config
+  } catch {
+    // Non-fatal: Gluetun toggle just stays hidden.
   }
 }
 

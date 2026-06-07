@@ -627,3 +627,32 @@ def test_create_rejects_tailscale_and_gluetun_together(client, fake_docker_manag
     )
     assert resp.status_code == 400, resp.text
     assert "not both" in resp.json()["detail"]
+
+
+def test_gluetun_single_connection_enforced(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    _configure_gluetun(client)
+    # First gluetun workspace is accepted (status 'creating' -> counts as active).
+    first = client.post(
+        "/api/workspaces", json={"name": "g1", "image_id": image_id, "use_gluetun": True}
+    )
+    assert first.status_code == 201, first.text
+    # Second is refused while the first is active.
+    second = client.post(
+        "/api/workspaces", json={"name": "g2", "image_id": image_id, "use_gluetun": True}
+    )
+    assert second.status_code == 409, second.text
+    assert "one connection" in second.json()["detail"]
+
+    # Stop the first; a second may then start.
+    db = SessionLocal()
+    try:
+        db.get(Workspace, first.json()["id"]).status = "stopped"
+        db.commit()
+    finally:
+        db.close()
+    third = client.post(
+        "/api/workspaces", json={"name": "g3", "image_id": image_id, "use_gluetun": True}
+    )
+    assert third.status_code == 201, third.text

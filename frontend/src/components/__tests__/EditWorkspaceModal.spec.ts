@@ -7,6 +7,10 @@ vi.mock('@/api/proot', () => ({
   prootApi: { list: vi.fn() },
 }))
 
+vi.mock('@/api/users', () => ({
+  usersApi: { getGluetun: vi.fn().mockResolvedValue({ enabled: false, vpn_type: 'openvpn', has_config: false, config_filename: null, has_wireguard_private_key: false, has_openvpn_user: false, has_openvpn_password: false }) },
+}))
+
 vi.mock('@/api/workspaces', () => ({
   workspacesApi: { lanPolicy: vi.fn() },
 }))
