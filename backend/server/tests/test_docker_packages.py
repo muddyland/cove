@@ -296,3 +296,18 @@ def test_egress_rules_lan_subnets_accepted_before_lan_block():
     # ...but docker-internal/metadata are dropped BEFORE the LAN accepts, so a
     # granted subnet can never re-open the protected ranges.
     assert script.index("172.16.0.0/12") < script.index("10.12.0.0/24")
+
+# ── _target_url_lan_ips (auto-allow LAN target) ───────────────────────────────
+
+def test_target_url_lan_ips_allows_private_literal():
+    from server.docker_manager import _target_url_lan_ips
+    assert _target_url_lan_ips("http://10.12.0.50:8080/") == ["10.12.0.50/32"]
+    assert _target_url_lan_ips("http://192.168.1.9:3000/path") == ["192.168.1.9/32"]
+
+
+def test_target_url_lan_ips_ignores_public_and_docker_ranges():
+    from server.docker_manager import _target_url_lan_ips
+    assert _target_url_lan_ips("http://8.8.8.8/") == []          # public -> already allowed
+    assert _target_url_lan_ips("http://172.16.5.5/") == []       # docker-internal -> stays blocked
+    assert _target_url_lan_ips(None) == []
+    assert _target_url_lan_ips("") == []

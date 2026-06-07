@@ -1,12 +1,15 @@
+import ipaddress
 import logging
 import os
 import re
 import shutil
+import socket
 import time
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
+from urllib.parse import urlparse
 
 import docker
 import docker.errors
@@ -99,6 +102,42 @@ _LAN_BLOCK = [
     "192.168.0.0/16",
     "100.64.0.0/10",
 ]
+# The blockable-but-allowable ranges as networks, for matching a target_url host.
+# (172.16/12 + link-local are in _ALWAYS_BLOCK, never auto-allowed.)
+_LAN_BLOCK_NETS = [ipaddress.ip_network(c) for c in _LAN_BLOCK]
+
+
+def _target_url_lan_ips(target_url: str | None) -> list[str]:
+    """Private /32s a workspace must reach to load a LAN ``target_url``.
+
+    A kiosk/browser workspace pointed at a LAN address won't load while the
+    egress guard blocks RFC1918, so we punch through exactly the target host (as
+    a /32 — narrow enough that it can't be a general-purpose LAN pivot). Only the
+    allowlist-governed ranges (10/8, 192.168/16, CGNAT) qualify; the Docker-
+    internal and metadata ranges stay blocked. Hostnames are resolved
+    best-effort. Returns [] for public hosts (already reachable) or on failure.
+    """
+    if not target_url:
+        return []
+    host = urlparse(target_url).hostname
+    if not host:
+        return []
+    try:
+        candidates = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            candidates = [
+                ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(host, None)
+            ]
+        except OSError:
+            return []
+    out: list[str] = []
+    for ip in candidates:
+        if ip.version == 4 and any(ip in net for net in _LAN_BLOCK_NETS):
+            cidr = f"{ip}/32"
+            if cidr not in out:
+                out.append(cidr)
+    return out
 
 
 def _sanitize(name: str) -> str:
@@ -609,6 +648,13 @@ class DockerManager:
                     get_workspace_lan_subnets(db)
                     if ws.lan_access and get_workspace_lan_access(db)
                     else []
+                )
+                # Always let a workspace reach the specific LAN host its target_url
+                # points at (as a /32), so "open a LAN website" works without the
+                # admin LAN toggle. Docker-internal/metadata stay blocked (those
+                # ranges are dropped before these accepts in the egress rules).
+                lan_subnets = list(
+                    dict.fromkeys(lan_subnets + _target_url_lan_ips(ws.target_url))
                 )
 
                 if ws.use_tailscale:
