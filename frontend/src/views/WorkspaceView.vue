@@ -45,7 +45,7 @@
           :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
           @click="toggleFullscreen"
         ><component :is="isFullscreen ? Minimize : Maximize" :size="14" /><span class="bar-label"> {{ isFullscreen ? 'WINDOW' : 'FULL' }}</span></button>
-        <NeonButton v-if="ws?.status === 'running'" variant="danger" :loading="stopping" @click="handleStop">HALT</NeonButton>
+        <NeonButton v-if="ws?.status === 'running'" variant="warn" :loading="stopping" @click="handleStop"><Square :size="14" /><span class="bar-label"> HALT</span></NeonButton>
       </div>
     </div>
 
@@ -82,7 +82,7 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, Square } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -400,21 +400,21 @@ async function handleStop() {
   gap: 5px;
 }
 
-/* CRT — amber/retro. Outlined when off, filled when on. */
+/* CRT — magenta/retro (distinct from the amber HALT). Outlined off, filled on. */
 .crt-btn {
-  color: var(--amber);
-  border-color: rgba(255, 170, 0, 0.45);
+  color: var(--accent-2);
+  border-color: rgba(255, 0, 170, 0.45);
 }
 .crt-btn:hover {
   color: #fff;
-  border-color: var(--amber);
-  box-shadow: 0 0 8px rgba(255, 170, 0, 0.5);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 8px rgba(255, 0, 170, 0.5);
 }
 .crt-btn.active {
-  color: #1a1206;
-  background: var(--amber);
-  border-color: var(--amber);
-  box-shadow: 0 0 10px rgba(255, 170, 0, 0.6);
+  color: #fff;
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 10px rgba(255, 0, 170, 0.6);
 }
 
 /* Fullscreen — green. */
@@ -464,7 +464,7 @@ async function handleStop() {
   .top-bar { gap: 8px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
   .back-link { padding: 4px 8px; }
   .back-link .bl-label { display: none; }      /* show just the ← arrow */
-  .bar-btn .bar-label { display: none; }        /* CRT / FULL become icon-only */
+  .bar-label { display: none; }                 /* CRT / FULL / HALT become icon-only */
   .bar-btn { padding: 6px 8px; }                /* keep a comfortable tap target */
   .top-actions { gap: 6px; }
   /* The ONLINE badge is redundant on the stream (you're connected) and is the

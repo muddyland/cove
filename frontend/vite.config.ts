@@ -18,7 +18,7 @@ export default defineConfig({
         name: 'Cove',
         short_name: 'Cove',
         description: 'Ephemeral desktop & browser containers for your home lab.',
-        theme_color: '#00f5ff',
+        theme_color: '#06060f',
         background_color: '#06060f',
         display: 'standalone',
         start_url: '/',
