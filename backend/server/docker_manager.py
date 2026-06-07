@@ -640,6 +640,30 @@ class DockerManager:
             return None
         return _parse_stats(raw)
 
+    def get_tailscale_ip(self, ws_id: int) -> str | None:
+        """The tailnet IPv4 of a workspace's Tailscale sidecar, or None.
+
+        The 100.x address lives on a tailscale interface *inside* the sidecar's
+        network namespace, so Docker inspect can't see it — we ask tailscaled
+        directly via ``tailscale ip -4``. Returns None until the sidecar has
+        finished authenticating/joining the tailnet (or if it isn't running).
+        """
+        sidecar_name = self._ts_sidecar_name(ws_id)
+        try:
+            sidecar = self._client.containers.get(sidecar_name)
+            if sidecar.status != "running":
+                return None
+            code, out = sidecar.exec_run(["tailscale", "ip", "-4"])
+        except (docker.errors.NotFound, docker.errors.APIError):
+            return None
+        except Exception as exc:  # defensive: never let this break the stats API
+            logger.debug("tailscale ip read failed for ws %s: %s", ws_id, exc)
+            return None
+        if code != 0 or not out:
+            return None
+        ip = out.decode(errors="ignore").strip().splitlines()
+        return ip[0].strip() if ip and ip[0].strip() else None
+
     def stop_workspace(self, ws_id: int) -> None:
         db = self._get_db()
         try:

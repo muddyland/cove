@@ -142,14 +142,27 @@ def workspace_stats(user: CurrentUser, db: DbSession):
     from server.docker_manager import get_docker_manager
     dm = get_docker_manager()
 
-    results: dict[int, WorkspaceStats] = {}
-    with ThreadPoolExecutor(max_workers=min(8, len(running))) as ex:
-        futures = {ex.submit(dm.get_stats, ws.container_id): ws for ws in running}
-        for fut in as_completed(futures):
-            ws = futures[fut]
+    ts_running = [ws for ws in running if ws.use_tailscale]
+
+    raw: dict[int, dict] = {}
+    ts_ips: dict[int, str] = {}
+    workers = min(8, len(running) + len(ts_running))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        stat_futs = {ex.submit(dm.get_stats, ws.container_id): ws for ws in running}
+        ip_futs = {ex.submit(dm.get_tailscale_ip, ws.id): ws for ws in ts_running}
+        for fut in as_completed(stat_futs):
             data = fut.result()
             if data:
-                results[ws.id] = WorkspaceStats(**data)
+                raw[stat_futs[fut].id] = data
+        for fut in as_completed(ip_futs):
+            ip = fut.result()
+            if ip:
+                ts_ips[ip_futs[fut].id] = ip
+
+    results: dict[int, WorkspaceStats] = {
+        ws_id: WorkspaceStats(**data, tailscale_ip=ts_ips.get(ws_id))
+        for ws_id, data in raw.items()
+    }
     return results
 
 

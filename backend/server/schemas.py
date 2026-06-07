@@ -136,6 +136,9 @@ class WorkspaceStats(BaseModel):
     mem_used: int
     mem_limit: int
     mem_pct: float
+    # Present only for Tailscale-routed workspaces once the sidecar has joined
+    # the tailnet; None otherwise.
+    tailscale_ip: str | None = None
 
 
 class WorkspaceOut(BaseModel):

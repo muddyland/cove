@@ -17,6 +17,11 @@ services:
       - VERSION=1
       - PING=1
       - POST=1
+      # EXEC lets the backend run `tailscale ip -4` inside a workspace's
+      # Tailscale sidecar to surface its tailnet address. The backend already
+      # has full container create/destroy via this write proxy, so exec does
+      # not widen its blast radius.
+      - EXEC=1
     networks:
       - cove-sockwrite
 

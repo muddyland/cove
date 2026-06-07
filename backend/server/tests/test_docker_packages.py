@@ -75,6 +75,35 @@ def test_parse_stats_returns_none_on_incomplete():
     assert _parse_stats({}) is None
     assert _parse_stats({"cpu_stats": {}}) is None
 
+# ── get_tailscale_ip (exec into the sidecar) ───────────────────────────────────
+
+def _dm_with_sidecar(*, status="running", code=0, out=b""):
+    """A DockerManager whose client returns a fake sidecar container."""
+    sidecar = SimpleNamespace(status=status, exec_run=lambda cmd: (code, out))
+    client = SimpleNamespace(containers=SimpleNamespace(get=lambda name: sidecar))
+    dm = DockerManager.__new__(DockerManager)
+    dm._client = client
+    return dm
+
+
+def test_tailscale_ip_returns_address():
+    dm = _dm_with_sidecar(out=b"100.101.102.103\n")
+    assert dm.get_tailscale_ip(7) == "100.101.102.103"
+
+
+def test_tailscale_ip_takes_first_line_only():
+    dm = _dm_with_sidecar(out=b"100.64.0.1\nfd7a:115c::1\n")
+    assert dm.get_tailscale_ip(7) == "100.64.0.1"
+
+
+def test_tailscale_ip_none_when_not_running():
+    assert _dm_with_sidecar(status="created").get_tailscale_ip(7) is None
+
+
+def test_tailscale_ip_none_on_nonzero_or_empty():
+    assert _dm_with_sidecar(code=1, out=b"no ip").get_tailscale_ip(7) is None
+    assert _dm_with_sidecar(out=b"  \n").get_tailscale_ip(7) is None
+
 # ── _build_browser_cli (kiosk / dark-mode flags) ───────────────────────────────
 
 def _ws(**kw):

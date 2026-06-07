@@ -36,6 +36,7 @@ export interface WorkspaceStats {
   mem_used: number
   mem_limit: number
   mem_pct: number
+  tailscale_ip?: string | null
 }
 
 export interface Workspace {

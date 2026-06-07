@@ -36,6 +36,16 @@
         <div class="stat-head"><span><MemoryStick :size="11" /> MEM</span><span class="stat-val">{{ fmtBytes(stats.mem_used) }}</span></div>
         <div class="stat-bar"><div class="stat-fill" :style="{ width: barWidth(stats.mem_pct) }"></div></div>
       </div>
+      <button
+        v-if="stats.tailscale_ip"
+        type="button"
+        class="ts-ip"
+        :title="`Tailscale address — click to copy\n${stats.tailscale_ip}`"
+        @click.stop="copyIp(stats.tailscale_ip)"
+      >
+        <span><Network :size="11" /> TS</span>
+        <span class="ts-ip-val">{{ stats.tailscale_ip }} <Copy :size="10" /></span>
+      </button>
     </div>
 
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
@@ -74,7 +84,7 @@ import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import EditWorkspaceModal from './EditWorkspaceModal.vue'
-import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick } from 'lucide-vue-next'
+import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy } from 'lucide-vue-next'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -101,6 +111,15 @@ const showEdit = ref(false)
 
 function hideLogo(e: Event) {
   ;(e.target as HTMLImageElement).style.display = 'none'
+}
+
+async function copyIp(ip: string) {
+  try {
+    await navigator.clipboard.writeText(ip)
+    ui.toast(`Copied ${ip}`, 'success')
+  } catch {
+    ui.toast('Copy failed', 'error')
+  }
 }
 
 function truncateUrl(url: string) {
@@ -261,6 +280,28 @@ async function handleRemove() {
   border-radius: 2px;
   transition: width 0.4s ease;
 }
+
+/* Tailscale address row — a copyable chip styled to match the stat heads. */
+.ts-ip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.ts-ip:hover { border-color: var(--accent-2); color: var(--text); }
+.ts-ip > span:first-child { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-2); }
+.ts-ip-val { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-2); }
+.ts-ip svg { flex-shrink: 0; }
 
 .error-msg {
   font-size: 11px;
