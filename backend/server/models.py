@@ -64,6 +64,11 @@ class Workspace(Base):
     use_tailscale: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Route egress through the user's Gluetun VPN sidecar (mutually exclusive with
+    # use_tailscale). VPN details (config file + secrets) are stored per-user.
+    use_gluetun: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     # Ephemeral: skip the persistent /config bind mount entirely, so no data is
     # saved between sessions (the home lives only in the container's layer).
     ephemeral: Mapped[bool] = mapped_column(
@@ -148,6 +153,33 @@ class UserTailscale(Base):
     accept_dns: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("1")
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+
+class UserGluetun(Base):
+    """Per-user Gluetun VPN config: a custom OpenVPN/Wireguard config file plus
+    optional credential overrides. The config file and secrets are encrypted at
+    rest (they carry VPN credentials)."""
+
+    __tablename__ = "user_gluetun"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id"), unique=True, nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # "openvpn" or "wireguard".
+    vpn_type: Mapped[str] = mapped_column(String(16), nullable=False, default="openvpn")
+    # The uploaded .ovpn / wg .conf file contents (encrypted at rest).
+    config_file: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    config_filename: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    # Optional direct-secret overrides (encrypted). When set, these override the
+    # corresponding values inside the config file.
+    wireguard_private_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    openvpn_user: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    openvpn_password: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

@@ -61,6 +61,7 @@ export interface Workspace {
   stopped_at: string | null
   error_message: string | null
   use_tailscale: boolean
+  use_gluetun: boolean
   ephemeral: boolean
   lan_access: boolean
   ts_exit_node: string | null
@@ -85,6 +86,16 @@ export interface TailscaleConfig {
   login_server: string | null
 }
 
+export interface GluetunConfig {
+  enabled: boolean
+  vpn_type: 'openvpn' | 'wireguard'
+  has_config: boolean
+  config_filename: string | null
+  has_wireguard_private_key: boolean
+  has_openvpn_user: boolean
+  has_openvpn_password: boolean
+}
+
 export interface FileEntry {
   name: string
   type: 'dir' | 'file'
@@ -99,6 +110,7 @@ export interface FileListing {
 
 export interface AppSettings {
   tailscale_image: string
+  gluetun_image: string
   workspace_lan_access: boolean
   workspace_lan_subnets: string
   workspace_no_new_privileges: boolean

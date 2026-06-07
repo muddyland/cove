@@ -341,3 +341,36 @@ def test_copy_workspace_storage_noop_when_source_missing(tmp_path, monkeypatch):
     dst_ws = SimpleNamespace(user=SimpleNamespace(username="bob"), name="copy")
     dm.copy_workspace_storage(src_ws, dst_ws)  # must not raise
     assert not (tmp_path / "bob" / "workspace-copy").exists()
+
+# ── gluetun sidecar env / mounts ──────────────────────────────────────────────
+
+def test_gluetun_mount_target():
+    assert DockerManager._gluetun_mount_target("openvpn") == "/gluetun/custom.conf"
+    assert DockerManager._gluetun_mount_target("wireguard") == "/gluetun/wireguard/wg0.conf"
+
+
+def test_gluetun_env_openvpn_with_overrides():
+    env = DockerManager._build_gluetun_env(
+        "openvpn", 3000, "172.20.0.0/16",
+        openvpn_user="bob", openvpn_password="pw",
+    )
+    assert env["VPN_SERVICE_PROVIDER"] == "custom"
+    assert env["VPN_TYPE"] == "openvpn"
+    assert env["OPENVPN_CUSTOM_CONFIG"] == "/gluetun/custom.conf"
+    assert env["OPENVPN_USER"] == "bob"
+    assert env["OPENVPN_PASSWORD"] == "pw"
+    # Traefik reachability through the killswitch.
+    assert env["FIREWALL_INPUT_PORTS"] == "3000"
+    assert env["FIREWALL_OUTBOUND_SUBNETS"] == "172.20.0.0/16"
+    assert "WIREGUARD_PRIVATE_KEY" not in env
+
+
+def test_gluetun_env_wireguard_override_and_no_ovpn_keys():
+    env = DockerManager._build_gluetun_env(
+        "wireguard", 6901, None, wireguard_private_key="WGKEY",
+    )
+    assert env["VPN_TYPE"] == "wireguard"
+    assert env["WIREGUARD_PRIVATE_KEY"] == "WGKEY"
+    assert env["FIREWALL_INPUT_PORTS"] == "6901"
+    assert "FIREWALL_OUTBOUND_SUBNETS" not in env  # no subnet provided
+    assert "OPENVPN_CUSTOM_CONFIG" not in env

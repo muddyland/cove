@@ -15,6 +15,7 @@ def test_settings_defaults(client):
     assert resp.status_code == 200, resp.text
     assert resp.json() == {
         "tailscale_image": "tailscale/tailscale:latest",
+        "gluetun_image": "qmcgaw/gluetun:latest",
         "workspace_lan_access": False,
         "workspace_lan_subnets": "",
         "workspace_no_new_privileges": False,
@@ -33,6 +34,7 @@ def test_settings_put_updates_both(client):
     assert resp.status_code == 200, resp.text
     assert resp.json() == {
         "tailscale_image": "tailscale/tailscale:v1.2",
+        "gluetun_image": "qmcgaw/gluetun:latest",
         "workspace_lan_access": True,
         "workspace_lan_subnets": "",
         "workspace_no_new_privileges": False,

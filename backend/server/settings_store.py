@@ -14,6 +14,7 @@ from server.models import AppSetting
 
 # Setting keys.
 KEY_TAILSCALE_IMAGE = "tailscale_image"
+KEY_GLUETUN_IMAGE = "gluetun_image"
 KEY_WORKSPACE_LAN_ACCESS = "workspace_lan_access"
 KEY_WORKSPACE_LAN_SUBNETS = "workspace_lan_subnets"
 KEY_WORKSPACE_NO_NEW_PRIVILEGES = "workspace_no_new_privileges"
@@ -23,6 +24,7 @@ KEY_WORKSPACE_MEMORY_LIMIT_MB = "workspace_memory_limit_mb"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
+DEFAULT_GLUETUN_IMAGE = "qmcgaw/gluetun:latest"
 DEFAULT_WORKSPACE_LAN_ACCESS = False
 # Comma/space separated IPv4 CIDRs a workspace may reach directly over the bridge
 # when both the admin master toggle (LAN_ACCESS) and the per-workspace opt-in are
@@ -61,6 +63,10 @@ def _to_bool(value: Optional[str], default: bool) -> bool:
 
 def get_tailscale_image(db: Session) -> str:
     return get_setting(db, KEY_TAILSCALE_IMAGE, DEFAULT_TAILSCALE_IMAGE) or DEFAULT_TAILSCALE_IMAGE
+
+
+def get_gluetun_image(db: Session) -> str:
+    return get_setting(db, KEY_GLUETUN_IMAGE, DEFAULT_GLUETUN_IMAGE) or DEFAULT_GLUETUN_IMAGE
 
 
 def get_workspace_lan_access(db: Session) -> bool:
@@ -132,6 +138,7 @@ def get_workspace_memory_limit_mb(db: Session) -> int:
 def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
+        "gluetun_image": get_gluetun_image(db),
         "workspace_lan_access": get_workspace_lan_access(db),
         "workspace_lan_subnets": ", ".join(get_workspace_lan_subnets(db)),
         "workspace_no_new_privileges": get_workspace_no_new_privileges(db),

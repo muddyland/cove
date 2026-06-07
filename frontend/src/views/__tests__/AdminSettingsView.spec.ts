@@ -25,6 +25,7 @@ import type { AppSettings } from '@/types'
 
 const baseSettings: AppSettings = {
   tailscale_image: 'tailscale/tailscale:v1.74.0',
+  gluetun_image: 'qmcgaw/gluetun:latest',
   workspace_lan_access: false,
   workspace_lan_subnets: '',
   workspace_no_new_privileges: false,
@@ -57,6 +58,7 @@ describe('AdminSettingsView', () => {
     vi.mocked(adminApi.settings.get).mockResolvedValue(baseSettings)
     vi.mocked(adminApi.settings.update).mockResolvedValue({
       tailscale_image: 'tailscale/tailscale:latest',
+      gluetun_image: 'qmcgaw/gluetun:latest',
       workspace_lan_access: true,
       workspace_lan_subnets: '',
       workspace_no_new_privileges: false,

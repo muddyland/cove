@@ -5,10 +5,19 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
 from server.deps import CurrentUser, DbSession
-from server.models import UserTailscale
+from server.models import UserGluetun, UserTailscale
 from server.net import client_ip
-from server.schemas import _UNSET, TailscaleConfigOut, TailscaleConfigUpdate
+from server.schemas import (
+    _UNSET,
+    GluetunConfigOut,
+    GluetunConfigUpdate,
+    TailscaleConfigOut,
+    TailscaleConfigUpdate,
+)
 from server.security import encrypt_secret
+
+# Cap the uploaded VPN config; real .ovpn / wg .conf files are a few KB.
+_MAX_GLUETUN_CONFIG_BYTES = 128 * 1024
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -73,3 +82,77 @@ def update_my_tailscale(
 
     _audit(db, "user.tailscale.update", user=user, request=request)
     return _masked(ts)
+
+
+def _masked_gluetun(g: UserGluetun | None) -> GluetunConfigOut:
+    if g is None:
+        return GluetunConfigOut(
+            enabled=False,
+            vpn_type="openvpn",
+            has_config=False,
+            config_filename=None,
+            has_wireguard_private_key=False,
+            has_openvpn_user=False,
+            has_openvpn_password=False,
+        )
+    return GluetunConfigOut(
+        enabled=g.enabled,
+        vpn_type=g.vpn_type,
+        has_config=bool(g.config_file),
+        config_filename=g.config_filename,
+        has_wireguard_private_key=bool(g.wireguard_private_key),
+        has_openvpn_user=bool(g.openvpn_user),
+        has_openvpn_password=bool(g.openvpn_password),
+    )
+
+
+@router.get("/me/gluetun", response_model=GluetunConfigOut)
+def get_my_gluetun(user: CurrentUser, db: DbSession):
+    g = db.scalar(select(UserGluetun).where(UserGluetun.user_id == user.id))
+    return _masked_gluetun(g)
+
+
+@router.put("/me/gluetun", response_model=GluetunConfigOut)
+def update_my_gluetun(
+    body: GluetunConfigUpdate, user: CurrentUser, db: DbSession, request: Request
+):
+    g = db.scalar(select(UserGluetun).where(UserGluetun.user_id == user.id))
+    if g is None:
+        g = UserGluetun(user_id=user.id)
+        db.add(g)
+
+    if body.vpn_type is not None:
+        if body.vpn_type not in ("openvpn", "wireguard"):
+            raise HTTPException(status_code=400, detail="vpn_type must be 'openvpn' or 'wireguard'")
+        g.vpn_type = body.vpn_type
+
+    # Sentinel semantics for the file + secrets: omitted -> unchanged; "" / null ->
+    # clear; a value -> replace (encrypted at rest).
+    if body.config_file != _UNSET:
+        if body.config_file:
+            if len(body.config_file.encode("utf-8")) > _MAX_GLUETUN_CONFIG_BYTES:
+                raise HTTPException(status_code=400, detail="Config file is too large")
+            g.config_file = encrypt_secret(body.config_file)
+        else:
+            g.config_file = None
+    if body.config_filename != _UNSET:
+        g.config_filename = (body.config_filename or None)
+    if body.wireguard_private_key != _UNSET:
+        g.wireguard_private_key = (
+            encrypt_secret(body.wireguard_private_key) if body.wireguard_private_key else None
+        )
+    if body.openvpn_user != _UNSET:
+        g.openvpn_user = encrypt_secret(body.openvpn_user) if body.openvpn_user else None
+    if body.openvpn_password != _UNSET:
+        g.openvpn_password = (
+            encrypt_secret(body.openvpn_password) if body.openvpn_password else None
+        )
+    if body.enabled is not None:
+        g.enabled = body.enabled
+
+    g.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(g)
+
+    _audit(db, "user.gluetun.update", user=user, request=request)
+    return _masked_gluetun(g)

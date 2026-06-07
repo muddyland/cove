@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
-from server.models import UserTailscale, Workspace, WorkspaceImage
+from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage
 from server.net import client_ip
 from server.schemas import (
     LanPolicyOut,
@@ -101,6 +101,24 @@ def _validate_app_fields(install_packages, proot_apps, appimages) -> None:
         _validate_appimage_list(appimages)
 
 
+def _validate_routing(db, user_id: int, use_tailscale: bool, use_gluetun: bool) -> None:
+    """Validate the (mutually exclusive) VPN routing choice for a workspace."""
+    if use_tailscale and use_gluetun:
+        raise HTTPException(
+            status_code=400, detail="Choose either Tailscale or Gluetun, not both"
+        )
+    if use_tailscale:
+        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == user_id))
+        if not ts or not ts.auth_key:
+            raise HTTPException(status_code=400, detail="Tailscale not configured")
+    if use_gluetun:
+        g = db.scalar(select(UserGluetun).where(UserGluetun.user_id == user_id))
+        if not g or not g.enabled or not g.config_file:
+            raise HTTPException(
+                status_code=400, detail="Gluetun not configured (upload a VPN config in Preferences)"
+            )
+
+
 def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
     ws = db.get(Workspace, ws_id)
     if not ws:
@@ -136,10 +154,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
 
     _validate_app_fields(body.install_packages, body.proot_apps, body.appimages)
 
-    if body.use_tailscale:
-        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == user.id))
-        if not ts or not ts.auth_key:
-            raise HTTPException(status_code=400, detail="Tailscale not configured")
+    _validate_routing(db, user.id, body.use_tailscale, body.use_gluetun)
 
     ws = Workspace(
         user_id=user.id,
@@ -151,6 +166,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         kiosk_dark=body.kiosk_dark,
         kiosk_menu=body.kiosk_menu,
         use_tailscale=body.use_tailscale,
+        use_gluetun=body.use_gluetun,
         ephemeral=body.ephemeral,
         lan_access=body.lan_access,
         ts_exit_node=body.ts_exit_node or None,
@@ -252,10 +268,7 @@ def clone_workspace(
     if image.image_type == "link" and not target_url:
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
 
-    if src.use_tailscale:
-        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == user.id))
-        if not ts or not ts.auth_key:
-            raise HTTPException(status_code=400, detail="Tailscale not configured")
+    _validate_routing(db, user.id, src.use_tailscale, src.use_gluetun)
 
     clone = Workspace(
         user_id=user.id,
@@ -267,6 +280,7 @@ def clone_workspace(
         kiosk_dark=src.kiosk_dark,
         kiosk_menu=src.kiosk_menu,
         use_tailscale=src.use_tailscale,
+        use_gluetun=src.use_gluetun,
         ephemeral=src.ephemeral,
         lan_access=src.lan_access,
         ts_exit_node=src.ts_exit_node,
@@ -350,10 +364,13 @@ def update_workspace(
     _validate_app_fields(
         data.get("install_packages"), data.get("proot_apps"), data.get("appimages")
     )
-    if data.get("use_tailscale"):
-        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == ws.user_id))
-        if not ts or not ts.auth_key:
-            raise HTTPException(status_code=400, detail="Tailscale not configured")
+    # Validate the effective routing choice (incoming value, else current).
+    _validate_routing(
+        db,
+        ws.user_id,
+        data.get("use_tailscale", ws.use_tailscale),
+        data.get("use_gluetun", ws.use_gluetun),
+    )
 
     nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "appimages", "dns_servers"}
     for key, value in data.items():

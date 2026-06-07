@@ -585,3 +585,45 @@ def test_create_persists_ephemeral_flag(client, fake_docker_manager):
         assert db.get(Workspace, e["id"]).ephemeral is True
     finally:
         db.close()
+
+
+def _configure_gluetun(client, vpn_type="openvpn"):
+    resp = client.put(
+        "/api/users/me/gluetun",
+        json={"enabled": True, "vpn_type": vpn_type, "config_file": "CONFIG", "config_filename": "x.conf"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_create_with_gluetun_requires_config(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    # No gluetun config yet -> 400.
+    resp = client.post(
+        "/api/workspaces", json={"name": "g", "image_id": image_id, "use_gluetun": True}
+    )
+    assert resp.status_code == 400, resp.text
+
+
+def test_create_with_gluetun_configured_accepted(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    _configure_gluetun(client)
+    resp = client.post(
+        "/api/workspaces", json={"name": "g", "image_id": image_id, "use_gluetun": True}
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["use_gluetun"] is True
+
+
+def test_create_rejects_tailscale_and_gluetun_together(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    _configure_gluetun(client)
+    client.put("/api/users/me/tailscale", json={"auth_key": "tskey-x", "enabled": True})
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "both", "image_id": image_id, "use_gluetun": True, "use_tailscale": True},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "not both" in resp.json()["detail"]

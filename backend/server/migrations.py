@@ -113,6 +113,12 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0022_workspace_ephemeral",
         "ALTER TABLE workspace ADD COLUMN ephemeral BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Route a workspace through the user's Gluetun VPN sidecar. (The user_gluetun
+    # table itself is created by create_all.)
+    (
+        "0023_workspace_use_gluetun",
+        "ALTER TABLE workspace ADD COLUMN use_gluetun BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

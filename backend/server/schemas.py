@@ -91,6 +91,8 @@ class WorkspaceCreate(BaseModel):
     kiosk_dark: bool = False
     kiosk_menu: bool = False
     use_tailscale: bool = False
+    # Route egress through the user's Gluetun VPN (mutually exclusive with Tailscale).
+    use_gluetun: bool = False
     # Ephemeral: no persistent storage — nothing is saved between sessions.
     ephemeral: bool = False
     # Opt-in for direct LAN egress (only effective when the admin enables LAN
@@ -120,6 +122,7 @@ class WorkspaceUpdate(BaseModel):
     kiosk_dark: Optional[bool] = None
     kiosk_menu: Optional[bool] = None
     use_tailscale: Optional[bool] = None
+    use_gluetun: Optional[bool] = None
     ephemeral: Optional[bool] = None
     lan_access: Optional[bool] = None
     ts_exit_node: Optional[str] = None
@@ -182,6 +185,7 @@ class WorkspaceOut(BaseModel):
     kiosk_dark: bool
     kiosk_menu: bool
     use_tailscale: bool
+    use_gluetun: bool
     ephemeral: bool
     lan_access: bool
     ts_exit_node: Optional[str]
@@ -230,6 +234,7 @@ class WorkspaceOut(BaseModel):
             kiosk_dark=ws.kiosk_dark,
             kiosk_menu=ws.kiosk_menu,
             use_tailscale=ws.use_tailscale,
+            use_gluetun=ws.use_gluetun,
             ephemeral=ws.ephemeral,
             lan_access=ws.lan_access,
             ts_exit_node=ws.ts_exit_node,
@@ -267,6 +272,7 @@ class AdminUserUpdate(BaseModel):
 
 class AppSettingsOut(BaseModel):
     tailscale_image: str
+    gluetun_image: str
     workspace_lan_access: bool
     workspace_lan_subnets: str
     workspace_no_new_privileges: bool
@@ -286,6 +292,7 @@ class EnvSummaryOut(BaseModel):
 
 class AppSettingsUpdate(BaseModel):
     tailscale_image: Optional[str] = None
+    gluetun_image: Optional[str] = None
     workspace_lan_access: Optional[bool] = None
     workspace_lan_subnets: Optional[str] = None
     workspace_no_new_privileges: Optional[bool] = None
@@ -308,6 +315,31 @@ class TailscaleConfigUpdate(BaseModel):
     auth_key: Optional[str] = _UNSET
     login_server: Optional[str] = None
     enabled: Optional[bool] = None
+
+
+# ── Gluetun (per-user VPN) ──────────────────────────────────────────────────────
+
+class GluetunConfigOut(BaseModel):
+    # Never returns the config file or secrets — only presence flags.
+    enabled: bool
+    vpn_type: str
+    has_config: bool
+    config_filename: Optional[str]
+    has_wireguard_private_key: bool
+    has_openvpn_user: bool
+    has_openvpn_password: bool
+
+
+class GluetunConfigUpdate(BaseModel):
+    # Each secret/file uses the sentinel default: omitted -> unchanged;
+    # "" or null -> clear; a value -> replace. All stored encrypted at rest.
+    enabled: Optional[bool] = None
+    vpn_type: Optional[str] = None
+    config_file: Optional[str] = _UNSET
+    config_filename: Optional[str] = _UNSET
+    wireguard_private_key: Optional[str] = _UNSET
+    openvpn_user: Optional[str] = _UNSET
+    openvpn_password: Optional[str] = _UNSET
 
 
 # ── Files ─────────────────────────────────────────────────────────────────────

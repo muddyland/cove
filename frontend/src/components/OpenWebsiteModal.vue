@@ -13,7 +13,7 @@
         </select>
       </div>
       <label class="checkbox-row">
-        <input type="checkbox" v-model="useTailscale" />
+        <input type="checkbox" :checked="useTailscale" @change="pickTailscale($event)" />
         <span>Route through Tailscale</span>
       </label>
       <template v-if="useTailscale">
@@ -30,6 +30,14 @@
           <span>Accept DNS</span>
         </label>
       </template>
+      <label class="checkbox-row">
+        <input type="checkbox" :checked="useGluetun" @change="pickGluetun($event)" />
+        <span>Route through Gluetun (VPN)</span>
+      </label>
+      <p v-if="useGluetun" class="hint ts-field">
+        Uses your Gluetun VPN config (Preferences → Gluetun). All egress goes
+        through the VPN tunnel.
+      </p>
       <label class="checkbox-row">
         <input type="checkbox" v-model="ephemeral" />
         <span>Ephemeral (no saved data — wiped when halted)</span>
@@ -67,6 +75,17 @@ const tsExitNode = ref('')
 const tsAcceptRoutes = ref(true)
 const tsAcceptDns = ref(true)
 const ephemeral = ref(false)
+const useGluetun = ref(false)
+
+// Tailscale and Gluetun are mutually exclusive routing modes.
+function pickTailscale(e: Event) {
+  useTailscale.value = (e.target as HTMLInputElement).checked
+  if (useTailscale.value) useGluetun.value = false
+}
+function pickGluetun(e: Event) {
+  useGluetun.value = (e.target as HTMLInputElement).checked
+  if (useGluetun.value) useTailscale.value = false
+}
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
@@ -98,6 +117,7 @@ async function handleSubmit() {
       workspace_type: 'browser',
       target_url: url.value,
       ephemeral: ephemeral.value,
+      use_gluetun: useGluetun.value,
       use_tailscale: useTailscale.value,
       ...(useTailscale.value
         ? {
@@ -115,6 +135,7 @@ async function handleSubmit() {
     tsAcceptRoutes.value = true
     tsAcceptDns.value = true
     ephemeral.value = false
+    useGluetun.value = false
     router.push(`/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message

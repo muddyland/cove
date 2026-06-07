@@ -17,9 +17,10 @@ from sqlalchemy import select
 
 from server.config import get_settings
 from server.db import SessionLocal
-from server.models import UserTailscale, Workspace, WorkspaceImage
+from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage
 from server.security import decrypt_secret
 from server.settings_store import (
+    get_gluetun_image,
     get_tailscale_image,
     get_workspace_cpu_limit,
     get_workspace_lan_access,
@@ -266,6 +267,31 @@ def copy_workspace_storage(src_ws, dst_ws) -> None:
     logger.info("Cloned workspace storage %s -> %s", src_r, dst)
 
 
+def _gluetun_config_path(ws_id: int) -> Path:
+    """Host-resolvable path for a workspace's decrypted Gluetun config file."""
+    settings = get_settings()
+    base = settings.storage_path or (settings.data_dir / "workspaces")
+    return Path(base) / ".cove-gluetun" / f"cove-gluetun-{ws_id}.conf"
+
+
+def _stage_gluetun_config(ws_id: int, content: str) -> str:
+    """Write the decrypted VPN config to a 0600 host file for mounting into the
+    Gluetun sidecar; return its path. Decrypted at runtime like the Tailscale auth
+    key (the host is trusted); the DB copy stays encrypted at rest."""
+    path = _gluetun_config_path(ws_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    os.chmod(path, 0o600)
+    return str(path)
+
+
+def _remove_gluetun_config(ws_id: int) -> None:
+    try:
+        _gluetun_config_path(ws_id).unlink()
+    except (FileNotFoundError, OSError):
+        pass
+
+
 # Public resolvers used when a workspace opts into custom DNS without naming any.
 _DEFAULT_PUBLIC_DNS = ["1.1.1.1", "9.9.9.9"]
 
@@ -457,6 +483,11 @@ class DockerManager:
         """Name of the per-workspace Tailscale state volume."""
         return f"cove-ts-state-{ws_id}"
 
+    @staticmethod
+    def _gluetun_sidecar_name(ws_id: int) -> str:
+        """Name of the per-workspace Gluetun VPN sidecar container."""
+        return f"cove-gluetun-{ws_id}"
+
     def _ensure_ws_network(self, network_name: str) -> None:
         """Create the per-workspace bridge network if it does not exist.
 
@@ -519,6 +550,19 @@ class DockerManager:
             vol.remove(force=True)
         except (docker.errors.NotFound, docker.errors.APIError):
             pass
+
+    def _cleanup_gluetun_sidecar(self, ws_id: int) -> None:
+        """Stop+remove the Gluetun sidecar and delete its staged config. Best-effort."""
+        try:
+            sidecar = self._client.containers.get(self._gluetun_sidecar_name(ws_id))
+            try:
+                sidecar.stop(timeout=10)
+            except docker.errors.APIError:
+                pass
+            sidecar.remove(force=True)
+        except (docker.errors.NotFound, docker.errors.APIError):
+            pass
+        _remove_gluetun_config(ws_id)
 
     def _wait_for_ready(self, container, timeout: int = 120) -> bool:
         """Docker-API-only readiness check (no workspace network access).
@@ -727,6 +771,35 @@ class DockerManager:
                         **limits,
                         **hardening,
                     )
+                elif ws.use_gluetun:
+                    g_cfg = db.scalar(
+                        select(UserGluetun).where(UserGluetun.user_id == ws.user_id)
+                    )
+                    if not g_cfg or not g_cfg.config_file:
+                        ws.status = "error"
+                        ws.error_message = "Gluetun is not configured (upload a VPN config)"
+                        db.commit()
+                        return
+                    # Carry the Traefik labels on the gluetun sidecar; pass the
+                    # workspace network's subnet so its killswitch firewall lets
+                    # Traefik reach the stream port.
+                    self._launch_gluetun_sidecar(
+                        ws, image, net_name, labels, g_cfg,
+                        get_gluetun_image(db), self._ws_network_subnet(net_name),
+                    )
+                    # gluetun's killswitch is the egress control; the workspace
+                    # joins its netns and inherits the VPN tunnel.
+                    container = self._client.containers.run(
+                        image.docker_image,
+                        name=container_name,
+                        detach=True,
+                        environment=env,
+                        volumes=volumes,
+                        network_mode=f"container:{self._gluetun_sidecar_name(ws.id)}",
+                        shm_size="1g",
+                        **limits,
+                        **hardening,
+                    )
                 else:
                     container = self._client.containers.run(
                         image.docker_image,
@@ -756,11 +829,11 @@ class DockerManager:
                 ws.volume_name = mount_source
                 db.commit()
 
-                # EGRESS GUARD for non-Tailscale workspaces. Applied to every one
-                # (not skipped on LAN access): docker-internal + metadata stay
-                # blocked, and only admin-granted LAN subnets are allowed through.
-                # Tailscale workspaces were already guarded above (before start).
-                if not ws.use_tailscale:
+                # EGRESS GUARD for plain workspaces. Tailscale workspaces are
+                # guarded above (before start); Gluetun workspaces rely on
+                # gluetun's own killswitch firewall (adding our OUTPUT drops would
+                # fight it), so both are skipped here.
+                if not ws.use_tailscale and not ws.use_gluetun:
                     self._apply_egress_guard(ws.id, lan_subnets=lan_subnets)
 
                 started = self._wait_for_ready(container)
@@ -856,6 +929,7 @@ class DockerManager:
             if not ws or not ws.container_id:
                 if ws:
                     self._cleanup_tailscale_sidecar(ws.id)
+                    self._cleanup_gluetun_sidecar(ws.id)
                     self._cleanup_ws_network(self._ws_network_name(ws.id))
                     ws.status = "stopped"
                     ws.stopped_at = datetime.now(timezone.utc)
@@ -871,6 +945,7 @@ class DockerManager:
                 logger.warning("Error stopping container %s: %s", ws.container_id[:12], exc)
 
             self._cleanup_tailscale_sidecar(ws.id)
+            self._cleanup_gluetun_sidecar(ws.id)
             self._cleanup_ws_network(self._ws_network_name(ws.id))
 
             ws.status = "stopped"
@@ -898,6 +973,7 @@ class DockerManager:
                 except (docker.errors.NotFound, docker.errors.APIError):
                     pass
             self._cleanup_tailscale_sidecar(ws.id)
+            self._cleanup_gluetun_sidecar(ws.id)
             self._cleanup_ws_network(self._ws_network_name(ws.id))
             if purge_storage:
                 delete_workspace_storage(ws)
@@ -1160,6 +1236,109 @@ class DockerManager:
             network=net_name,
         )
         logger.info("Started Tailscale sidecar %s for workspace %s", sidecar_name, ws.id)
+
+    def _ws_network_subnet(self, net_name: str) -> "str | None":
+        """The IPv4 subnet CIDR Docker assigned to a per-workspace network."""
+        try:
+            cfgs = self._client.networks.get(net_name).attrs.get("IPAM", {}).get("Config") or []
+            for c in cfgs:
+                sn = c.get("Subnet")
+                if sn and ":" not in sn:  # IPv4 only
+                    return sn
+        except (docker.errors.APIError, KeyError):
+            pass
+        return None
+
+    @staticmethod
+    def _gluetun_mount_target(vpn_type: str) -> str:
+        """Where gluetun reads a custom config: OpenVPN at /gluetun/custom.conf,
+        Wireguard at /gluetun/wireguard/wg0.conf."""
+        return "/gluetun/wireguard/wg0.conf" if vpn_type == "wireguard" else "/gluetun/custom.conf"
+
+    @staticmethod
+    def _build_gluetun_env(
+        vpn_type: str,
+        image_port: int,
+        subnet: "str | None",
+        *,
+        openvpn_user: "str | None" = None,
+        openvpn_password: "str | None" = None,
+        wireguard_private_key: "str | None" = None,
+    ) -> dict:
+        """Env for a custom-provider gluetun sidecar. FIREWALL_INPUT_PORTS +
+        FIREWALL_OUTBOUND_SUBNETS let Traefik (on the local docker bridge) reach the
+        workspace's port through gluetun's killswitch. Direct secrets override the
+        values inside the mounted config file."""
+        env = {
+            "VPN_SERVICE_PROVIDER": "custom",
+            "VPN_TYPE": vpn_type,
+            "FIREWALL_INPUT_PORTS": str(image_port),
+        }
+        if subnet:
+            env["FIREWALL_OUTBOUND_SUBNETS"] = subnet
+        if vpn_type == "wireguard":
+            if wireguard_private_key:
+                env["WIREGUARD_PRIVATE_KEY"] = wireguard_private_key
+        else:  # openvpn
+            env["OPENVPN_CUSTOM_CONFIG"] = "/gluetun/custom.conf"
+            if openvpn_user:
+                env["OPENVPN_USER"] = openvpn_user
+            if openvpn_password:
+                env["OPENVPN_PASSWORD"] = openvpn_password
+        return env
+
+    def _launch_gluetun_sidecar(
+        self,
+        ws: Workspace,
+        image: WorkspaceImage,
+        net_name: str,
+        labels: dict,
+        g_cfg: "UserGluetun",
+        gluetun_image: str,
+        subnet: "str | None",
+    ) -> None:
+        """Launch the Gluetun VPN sidecar that carries this workspace's netns.
+
+        The sidecar holds the Traefik labels; the workspace joins its netns via
+        network_mode=container:<sidecar>. The (encrypted-at-rest) config file is
+        decrypted and mounted read-only; gluetun's own killswitch handles egress.
+        """
+        sidecar_name = self._gluetun_sidecar_name(ws.id)
+        try:
+            old = self._client.containers.get(sidecar_name)
+            old.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
+        vpn_type = (g_cfg.vpn_type or "openvpn") if g_cfg else "openvpn"
+        config = decrypt_secret(g_cfg.config_file) if g_cfg else None
+        if not config:
+            raise RuntimeError("Gluetun config file is not set")
+        host_path = _stage_gluetun_config(ws.id, config)
+
+        environment = self._build_gluetun_env(
+            vpn_type,
+            image.internal_port,
+            subnet,
+            openvpn_user=decrypt_secret(g_cfg.openvpn_user),
+            openvpn_password=decrypt_secret(g_cfg.openvpn_password),
+            wireguard_private_key=decrypt_secret(g_cfg.wireguard_private_key),
+        )
+        volumes = {host_path: {"bind": self._gluetun_mount_target(vpn_type), "mode": "ro"}}
+
+        self._pull_image(gluetun_image)
+        self._client.containers.run(
+            gluetun_image,
+            name=sidecar_name,
+            detach=True,
+            environment=environment,
+            cap_add=["NET_ADMIN"],
+            devices=["/dev/net/tun:/dev/net/tun"],
+            volumes=volumes,
+            labels=labels,
+            network=net_name,
+        )
+        logger.info("Started Gluetun sidecar %s for workspace %s (%s)", sidecar_name, ws.id, vpn_type)
 
     @staticmethod
     def _build_hardening(*, no_new_privileges_setting: bool, allow_sudo: bool) -> dict:

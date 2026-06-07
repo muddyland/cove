@@ -73,6 +73,7 @@ const form = reactive({
   kiosk_menu: false,
   ephemeral: false,
   use_tailscale: false,
+  use_gluetun: false,
   lan_access: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -98,6 +99,7 @@ function resetFromWs() {
   form.kiosk_menu = props.ws.kiosk_menu
   form.ephemeral = props.ws.ephemeral
   form.use_tailscale = props.ws.use_tailscale
+  form.use_gluetun = props.ws.use_gluetun
   form.lan_access = props.ws.lan_access
   form.ts_exit_node = props.ws.ts_exit_node ?? ''
   form.ts_accept_routes = props.ws.ts_accept_routes
@@ -144,6 +146,7 @@ async function handleSubmit() {
       kiosk_menu: urlCapable.value ? form.kiosk_menu : undefined,
       ephemeral: urlCapable.value ? form.ephemeral : undefined,
       use_tailscale: form.use_tailscale,
+      use_gluetun: form.use_gluetun,
       lan_access: form.lan_access,
       ...(form.use_tailscale
         ? {

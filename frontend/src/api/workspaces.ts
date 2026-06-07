@@ -15,6 +15,7 @@ export const workspacesApi = {
     kiosk_dark?: boolean
     kiosk_menu?: boolean
     use_tailscale?: boolean
+    use_gluetun?: boolean
     ephemeral?: boolean
     lan_access?: boolean
     ts_exit_node?: string
@@ -36,6 +37,7 @@ export const workspacesApi = {
       kiosk_dark?: boolean
       kiosk_menu?: boolean
       use_tailscale?: boolean
+      use_gluetun?: boolean
       ephemeral?: boolean
       lan_access?: boolean
       ts_exit_node?: string

@@ -88,6 +88,7 @@ const form = reactive({
   kiosk_dark: false,
   kiosk_menu: false,
   use_tailscale: false,
+  use_gluetun: false,
   ephemeral: false,
   lan_access: false,
   ts_exit_node: '',
@@ -129,6 +130,7 @@ async function handleSubmit() {
       kiosk_dark: urlCapable.value && form.kiosk ? form.kiosk_dark : false,
       kiosk_menu: urlCapable.value && form.kiosk ? form.kiosk_menu : false,
       use_tailscale: form.use_tailscale,
+      use_gluetun: form.use_gluetun,
       ephemeral: urlCapable.value ? form.ephemeral : false,
       lan_access: form.lan_access,
       ...(form.use_tailscale
@@ -158,6 +160,7 @@ async function handleSubmit() {
     form.kiosk_menu = false
     form.ephemeral = false
     form.use_tailscale = false
+    form.use_gluetun = false
     form.lan_access = false
     form.ts_exit_node = ''
     form.ts_accept_routes = true

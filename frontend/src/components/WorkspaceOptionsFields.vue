@@ -8,7 +8,7 @@
     </summary>
     <div class="section-body">
       <label class="checkbox-row">
-        <input type="checkbox" v-model="form.use_tailscale" />
+        <input type="checkbox" :checked="form.use_tailscale" @change="pickTailscale($event)" />
         <span>Route through Tailscale</span>
       </label>
       <template v-if="form.use_tailscale">
@@ -26,7 +26,16 @@
         </label>
       </template>
 
-      <template v-if="!form.use_tailscale">
+      <label class="checkbox-row">
+        <input type="checkbox" :checked="form.use_gluetun" @change="pickGluetun($event)" />
+        <span>Route through Gluetun (VPN)</span>
+      </label>
+      <p v-if="form.use_gluetun" class="hint ts-field">
+        Uses your Gluetun VPN config (set it in Preferences → Gluetun). All egress
+        goes through the VPN tunnel.
+      </p>
+
+      <template v-if="!form.use_tailscale && !form.use_gluetun">
         <label class="checkbox-row">
           <input type="checkbox" v-model="form.custom_dns" />
           <span>Use custom DNS (public resolvers)</span>
@@ -114,6 +123,7 @@ import type { LanPolicy } from '@/types'
 // same field names, so a single reactive object is passed in and mutated here.
 export interface WorkspaceOptionsForm {
   use_tailscale: boolean
+  use_gluetun: boolean
   lan_access: boolean
   ts_exit_node: string
   ts_accept_routes: boolean
@@ -130,12 +140,33 @@ const props = defineProps<{ form: WorkspaceOptionsForm; lanPolicy: LanPolicy }>(
 
 const networkSummary = computed(() => {
   const parts: string[] = []
-  parts.push(props.form.use_tailscale ? 'Tailscale' : props.form.custom_dns ? 'Custom DNS' : 'Direct')
+  parts.push(
+    props.form.use_tailscale
+      ? 'Tailscale'
+      : props.form.use_gluetun
+        ? 'Gluetun VPN'
+        : props.form.custom_dns
+          ? 'Custom DNS'
+          : 'Direct',
+  )
   if (props.form.lan_access && props.lanPolicy.enabled && props.lanPolicy.subnets.length) {
     parts.push('+ LAN')
   }
   return parts.join(' ')
 })
+
+// Tailscale and Gluetun are mutually exclusive routing modes — selecting one
+// clears the other.
+function pickTailscale(e: Event) {
+  const on = (e.target as HTMLInputElement).checked
+  props.form.use_tailscale = on
+  if (on) props.form.use_gluetun = false
+}
+function pickGluetun(e: Event) {
+  const on = (e.target as HTMLInputElement).checked
+  props.form.use_gluetun = on
+  if (on) props.form.use_tailscale = false
+}
 
 const appsSummary = computed(() => {
   const n =

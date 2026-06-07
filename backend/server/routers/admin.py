@@ -207,6 +207,10 @@ def update_app_settings(
         settings_store.set_setting(
             db, settings_store.KEY_TAILSCALE_IMAGE, body.tailscale_image
         )
+    if body.gluetun_image is not None:
+        settings_store.set_setting(
+            db, settings_store.KEY_GLUETUN_IMAGE, body.gluetun_image
+        )
     if body.workspace_lan_access is not None:
         settings_store.set_setting(
             db,

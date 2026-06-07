@@ -58,6 +58,69 @@
           </div>
         </form>
       </section>
+
+      <section class="panel">
+        <h3>// GLUETUN VPN</h3>
+        <div v-if="gLoading" class="loading">Loading…</div>
+        <form v-else class="form" @submit.prevent="handleGluetun">
+          <label class="checkbox-row">
+            <input type="checkbox" v-model="g.enabled" />
+            <span>Enabled</span>
+          </label>
+          <div class="form-group">
+            <label>// vpn type</label>
+            <select v-model="g.vpn_type">
+              <option value="openvpn">OpenVPN</option>
+              <option value="wireguard">WireGuard</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>// config file ({{ g.vpn_type === 'wireguard' ? '.conf' : '.ovpn' }})</label>
+            <input type="file" accept=".ovpn,.conf,.txt" @change="onConfigFile" />
+            <p class="hint">
+              <template v-if="gFilename">Stored: <code>{{ gFilename }}</code> — upload to replace.</template>
+              <template v-else>Upload your VPN config. Stored <strong>encrypted</strong> at rest (it may contain credentials).</template>
+            </p>
+          </div>
+          <div v-if="g.vpn_type === 'wireguard'" class="form-group">
+            <label>// private key override (optional)</label>
+            <input
+              v-model="g.wireguard_private_key"
+              type="password"
+              :placeholder="hasWgKey ? 'configured ✓ (leave blank to keep)' : 'overrides PrivateKey in the config'"
+              autocomplete="off"
+            />
+          </div>
+          <template v-else>
+            <div class="form-group">
+              <label>// openvpn username override (optional)</label>
+              <input
+                v-model="g.openvpn_user"
+                type="text"
+                :placeholder="hasOvpnUser ? 'configured ✓ (leave blank to keep)' : 'overrides config'"
+                autocomplete="off"
+              />
+            </div>
+            <div class="form-group">
+              <label>// openvpn password override (optional)</label>
+              <input
+                v-model="g.openvpn_password"
+                type="password"
+                :placeholder="hasOvpnPass ? 'configured ✓ (leave blank to keep)' : 'overrides config'"
+                autocomplete="off"
+              />
+            </div>
+          </template>
+          <p class="hint">
+            Direct secrets override the matching values inside the config file. Pick
+            "Route through Gluetun" per workspace at launch.
+          </p>
+          <div v-if="gError" class="form-error">⚠ {{ gError }}</div>
+          <div class="form-actions">
+            <NeonButton type="submit" variant="primary" :loading="gSaving">Save Gluetun</NeonButton>
+          </div>
+        </form>
+      </section>
     </div>
   </AppShell>
 </template>
@@ -67,7 +130,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { authApi } from '@/api/auth'
-import { usersApi } from '@/api/users'
+import { usersApi, type GluetunUpdate } from '@/api/users'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 
@@ -128,7 +191,74 @@ onMounted(async () => {
   } finally {
     tsLoading.value = false
   }
+
+  try {
+    const cfg = await usersApi.getGluetun()
+    g.enabled = cfg.enabled
+    g.vpn_type = cfg.vpn_type
+    gFilename.value = cfg.config_filename
+    hasWgKey.value = cfg.has_wireguard_private_key
+    hasOvpnUser.value = cfg.has_openvpn_user
+    hasOvpnPass.value = cfg.has_openvpn_password
+  } catch (e: any) {
+    gError.value = e.message
+  } finally {
+    gLoading.value = false
+  }
 })
+
+// --- Gluetun ---
+const gLoading = ref(true)
+const gSaving = ref(false)
+const gError = ref('')
+const gFilename = ref<string | null>(null)
+const hasWgKey = ref(false)
+const hasOvpnUser = ref(false)
+const hasOvpnPass = ref(false)
+const gConfigContent = ref<string | null>(null) // text of a newly-uploaded file
+const g = reactive({
+  enabled: false,
+  vpn_type: 'openvpn' as 'openvpn' | 'wireguard',
+  wireguard_private_key: '',
+  openvpn_user: '',
+  openvpn_password: '',
+})
+
+async function onConfigFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  gConfigContent.value = await file.text()
+  gFilename.value = file.name
+}
+
+async function handleGluetun() {
+  gError.value = ''
+  gSaving.value = true
+  try {
+    const payload: GluetunUpdate = { enabled: g.enabled, vpn_type: g.vpn_type }
+    if (gConfigContent.value !== null) {
+      payload.config_file = gConfigContent.value
+      payload.config_filename = gFilename.value
+    }
+    if (g.wireguard_private_key) payload.wireguard_private_key = g.wireguard_private_key
+    if (g.openvpn_user) payload.openvpn_user = g.openvpn_user
+    if (g.openvpn_password) payload.openvpn_password = g.openvpn_password
+    const cfg = await usersApi.updateGluetun(payload)
+    gFilename.value = cfg.config_filename
+    hasWgKey.value = cfg.has_wireguard_private_key
+    hasOvpnUser.value = cfg.has_openvpn_user
+    hasOvpnPass.value = cfg.has_openvpn_password
+    g.wireguard_private_key = ''
+    g.openvpn_user = ''
+    g.openvpn_password = ''
+    gConfigContent.value = null
+    ui.toast('Gluetun settings saved', 'success')
+  } catch (e: any) {
+    gError.value = e.message
+  } finally {
+    gSaving.value = false
+  }
+}
 
 async function handleTailscale() {
   tsError.value = ''

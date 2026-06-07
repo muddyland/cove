@@ -25,6 +25,20 @@
           </div>
 
           <div class="form-group">
+            <label>// gluetun image</label>
+            <input
+              v-model="form.gluetun_image"
+              type="text"
+              placeholder="qmcgaw/gluetun:latest"
+              autocomplete="off"
+            />
+            <p class="hint">
+              Container image for the per-workspace Gluetun VPN sidecar. Pin a tag/digest
+              for reproducible deployments.
+            </p>
+          </div>
+
+          <div class="form-group">
             <label>// max workspace runtime (hours)</label>
             <input
               v-model.number="form.workspace_max_runtime_hours"
@@ -163,6 +177,7 @@ const envEntries = ref<EnvEntry[]>([])
 
 const form = reactive({
   tailscale_image: '',
+  gluetun_image: '',
   workspace_lan_access: false,
   workspace_lan_subnets: '',
   workspace_no_new_privileges: false,
@@ -175,6 +190,7 @@ onMounted(async () => {
   try {
     const settings = await adminApi.settings.get()
     form.tailscale_image = settings.tailscale_image
+    form.gluetun_image = settings.gluetun_image
     form.workspace_lan_access = settings.workspace_lan_access
     form.workspace_lan_subnets = settings.workspace_lan_subnets
     form.workspace_no_new_privileges = settings.workspace_no_new_privileges
@@ -203,6 +219,7 @@ async function handleSave() {
   try {
     const updated = await adminApi.settings.update({
       tailscale_image: form.tailscale_image,
+      gluetun_image: form.gluetun_image,
       workspace_lan_access: form.workspace_lan_access,
       workspace_lan_subnets: form.workspace_lan_subnets,
       workspace_no_new_privileges: form.workspace_no_new_privileges,
@@ -211,6 +228,7 @@ async function handleSave() {
       workspace_memory_limit_mb: form.workspace_memory_limit_mb,
     })
     form.tailscale_image = updated.tailscale_image
+    form.gluetun_image = updated.gluetun_image
     form.workspace_lan_access = updated.workspace_lan_access
     form.workspace_lan_subnets = updated.workspace_lan_subnets
     form.workspace_no_new_privileges = updated.workspace_no_new_privileges

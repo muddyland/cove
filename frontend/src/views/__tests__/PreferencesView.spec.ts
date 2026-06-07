@@ -6,6 +6,8 @@ vi.mock('@/api/users', () => ({
   usersApi: {
     getTailscale: vi.fn(),
     updateTailscale: vi.fn(),
+    getGluetun: vi.fn(),
+    updateGluetun: vi.fn(),
   },
 }))
 
@@ -22,12 +24,22 @@ import { usersApi } from '@/api/users'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import PreferencesView from '@/views/PreferencesView.vue'
-import type { TailscaleConfig, User } from '@/types'
+import type { GluetunConfig, TailscaleConfig, User } from '@/types'
 
 const baseConfig: TailscaleConfig = {
   enabled: true,
   has_auth_key: true,
   login_server: 'https://login.example.com',
+}
+
+const defaultGluetun: GluetunConfig = {
+  enabled: false,
+  vpn_type: 'openvpn',
+  has_config: false,
+  config_filename: null,
+  has_wireguard_private_key: false,
+  has_openvpn_user: false,
+  has_openvpn_password: false,
 }
 
 function setUser(provider: string) {
@@ -36,11 +48,20 @@ function setUser(provider: string) {
   } as User
 }
 
+// The tailscale form is the one holding the (url) login-server input; its single
+// password input is the auth key. Robust against extra forms/password fields.
+function tsAuthKeyInput(wrapper: ReturnType<typeof mount>) {
+  const tsForm = wrapper.findAll('form').find(f => f.find('input[type="url"]').exists())!
+  return tsForm.find('input[type="password"]')
+}
+
 describe('PreferencesView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
     setUser('local')
+    vi.mocked(usersApi.getGluetun).mockResolvedValue(defaultGluetun)
+    vi.mocked(usersApi.updateGluetun).mockResolvedValue(defaultGluetun)
   })
 
   it('loads the tailscale config on mount and populates fields', async () => {
@@ -52,8 +73,7 @@ describe('PreferencesView', () => {
     const loginInput = wrapper.find('input[type="url"]').element as HTMLInputElement
     expect(loginInput.value).toBe('https://login.example.com')
     // has_auth_key true -> placeholder hint shown
-    const authKeyInputs = wrapper.findAll('input[type="password"]')
-    const tsAuthKey = authKeyInputs[authKeyInputs.length - 1].element as HTMLInputElement
+    const tsAuthKey = tsAuthKeyInput(wrapper).element as HTMLInputElement
     expect(tsAuthKey.placeholder).toContain('configured')
   })
 
@@ -63,9 +83,8 @@ describe('PreferencesView', () => {
     const wrapper = mount(PreferencesView)
     await flushPromises()
 
-    // Submit the tailscale form (second form on the page).
-    const forms = wrapper.findAll('form')
-    await forms[1].trigger('submit.prevent')
+    const tsForm = wrapper.findAll('form').find(f => f.find('input[type="url"]').exists())!
+    await tsForm.trigger('submit.prevent')
     await flushPromises()
 
     expect(usersApi.updateTailscale).toHaveBeenCalledOnce()
@@ -81,12 +100,9 @@ describe('PreferencesView', () => {
     const wrapper = mount(PreferencesView)
     await flushPromises()
 
-    const pwInputs = wrapper.findAll('input[type="password"]')
-    const tsAuthKey = pwInputs[pwInputs.length - 1]
-    await tsAuthKey.setValue('tskey-new')
-
-    const forms = wrapper.findAll('form')
-    await forms[1].trigger('submit.prevent')
+    await tsAuthKeyInput(wrapper).setValue('tskey-new')
+    const tsForm = wrapper.findAll('form').find(f => f.find('input[type="url"]').exists())!
+    await tsForm.trigger('submit.prevent')
     await flushPromises()
 
     const payload = vi.mocked(usersApi.updateTailscale).mock.calls[0][0]
@@ -126,5 +142,23 @@ describe('PreferencesView', () => {
     expect(wrapper.text()).not.toContain('CHANGE PASSWORD')
     // Tailscale panel is still present.
     expect(wrapper.text()).toContain('TAILSCALE')
+  })
+
+  it('loads and saves the gluetun config', async () => {
+    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
+    const wrapper = mount(PreferencesView)
+    await flushPromises()
+    expect(usersApi.getGluetun).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain('GLUETUN')
+
+    // Submit the gluetun form (the one with a file input).
+    const gForm = wrapper.findAll('form').find(f => f.find('input[type="file"]').exists())!
+    await gForm.trigger('submit.prevent')
+    await flushPromises()
+    expect(usersApi.updateGluetun).toHaveBeenCalledOnce()
+    const payload = vi.mocked(usersApi.updateGluetun).mock.calls[0][0]
+    expect(payload.vpn_type).toBe('openvpn')
+    // No file chosen -> config_file omitted (sentinel leaves it unchanged).
+    expect(payload).not.toHaveProperty('config_file')
   })
 })

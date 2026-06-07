@@ -110,3 +110,78 @@ def test_login_server_https_accepted_and_clearable(client):
     resp = client.put("/api/users/me/tailscale", json={"login_server": ""})
     assert resp.status_code == 200
     assert resp.json()["login_server"] is None
+
+
+# ── Gluetun (per-user VPN) ──────────────────────────────────────────────────────
+
+def test_default_gluetun_config(client):
+    setup_admin(client)
+    resp = client.get("/api/users/me/gluetun")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "enabled": False,
+        "vpn_type": "openvpn",
+        "has_config": False,
+        "config_filename": None,
+        "has_wireguard_private_key": False,
+        "has_openvpn_user": False,
+        "has_openvpn_password": False,
+    }
+
+
+def test_put_gluetun_stores_encrypted_and_never_leaks(client):
+    setup_admin(client)
+    resp = client.put(
+        "/api/users/me/gluetun",
+        json={
+            "enabled": True,
+            "vpn_type": "wireguard",
+            "config_file": "[Interface]\nPrivateKey=SECRETKEY\n",
+            "config_filename": "wg0.conf",
+            "wireguard_private_key": "OVERRIDEKEY",
+            "openvpn_password": "p@ss",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Presence flags only — never the secrets/config themselves.
+    assert body == {
+        "enabled": True,
+        "vpn_type": "wireguard",
+        "has_config": True,
+        "config_filename": "wg0.conf",
+        "has_wireguard_private_key": True,
+        "has_openvpn_user": False,
+        "has_openvpn_password": True,
+    }
+    assert "SECRETKEY" not in resp.text and "OVERRIDEKEY" not in resp.text
+
+    # Stored encrypted at rest (not plaintext) and round-trips on decrypt.
+    from server.models import UserGluetun
+    from server.security import decrypt_secret
+    db = SessionLocal()
+    try:
+        g = db.scalar(select(UserGluetun))
+        assert g.config_file.startswith("enc:v1:")
+        assert "SECRETKEY" not in g.config_file
+        assert decrypt_secret(g.config_file) == "[Interface]\nPrivateKey=SECRETKEY\n"
+        assert decrypt_secret(g.wireguard_private_key) == "OVERRIDEKEY"
+    finally:
+        db.close()
+
+
+def test_put_gluetun_rejects_bad_vpn_type(client):
+    setup_admin(client)
+    resp = client.put("/api/users/me/gluetun", json={"vpn_type": "ipsec"})
+    assert resp.status_code == 400, resp.text
+
+
+def test_put_gluetun_sentinel_leaves_config_unchanged(client):
+    setup_admin(client)
+    client.put("/api/users/me/gluetun", json={"config_file": "abc", "config_filename": "a.ovpn"})
+    # A later update that omits config_file must not wipe it.
+    client.put("/api/users/me/gluetun", json={"enabled": True})
+    assert client.get("/api/users/me/gluetun").json()["has_config"] is True
+    # Explicit empty string clears it.
+    client.put("/api/users/me/gluetun", json={"config_file": ""})
+    assert client.get("/api/users/me/gluetun").json()["has_config"] is False
