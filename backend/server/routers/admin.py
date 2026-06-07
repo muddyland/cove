@@ -38,6 +38,14 @@ def list_users(user: AdminUser, db: DbSession):
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(body: AdminUserCreate, user: AdminUser, db: DbSession, request: Request):
+    # When OIDC is the only login method, local accounts can't be used to sign
+    # in — creating one would be a dead credential. Accounts are provisioned by
+    # the IdP on first SSO login instead.
+    if get_settings().oidc_only_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Local user creation is disabled when OIDC-only mode is active",
+        )
     validate_username(body.username)
     from sqlalchemy import select as sa_select
     existing = db.scalar(sa_select(User).where(User.username == body.username))
@@ -72,6 +80,10 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
     if body.is_admin is not None:
         target.is_admin = body.is_admin
     if body.password is not None:
+        # SSO (OIDC) accounts have no local password; refuse to set one rather
+        # than silently creating a back-door local credential on an SSO user.
+        if target.auth_provider != "local":
+            raise HTTPException(status_code=400, detail="Cannot set a password on SSO accounts")
         if len(body.password) < 8:
             raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
         target.password_hash = hash_password(body.password)

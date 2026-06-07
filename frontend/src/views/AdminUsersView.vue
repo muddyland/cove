@@ -2,8 +2,12 @@
   <AppShell>
     <div class="page-header">
       <h2>// USER REGISTRY</h2>
-      <NeonButton variant="primary" @click="openCreate"><Plus :size="14" /> Add User</NeonButton>
+      <NeonButton v-if="!auth.oidcOnly" variant="primary" @click="openCreate"><Plus :size="14" /> Add User</NeonButton>
     </div>
+    <p v-if="auth.oidcOnly" class="oidc-note">
+      Local user creation is disabled — OIDC-only mode is active. Accounts are
+      provisioned automatically on first SSO login.
+    </p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -23,7 +27,11 @@
             <td>{{ u.last_login_at ? formatDate(u.last_login_at) : '—' }}</td>
             <td class="actions">
               <NeonButton variant="ghost" @click="openEdit(u)"><Pencil :size="13" /> Edit</NeonButton>
-              <NeonButton variant="danger" @click="confirmDelete(u)"><Trash2 :size="13" /> Delete</NeonButton>
+              <NeonButton
+                v-if="u.id !== auth.user?.id"
+                variant="danger"
+                @click="confirmDelete(u)"
+              ><Trash2 :size="13" /> Delete</NeonButton>
             </td>
           </tr>
         </tbody>
@@ -51,10 +59,12 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import { Plus, Pencil, Trash2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 
 const users = ref<User[]>([])
 const ui = useUiStore()
+const auth = useAuthStore()
 const showForm = ref(false)
 const showConfirm = ref(false)
 const editTarget = ref<User | null>(null)
@@ -102,5 +112,9 @@ async function handleDelete() {
   font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 1px 6px; color: var(--text-muted);
+}
+.oidc-note {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+  color: var(--text-muted); margin: 0 0 16px;
 }
 </style>

@@ -183,3 +183,79 @@ def test_settings_max_runtime_hours(client):
     assert client.get("/api/admin/settings").json()["workspace_max_runtime_hours"] == 24
     client.put("/api/admin/settings", json={"workspace_max_runtime_hours": 8})
     assert client.get("/api/admin/settings").json()["workspace_max_runtime_hours"] == 8
+
+
+# ── SSO (OIDC) account password guards ────────────────────────────────────────
+
+def _make_oidc_user(username="ssouser", is_admin=False):
+    """Insert an OIDC-provisioned user directly and return its id."""
+    from server.db import SessionLocal
+    from server.models import User
+
+    db = SessionLocal()
+    try:
+        u = User(
+            username=username,
+            auth_provider="oidc",
+            oidc_sub=f"sub-{username}",
+            is_admin=is_admin,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u.id
+    finally:
+        db.close()
+
+
+def test_admin_cannot_set_password_on_oidc_user(client):
+    setup_admin(client)
+    uid = _make_oidc_user()
+    resp = client.patch(
+        f"/api/admin/users/{uid}",
+        json={"password": "newpassword123"},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "SSO" in resp.json()["detail"]
+
+
+def test_self_service_change_password_rejects_oidc_user(client):
+    from server.security import create_access_token
+
+    setup_admin(client)
+    uid = _make_oidc_user("ssoself")
+    client.cookies.clear()
+    tok = create_access_token(uid, False)
+    resp = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "x", "new_password": "newpassword123"},
+        headers=auth_header(tok),
+    )
+    assert resp.status_code == 400, resp.text
+    assert "SSO" in resp.json()["detail"]
+
+
+def test_create_user_blocked_in_oidc_only(client, monkeypatch):
+    from types import SimpleNamespace
+
+    token, _ = setup_admin(client)
+    # Flip the app into OIDC-only AFTER setup (setup itself is gated on it too).
+    monkeypatch.setattr(
+        "server.routers.admin.get_settings",
+        lambda: SimpleNamespace(oidc_only_active=True),
+    )
+    resp = client.post(
+        "/api/admin/users",
+        json={"username": "newbie", "password": "password123", "is_admin": False},
+        headers=auth_header(token),
+    )
+    assert resp.status_code == 400, resp.text
+    assert "OIDC-only" in resp.json()["detail"]
+
+
+def test_admin_cannot_delete_self(client):
+    token, _ = setup_admin(client)
+    me = client.get("/api/auth/me", headers=auth_header(token)).json()
+    resp = client.delete(f"/api/admin/users/{me['id']}", headers=auth_header(token))
+    assert resp.status_code == 400, resp.text
+    assert "your own account" in resp.json()["detail"]
