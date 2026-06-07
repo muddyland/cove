@@ -68,6 +68,38 @@ def _validate_target_url(url: str) -> None:
         raise HTTPException(status_code=400, detail="target_url must be a valid http/https URL")
 
 
+# Package / proot-app names: alphanumerics plus a safe punctuation subset. This
+# deliberately excludes every shell metacharacter and whitespace, so a token can
+# never break out of the install command (the values flow into init-script env
+# consumed by proot-apps / the universal-package-install mod).
+_PKG_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]*$")
+
+
+def _validate_package_list(raw: str, field: str) -> None:
+    for tok in re.split(r"[,\s]+", raw.strip()):
+        if tok and not _PKG_TOKEN_RE.match(tok):
+            raise HTTPException(status_code=400, detail=f"Invalid {field} entry: {tok!r}")
+
+
+def _validate_appimage_list(raw: str) -> None:
+    for tok in re.split(r"[,\s]+", raw.strip()):
+        if not tok:
+            continue
+        parsed = urlparse(tok)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise HTTPException(status_code=400, detail=f"Invalid AppImage URL: {tok!r}")
+
+
+def _validate_app_fields(install_packages, proot_apps, appimages) -> None:
+    """Validate the per-workspace package/app inputs (no-ops on None/empty)."""
+    if install_packages:
+        _validate_package_list(install_packages, "install_packages")
+    if proot_apps:
+        _validate_package_list(proot_apps, "proot_apps")
+    if appimages:
+        _validate_appimage_list(appimages)
+
+
 def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
     ws = db.get(Workspace, ws_id)
     if not ws:
@@ -100,6 +132,8 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         _validate_target_url(target_url)
     if image.image_type == "link" and not target_url:
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
+
+    _validate_app_fields(body.install_packages, body.proot_apps, body.appimages)
 
     if body.use_tailscale:
         ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == user.id))
@@ -237,6 +271,9 @@ def update_workspace(
 
     if data.get("target_url"):
         _validate_target_url(data["target_url"])
+    _validate_app_fields(
+        data.get("install_packages"), data.get("proot_apps"), data.get("appimages")
+    )
     if data.get("use_tailscale"):
         ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == ws.user_id))
         if not ts or not ts.auth_key:

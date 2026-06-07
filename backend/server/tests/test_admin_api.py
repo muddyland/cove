@@ -297,3 +297,28 @@ def test_admin_cannot_delete_self(client):
     resp = client.delete(f"/api/admin/users/{me['id']}", headers=auth_header(token))
     assert resp.status_code == 400, resp.text
     assert "your own account" in resp.json()["detail"]
+
+
+def test_cannot_demote_last_admin(client):
+    token, _ = setup_admin(client)
+    me = client.get("/api/auth/me", headers=auth_header(token)).json()
+    resp = client.patch(
+        f"/api/admin/users/{me['id']}",
+        json={"is_admin": False},
+        headers=auth_header(token),
+    )
+    assert resp.status_code == 400, resp.text
+    assert "last admin" in resp.json()["detail"]
+
+
+def test_can_demote_admin_when_another_exists(client):
+    token, _ = setup_admin(client)
+    create_user_via_admin(client, token, "admin2", is_admin=True)
+    me = client.get("/api/auth/me", headers=auth_header(token)).json()
+    resp = client.patch(
+        f"/api/admin/users/{me['id']}",
+        json={"is_admin": False},
+        headers=auth_header(token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_admin"] is False

@@ -15,6 +15,13 @@ raw="${COVE_APPIMAGES:-}"
 raw="${raw//,/ }"                     # normalise commas to spaces
 [ -z "${raw// /}" ] && exit 0
 
+# Install in the BACKGROUND. custom-cont-init.d runs before the desktop starts,
+# so downloading/extracting AppImages here would block the GUI from becoming
+# ready and overrun the launch deadline. Backgrounding lets the desktop come up
+# promptly; launchers appear as each AppImage finishes. Logged to ${log}.
+log=/config/.cove-appimages.log
+
+(
 USER_NAME=abc
 HOME_DIR=/config
 APPS_DIR="${HOME_DIR}/.cove-appimages"
@@ -114,3 +121,7 @@ EOF
   run_as chmod +x "${out}"
   echo "[cove] appimage: installed ${disp}"
 done
+) >>"${log}" 2>&1 &
+
+echo "[cove] appimage: installing in background; log: ${log}"
+exit 0

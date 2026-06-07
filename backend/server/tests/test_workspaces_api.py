@@ -477,3 +477,34 @@ def test_start_rejected_when_already_running(client):
     _set_status(ws["id"], "running")
     resp = client.post(f"/api/workspaces/{ws['id']}/start")
     assert resp.status_code == 400, resp.text
+
+
+def test_create_rejects_unsafe_package_tokens(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    cases = [
+        ("install_packages", "vim; rm -rf /"),
+        ("proot_apps", "firefox|evil"),
+        ("appimages", "https://x.io/A.AppImage\n; touch pwned"),
+    ]
+    for field, val in cases:
+        resp = client.post(
+            "/api/workspaces", json={"name": "x", "image_id": image_id, field: val}
+        )
+        assert resp.status_code == 400, (field, resp.text)
+
+
+def test_create_accepts_clean_package_tokens(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    resp = client.post(
+        "/api/workspaces",
+        json={
+            "name": "ok",
+            "image_id": image_id,
+            "install_packages": "git vim htop",
+            "proot_apps": "obs-studio firefox",
+            "appimages": "https://x.io/A.AppImage",
+        },
+    )
+    assert resp.status_code == 201, resp.text

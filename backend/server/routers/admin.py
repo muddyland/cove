@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from server import settings_store
 from server.config import get_settings
@@ -78,6 +78,16 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
             raise HTTPException(status_code=409, detail="Username already taken")
         target.username = body.username
     if body.is_admin is not None:
+        # Never let the last admin be demoted — it would lock the instance out of
+        # all admin access (admin endpoints would become unreachable by anyone).
+        if target.is_admin and not body.is_admin:
+            other_admins = db.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(User.is_admin.is_(True), User.id != target.id)
+            )
+            if not other_admins:
+                raise HTTPException(status_code=400, detail="Cannot remove the last admin")
         target.is_admin = body.is_admin
     if body.password is not None:
         # SSO (OIDC) accounts have no local password; refuse to set one rather
