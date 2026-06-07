@@ -3,7 +3,27 @@
     <div class="top-bar">
       <RouterLink to="/" class="back-link">← GRID</RouterLink>
       <div class="ws-info">
-        <span class="ws-name">{{ ws?.name }}</span>
+        <div class="ws-switcher">
+          <button class="ws-switch-btn" :class="{ open: menuOpen }" @click.stop="menuOpen = !menuOpen">
+            <span class="ws-name">{{ ws?.name }}</span>
+            <ChevronDown :size="14" class="chev" />
+          </button>
+          <div v-if="menuOpen" class="switch-menu" @click.stop>
+            <RouterLink
+              v-for="w in switchable"
+              :key="w.id"
+              :to="`/workspace/${w.id}`"
+              class="switch-item"
+              :class="{ current: w.id === wsId }"
+              @click="menuOpen = false"
+            >
+              <span class="switch-dot" />
+              <span class="switch-name">{{ w.name }}</span>
+              <span class="switch-img">{{ w.image_name }}</span>
+            </RouterLink>
+            <p v-if="!switchable.length" class="switch-empty">No running nodes</p>
+          </div>
+        </div>
         <StatusBadge v-if="ws" :status="ws.status" />
       </div>
       <div class="top-actions">
@@ -62,7 +82,7 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { ScanLine, Maximize, Minimize } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -77,6 +97,17 @@ const streamUrl = ref<string | null>(null)
 const frameWrap = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+// Quick-switch dropdown: jump between running nodes without going via the grid.
+const menuOpen = ref(false)
+const switchable = computed(() => store.items.filter(w => w.status === 'running'))
+function closeMenu() { menuOpen.value = false }
+watch(menuOpen, (open) => {
+  if (open) document.addEventListener('click', closeMenu)
+  else document.removeEventListener('click', closeMenu)
+})
+// Close the menu when the route (active workspace) changes.
+watch(wsId, () => { menuOpen.value = false })
 
 // Fullscreen the whole frame wrapper (iframe + CRT overlay + branding), not
 // just the iframe, so the overlay stays in sync.
@@ -112,6 +143,7 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.removeEventListener('click', closeMenu)
   if (pollTimer) clearInterval(pollTimer)
 })
 
@@ -184,8 +216,70 @@ async function handleStop() {
   box-shadow: var(--glow-sm);
 }
 
-.ws-info { display: flex; align-items: center; gap: 10px; flex: 1; }
+.ws-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
+
+/* Quick-switch dropdown */
+.ws-switcher { position: relative; }
+.ws-switch-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ws-switch-btn:hover, .ws-switch-btn.open {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.ws-switch-btn .chev { color: var(--accent); transition: transform 0.15s; flex-shrink: 0; }
+.ws-switch-btn.open .chev { transform: rotate(180deg); }
+
+.switch-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--glow-sm), var(--shadow);
+  padding: 4px;
+  z-index: 30;
+}
+.switch-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--text);
+  transition: background 0.12s;
+}
+.switch-item:hover { background: var(--accent-dim); }
+.switch-item.current { background: rgba(0, 245, 255, 0.06); }
+.switch-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  background: var(--green); box-shadow: 0 0 6px var(--green);
+}
+.switch-name {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.switch-item.current .switch-name { color: var(--accent); }
+.switch-img {
+  margin-left: auto;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%;
+}
+.switch-empty {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  padding: 8px; text-align: center;
+}
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
 .frame-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; }
