@@ -311,3 +311,33 @@ def test_target_url_lan_ips_ignores_public_and_docker_ranges():
     assert _target_url_lan_ips("http://172.16.5.5/") == []       # docker-internal -> stays blocked
     assert _target_url_lan_ips(None) == []
     assert _target_url_lan_ips("") == []
+
+# ── copy_workspace_storage (clone) ────────────────────────────────────────────
+
+def test_copy_workspace_storage(tmp_path, monkeypatch):
+    import server.docker_manager as dm
+    from server.config import get_settings
+    monkeypatch.setattr(get_settings(), "storage_path", tmp_path, raising=False)
+
+    src_dir = tmp_path / "alice" / "workspace-orig"
+    (src_dir / "sub").mkdir(parents=True)
+    (src_dir / "session.txt").write_text("keep-me")
+    (src_dir / "sub" / "cookie").write_text("yum")
+
+    src_ws = SimpleNamespace(user=SimpleNamespace(username="alice"), name="orig")
+    dst_ws = SimpleNamespace(user=SimpleNamespace(username="alice"), name="orig copy")
+    dm.copy_workspace_storage(src_ws, dst_ws)
+
+    dst = tmp_path / "alice" / "workspace-orig-copy"
+    assert (dst / "session.txt").read_text() == "keep-me"
+    assert (dst / "sub" / "cookie").read_text() == "yum"
+
+
+def test_copy_workspace_storage_noop_when_source_missing(tmp_path, monkeypatch):
+    import server.docker_manager as dm
+    from server.config import get_settings
+    monkeypatch.setattr(get_settings(), "storage_path", tmp_path, raising=False)
+    src_ws = SimpleNamespace(user=SimpleNamespace(username="bob"), name="never-launched")
+    dst_ws = SimpleNamespace(user=SimpleNamespace(username="bob"), name="copy")
+    dm.copy_workspace_storage(src_ws, dst_ws)  # must not raise
+    assert not (tmp_path / "bob" / "workspace-copy").exists()

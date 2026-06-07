@@ -52,6 +52,7 @@
     <div class="card-actions" @click.stop>
       <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
       <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="success" :loading="acting" @click="handleStart"><Power :size="14" /> BOOT</NeonButton>
+      <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" @click="showClone = true"><CopyPlus :size="14" /> CLONE</NeonButton>
       <NeonButton v-if="ws.status === 'running'" variant="warn" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
       <NeonButton variant="danger" :loading="removing" @click="openPurge"><Trash2 :size="14" /> PURGE</NeonButton>
     </div>
@@ -73,6 +74,7 @@
     </label>
   </ConfirmModal>
   <EditWorkspaceModal v-model="showEdit" :ws="ws" />
+  <CloneModal v-model="showClone" :ws="ws" />
 </template>
 
 <script setup lang="ts">
@@ -84,7 +86,8 @@ import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import EditWorkspaceModal from './EditWorkspaceModal.vue'
-import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy } from 'lucide-vue-next'
+import CloneModal from './CloneModal.vue'
+import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus } from 'lucide-vue-next'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -108,6 +111,7 @@ const removing = ref(false)
 const showConfirm = ref(false)
 const purgeStorage = ref(false)
 const showEdit = ref(false)
+const showClone = ref(false)
 
 function hideLogo(e: Event) {
   ;(e.target as HTMLImageElement).style.display = 'none'

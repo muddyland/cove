@@ -113,6 +113,13 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     items.value = items.value.filter(w => w.id !== id)
   }
 
+  async function clone(id: number, payload: { name: string; image_id?: number }) {
+    const ws = await workspacesApi.clone(id, payload)
+    items.value.unshift(ws)
+    schedulePoll()
+    return ws
+  }
+
   function stopPolling() {
     if (pollTimer) {
       clearInterval(pollTimer)
@@ -124,5 +131,5 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  return { items, stats, loading, fetch, fetchStats, launch, update, stop, start, remove, stopPolling }
+  return { items, stats, loading, fetch, fetchStats, launch, update, stop, start, remove, clone, stopPolling }
 })

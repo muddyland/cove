@@ -508,3 +508,64 @@ def test_create_accepts_clean_package_tokens(client, fake_docker_manager):
         },
     )
     assert resp.status_code == 201, resp.text
+
+
+def _mark_stopped(ws_id: int) -> None:
+    db = SessionLocal()
+    try:
+        db.get(Workspace, ws_id).status = "stopped"
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_clone_copies_config_and_schedules_launch(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    src = client.post(
+        "/api/workspaces",
+        json={"name": "orig", "image_id": image_id, "allow_sudo": True, "install_packages": "git vim"},
+    ).json()
+    _mark_stopped(src["id"])
+
+    resp = client.post(f"/api/workspaces/{src['id']}/clone", json={"name": "orig copy"})
+    assert resp.status_code == 201, resp.text
+    clone = resp.json()
+    assert clone["id"] != src["id"]
+    assert clone["name"] == "orig copy"
+    assert clone["install_packages"] == "git vim"
+    assert clone["allow_sudo"] is True
+    assert clone["status"] == "creating"
+    fake_docker_manager.clone_and_launch.assert_called_once_with(src["id"], clone["id"])
+
+
+def test_clone_requires_source_stopped(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    src = client.post("/api/workspaces", json={"name": "orig", "image_id": image_id}).json()
+    # Fresh workspace is "creating" (not stopped) -> refuse.
+    resp = client.post(f"/api/workspaces/{src['id']}/clone", json={"name": "copy"})
+    assert resp.status_code == 409, resp.text
+
+
+def test_clone_rejects_same_name(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    src = client.post("/api/workspaces", json={"name": "Orig", "image_id": image_id}).json()
+    _mark_stopped(src["id"])
+    # Sanitizes to the same storage dir -> refuse.
+    resp = client.post(f"/api/workspaces/{src['id']}/clone", json={"name": "orig"})
+    assert resp.status_code == 400, resp.text
+
+
+def test_clone_can_switch_image(client, fake_docker_manager):
+    setup_admin(client)
+    src_img = add_image(name="Ubuntu", image_type="desktop")
+    other_img = add_image(name="Fedora", image_type="desktop")
+    src = client.post("/api/workspaces", json={"name": "orig", "image_id": src_img}).json()
+    _mark_stopped(src["id"])
+    resp = client.post(
+        f"/api/workspaces/{src['id']}/clone", json={"name": "on fedora", "image_id": other_img}
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["image_id"] == other_img

@@ -232,6 +232,40 @@ def delete_workspace_storage(ws) -> None:
         logger.info("Purged workspace storage %s", candidate)
 
 
+def copy_workspace_storage(src_ws, dst_ws) -> None:
+    """Copy a workspace's persistent home (/config) into the clone's home.
+
+    Both paths are derived fresh from the storage base + username +
+    sanitized name (so neither can escape the base), and the copy is refused if
+    it would target the source itself. No-op when the source was never launched
+    (no dir yet) — the clone then just starts with a fresh home. Symlinks are
+    preserved as-is. Ownership is left to the container's init, which chowns
+    /config to PUID/PGID on first boot.
+    """
+    settings = get_settings()
+    base = (settings.storage_path or (settings.data_dir / "workspaces")).resolve()
+
+    def _path(ws):
+        if not (ws.user and ws.user.username):
+            return None
+        return base / ws.user.username / f"workspace-{_sanitize(ws.name)}"
+
+    src = _path(src_ws)
+    dst = _path(dst_ws)
+    if src is None or dst is None:
+        return
+    if not src.is_dir():
+        return  # source never launched; clone starts fresh
+    src_r = src.resolve()
+    if src_r == base or base not in src_r.parents:
+        logger.warning("Refusing to clone storage outside base: %s", src_r)
+        return
+    if dst == src_r:
+        raise ValueError("clone destination resolves to the source storage")
+    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True, ignore_dangling_symlinks=True)
+    logger.info("Cloned workspace storage %s -> %s", src_r, dst)
+
+
 # Public resolvers used when a workspace opts into custom DNS without naming any.
 _DEFAULT_PUBLIC_DNS = ["1.1.1.1", "9.9.9.9"]
 
@@ -750,6 +784,27 @@ class DockerManager:
                 db.commit()
         finally:
             db.close()
+
+    def clone_and_launch(self, src_id: int, dst_id: int) -> None:
+        """Background task: copy the source's persistent home, then launch the clone."""
+        db = self._get_db()
+        try:
+            src = db.get(Workspace, src_id)
+            dst = db.get(Workspace, dst_id)
+            if not dst:
+                return
+            try:
+                copy_workspace_storage(src, dst)
+            except Exception as exc:
+                logger.error("Clone storage copy failed %s -> %s: %s", src_id, dst_id, exc)
+                dst.status = "error"
+                dst.error_message = "Clone failed while copying storage"
+                db.commit()
+                return
+        finally:
+            db.close()
+        # Launch in the same flow as a normal create (own DB session).
+        self.launch_workspace(dst_id)
 
     def get_stats(self, container_id: str) -> dict | None:
         """Live CPU/memory for one running container, or None if unavailable."""

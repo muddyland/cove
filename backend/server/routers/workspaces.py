@@ -13,6 +13,7 @@ from server.net import client_ip
 from server.schemas import (
     LanPolicyOut,
     StreamAuthOut,
+    WorkspaceClone,
     WorkspaceCreate,
     WorkspaceOut,
     WorkspaceStats,
@@ -214,6 +215,79 @@ def workspace_stats(user: CurrentUser, db: DbSession):
         for ws_id, data in raw.items()
     }
     return results
+
+
+@router.post("/{ws_id}/clone", response_model=WorkspaceOut, status_code=status.HTTP_201_CREATED)
+def clone_workspace(
+    ws_id: int, body: WorkspaceClone, user: CurrentUser, db: DbSession,
+    bg: BackgroundTasks, request: Request,
+):
+    """Clone a workspace, copying its full persistent home (/config).
+
+    Useful for switching distros while keeping browser sessions, app config, etc.
+    Optionally re-targets a different image. The source must be stopped so its
+    files are at rest (avoids copying a half-written browser DB).
+    """
+    src = _get_workspace_or_404(ws_id, user, db)
+    if src.status not in ("stopped", "error"):
+        raise HTTPException(
+            status_code=409, detail="Stop the workspace before cloning so its files are at rest"
+        )
+
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    from server.docker_manager import _sanitize
+    if _sanitize(name) == _sanitize(src.name):
+        raise HTTPException(status_code=400, detail="Choose a name that differs from the source")
+
+    image = db.get(WorkspaceImage, body.image_id) if body.image_id else db.get(WorkspaceImage, src.image_id)
+    if not image or not image.enabled:
+        raise HTTPException(status_code=404, detail="Image not found or disabled")
+
+    url_capable = bool(image.url_env) or image.image_type == "link"
+    target_url = src.target_url if url_capable else None
+    if image.image_type == "link" and not target_url:
+        raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
+
+    if src.use_tailscale:
+        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == user.id))
+        if not ts or not ts.auth_key:
+            raise HTTPException(status_code=400, detail="Tailscale not configured")
+
+    clone = Workspace(
+        user_id=user.id,
+        name=name,
+        workspace_type=image.image_type,
+        image_id=image.id,
+        target_url=target_url,
+        kiosk=src.kiosk,
+        kiosk_dark=src.kiosk_dark,
+        kiosk_menu=src.kiosk_menu,
+        use_tailscale=src.use_tailscale,
+        lan_access=src.lan_access,
+        ts_exit_node=src.ts_exit_node,
+        ts_accept_routes=src.ts_accept_routes,
+        ts_accept_dns=src.ts_accept_dns,
+        custom_dns=src.custom_dns,
+        dns_servers=src.dns_servers,
+        install_packages=src.install_packages,
+        proot_apps=src.proot_apps,
+        appimages=src.appimages,
+        allow_sudo=src.allow_sudo,
+        status="creating",
+    )
+    db.add(clone)
+    db.commit()
+    db.refresh(clone)
+
+    _audit(db, "workspace.clone", detail=f"{src.public_id}->{clone.public_id}", user=user, request=request)
+
+    from server.docker_manager import get_docker_manager
+    bg.add_task(get_docker_manager().clone_and_launch, src.id, clone.id)
+
+    return WorkspaceOut.from_workspace(clone)
 
 
 @router.get("/lan-policy", response_model=LanPolicyOut)

@@ -138,6 +138,13 @@ class LanPolicyOut(BaseModel):
     subnets: list[str]
 
 
+class WorkspaceClone(BaseModel):
+    # New name for the copy (must differ from the source). Optional image_id lets
+    # you clone onto a different distro while keeping the persistent home.
+    name: str
+    image_id: Optional[int] = None
+
+
 class StreamAuthOut(BaseModel):
     # The URL the SPA should point the workspace iframe at. In subdomain mode it
     # carries a one-time ``?__cove_t`` token that bootstraps the per-workspace
