@@ -92,14 +92,51 @@
       </form>
     </BaseModal>
 
-    <ConfirmModal
-      v-model="showConfirm"
-      title="Delete Image"
-      :message="`Delete '${deleteTarget?.name}'?`"
-      confirm-label="Delete"
-      :loading="deleting"
-      @confirm="handleDelete"
-    />
+    <BaseModal v-model="showConfirm" title="Delete Image">
+      <div class="delete-modal">
+        <p class="delete-q">
+          What should happen to <strong>{{ deleteTarget?.name }}</strong>?
+        </p>
+        <p class="delete-sub">
+          <code>{{ deleteTarget?.docker_image }}</code>
+        </p>
+
+        <button
+          class="delete-opt"
+          :disabled="deleting !== null"
+          @click="handleDeleteImageOnly"
+        >
+          <span class="opt-head">
+            <HardDriveDownload :size="15" />
+            Delete downloaded image only
+            <Loader v-if="deleting === 'image'" :size="14" class="spin opt-load" />
+          </span>
+          <span class="opt-desc">
+            Frees disk space (<code>docker image rm</code>) but keeps this
+            catalog entry so you can re-pull it later.
+          </span>
+        </button>
+
+        <button
+          class="delete-opt danger"
+          :disabled="deleting !== null"
+          @click="handleRemoveEntry"
+        >
+          <span class="opt-head">
+            <Trash2 :size="15" />
+            Remove entry &amp; delete image
+            <Loader v-if="deleting === 'entry'" :size="14" class="spin opt-load" />
+          </span>
+          <span class="opt-desc">
+            Removes the catalog entry and deletes the downloaded image from disk.
+          </span>
+        </button>
+
+        <div class="delete-actions">
+          <NeonButton variant="secondary" :disabled="deleting !== null" @click="showConfirm = false">Cancel</NeonButton>
+        </div>
+      </div>
+    </BaseModal>
   </AppShell>
 </template>
 
@@ -108,10 +145,9 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
-import ConfirmModal from '@/components/ConfirmModal.vue'
 import {
   RefreshCw, Plus, Trash2, ToggleLeft, ToggleRight,
-  Download, CheckCircle2, CircleDashed, Loader,
+  Download, CheckCircle2, CircleDashed, Loader, HardDriveDownload,
 } from 'lucide-vue-next'
 import { imagesApi, type ImagePullStatus } from '@/api/images'
 import { useUiStore } from '@/stores/ui'
@@ -125,7 +161,8 @@ const showForm = ref(false)
 const showConfirm = ref(false)
 const deleteTarget = ref<WorkspaceImage | null>(null)
 const adding = ref(false)
-const deleting = ref(false)
+// null = idle; 'image' / 'entry' marks which delete action is in flight.
+const deleting = ref<null | 'image' | 'entry'>(null)
 const syncing = ref(false)
 const formError = ref('')
 const form = reactive({ name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000 })
@@ -226,16 +263,32 @@ async function toggleEnabled(img: WorkspaceImage) {
 
 function confirmDelete(img: WorkspaceImage) { deleteTarget.value = img; showConfirm.value = true }
 
-async function handleDelete() {
+// Delete the downloaded image only; keep the catalog entry (now "Not pulled").
+async function handleDeleteImageOnly() {
   if (!deleteTarget.value) return
-  deleting.value = true
+  const id = deleteTarget.value.id
+  deleting.value = 'image'
   try {
-    await imagesApi.remove(deleteTarget.value.id)
-    images.value = images.value.filter(i => i.id !== deleteTarget.value!.id)
+    await imagesApi.removeImageOnly(id)
+    pullStatus.value = { ...pullStatus.value, [id]: 'absent' }
     showConfirm.value = false
-    ui.toast('Image deleted', 'success')
+    ui.toast('Downloaded image deleted', 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }
-  finally { deleting.value = false }
+  finally { deleting.value = null }
+}
+
+// Remove the catalog entry and delete the downloaded image from disk.
+async function handleRemoveEntry() {
+  if (!deleteTarget.value) return
+  const id = deleteTarget.value.id
+  deleting.value = 'entry'
+  try {
+    await imagesApi.remove(id, true)
+    images.value = images.value.filter(i => i.id !== id)
+    showConfirm.value = false
+    ui.toast('Image entry removed', 'success')
+  } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { deleting.value = null }
 }
 </script>
 
@@ -263,4 +316,34 @@ async function handleDelete() {
 @keyframes spin { to { transform: rotate(360deg); } }
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Delete-image modal: two stacked choice cards. */
+.delete-modal { display: flex; flex-direction: column; gap: 14px; }
+.delete-q { margin: 0; font-size: 14px; color: var(--text); }
+.delete-q strong { color: var(--accent); }
+.delete-sub { margin: -8px 0 2px; }
+.delete-sub code { font-size: 11px; color: var(--text-muted); }
+.delete-opt {
+  display: flex; flex-direction: column; gap: 6px;
+  text-align: left; width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.delete-opt:hover:not(:disabled) { border-color: var(--accent); box-shadow: var(--glow-sm); }
+.delete-opt.danger:hover:not(:disabled) { border-color: var(--red); box-shadow: 0 0 8px rgba(255, 32, 85, 0.3); }
+.delete-opt:disabled { opacity: 0.5; cursor: default; }
+.opt-head {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.5px; color: var(--text);
+}
+.delete-opt.danger .opt-head { color: var(--red); }
+.opt-load { margin-left: auto; }
+.opt-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.opt-desc code { font-size: 10px; }
+.delete-actions { display: flex; justify-content: flex-end; }
 </style>

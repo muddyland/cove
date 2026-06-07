@@ -1,7 +1,17 @@
 """Tests for the images router (create/list/sync, admin gating)."""
 
 import server.routers.images as images_router
-from server.tests.helpers import auth_header, create_user_via_admin, login, setup_admin
+from server.tests.helpers import (
+    add_image,
+    auth_header,
+    create_user_via_admin,
+    login,
+    setup_admin,
+)
+
+
+def _image_ids(client, token):
+    return [i["id"] for i in client.get("/api/images", headers=auth_header(token)).json()]
 
 # Raw LinuxServer API image shape (what fetch_linuxserver_images returns).
 _FAKE_RAW = [
@@ -205,3 +215,66 @@ def test_create_image_autofetches_logo(client, monkeypatch):
     )
     assert resp.status_code == 201, resp.text
     assert resp.json()["logo_url"] == "https://logo.example/handbrake.png"
+
+
+# ── Delete: image-only vs entry+image ─────────────────────────────────────────
+
+def test_delete_image_only_keeps_entry(client, fake_docker_manager):
+    fake_docker_manager.remove_image.return_value = "removed"
+    token, _ = setup_admin(client)
+    img_id = add_image(name="Webtop", docker_image="lscr.io/linuxserver/webtop:latest")
+
+    resp = client.delete(f"/api/images/{img_id}/image", headers=auth_header(token))
+    assert resp.status_code == 200, resp.text
+    fake_docker_manager.remove_image.assert_called_once_with("lscr.io/linuxserver/webtop:latest")
+    # Catalog entry survives.
+    assert img_id in _image_ids(client, token)
+
+
+def test_delete_entry_and_image_removes_both(client, fake_docker_manager):
+    fake_docker_manager.remove_image.return_value = "removed"
+    token, _ = setup_admin(client)
+    img_id = add_image(name="Webtop", docker_image="lscr.io/linuxserver/webtop:latest")
+
+    resp = client.delete(f"/api/images/{img_id}?remove_image=true", headers=auth_header(token))
+    assert resp.status_code == 204, resp.text
+    fake_docker_manager.remove_image.assert_called_once_with("lscr.io/linuxserver/webtop:latest")
+    assert img_id not in _image_ids(client, token)
+
+
+def test_delete_entry_only_leaves_image_untouched(client, fake_docker_manager):
+    token, _ = setup_admin(client)
+    img_id = add_image(name="Webtop", docker_image="lscr.io/linuxserver/webtop:latest")
+
+    resp = client.delete(f"/api/images/{img_id}", headers=auth_header(token))
+    assert resp.status_code == 204, resp.text
+    fake_docker_manager.remove_image.assert_not_called()
+    assert img_id not in _image_ids(client, token)
+
+
+def test_delete_image_in_use_returns_409_and_keeps_entry(client, fake_docker_manager):
+    fake_docker_manager.remove_image.return_value = "in_use"
+    token, _ = setup_admin(client)
+    img_id = add_image(name="Webtop", docker_image="lscr.io/linuxserver/webtop:latest")
+
+    # image-only delete is blocked …
+    resp = client.delete(f"/api/images/{img_id}/image", headers=auth_header(token))
+    assert resp.status_code == 409, resp.text
+    assert img_id in _image_ids(client, token)
+
+    # … and so is the combined delete (entry must remain intact).
+    resp = client.delete(f"/api/images/{img_id}?remove_image=true", headers=auth_header(token))
+    assert resp.status_code == 409, resp.text
+    assert img_id in _image_ids(client, token)
+
+
+def test_delete_image_requires_admin(client, fake_docker_manager):
+    admin_token, _ = setup_admin(client)
+    create_user_via_admin(client, admin_token, "alice")
+    img_id = add_image(name="Webtop", docker_image="lscr.io/linuxserver/webtop:latest")
+    client.cookies.clear()
+    user_token = login(client, "alice", "password123").json()["access_token"]
+
+    resp = client.delete(f"/api/images/{img_id}/image", headers=auth_header(user_token))
+    assert resp.status_code == 403
+    fake_docker_manager.remove_image.assert_not_called()

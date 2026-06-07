@@ -287,6 +287,30 @@ class DockerManager:
             logger.debug("image_present check failed for %s: %s", ref, exc)
             return False
 
+    def remove_image(self, ref: str) -> str:
+        """Delete a local image from disk.
+
+        Returns one of:
+          'removed'  — the image was deleted
+          'absent'   — nothing to do (it wasn't pulled)
+          'in_use'   — a container still references it (409); left in place
+          'error'    — any other daemon failure
+        Never raises, so callers can map the status to an HTTP response.
+        """
+        try:
+            self._client.images.remove(ref)
+            logger.info("Removed image %s", ref)
+            return "removed"
+        except (docker.errors.ImageNotFound, docker.errors.NotFound):
+            return "absent"
+        except docker.errors.APIError as exc:
+            resp = getattr(exc, "response", None)
+            if resp is not None and resp.status_code == 409:
+                logger.info("Image %s in use, not removed", ref)
+                return "in_use"
+            logger.warning("Failed to remove image %s: %s", ref, exc)
+            return "error"
+
     def is_pulling(self, ref: str) -> bool:
         with self._pulling_lock:
             return ref in self._pulling

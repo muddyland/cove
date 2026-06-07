@@ -7,7 +7,11 @@ export const imagesApi = {
     api.post<WorkspaceImage>('/images', payload),
   update: (id: number, payload: Partial<WorkspaceImage>) =>
     api.patch<WorkspaceImage>(`/images/${id}`, payload),
-  remove: (id: number) => api.delete(`/images/${id}`),
+  // Delete the catalog entry. With removeImage, also `docker image rm` it.
+  remove: (id: number, removeImage = false) =>
+    api.delete(`/images/${id}${removeImage ? '?remove_image=true' : ''}`),
+  // Delete the local Docker image only, keeping the catalog entry.
+  removeImageOnly: (id: number) => api.delete(`/images/${id}/image`),
   sync: () => api.post<{ added: number; updated: number; total: number }>('/images/sync'),
   pullStatus: () => api.get<Record<number, ImagePullStatus>>('/images/pull-status'),
   pull: (id: number) => api.post<{ status: ImagePullStatus }>(`/images/${id}/pull`),

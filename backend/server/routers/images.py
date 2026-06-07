@@ -162,10 +162,51 @@ def update_image(image_id: int, body: ImageUpdate, user: AdminUser, db: DbSessio
     return image
 
 
-@router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_image(image_id: int, user: AdminUser, db: DbSession):
+def _remove_docker_image(docker_image: str) -> None:
+    """Best-effort delete of a local image, raising HTTP errors on conflict.
+
+    Shared by the catalog delete (remove_image=true) and the image-only delete.
+    'absent' is treated as success (idempotent — nothing to remove).
+    """
+    from server.docker_manager import get_docker_manager
+
+    result = get_docker_manager().remove_image(docker_image)
+    if result == "in_use":
+        raise HTTPException(
+            status_code=409,
+            detail="That image is in use by a container and can't be removed. "
+            "Stop/purge the workspaces using it first.",
+        )
+    if result == "error":
+        raise HTTPException(status_code=502, detail="Failed to remove the Docker image")
+
+
+@router.delete("/{image_id}/image")
+def remove_image_layers(image_id: int, user: AdminUser, db: DbSession):
+    """Delete the local Docker image from disk but keep the catalog entry.
+
+    The entry stays so the admin can re-pull it later; its pull-status flips
+    back to 'absent'.
+    """
     image = db.get(WorkspaceImage, image_id)
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
+    _remove_docker_image(image.docker_image)
+    return {"status": "removed"}
+
+
+@router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_image(image_id: int, user: AdminUser, db: DbSession, remove_image: bool = False):
+    """Delete a catalog entry. With remove_image=true, also docker-rm the image.
+
+    When remove_image is set, the image is removed first so an in-use conflict
+    aborts the whole operation (the catalog entry is left intact rather than
+    leaving a dangling entry whose image couldn't be deleted).
+    """
+    image = db.get(WorkspaceImage, image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    if remove_image:
+        _remove_docker_image(image.docker_image)
     db.delete(image)
     db.commit()
