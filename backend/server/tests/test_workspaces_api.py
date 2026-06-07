@@ -569,3 +569,19 @@ def test_clone_can_switch_image(client, fake_docker_manager):
     )
     assert resp.status_code == 201, resp.text
     assert resp.json()["image_id"] == other_img
+
+
+def test_create_persists_ephemeral_flag(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Chromium", image_type="browser", url_env="CHROME_CLI")
+    d = client.post("/api/workspaces", json={"name": "plain", "image_id": image_id}).json()
+    assert d["ephemeral"] is False
+    e = client.post(
+        "/api/workspaces", json={"name": "eph", "image_id": image_id, "ephemeral": True}
+    ).json()
+    assert e["ephemeral"] is True
+    db = SessionLocal()
+    try:
+        assert db.get(Workspace, e["id"]).ephemeral is True
+    finally:
+        db.close()

@@ -37,6 +37,16 @@
           <span>Allow right-click / refresh menu</span>
         </label>
       </template>
+      <template v-if="urlCapable">
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.ephemeral" />
+          <span>Ephemeral (no saved data — wiped when halted)</span>
+        </label>
+        <p v-if="form.ephemeral" class="hint ts-field">
+          Cookies, history, and downloads live only in the container and are
+          discarded on halt. Nothing is written to persistent storage.
+        </p>
+      </template>
       <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" />
 
       <div v-if="error" class="form-error">{{ error }}</div>
@@ -78,6 +88,7 @@ const form = reactive({
   kiosk_dark: false,
   kiosk_menu: false,
   use_tailscale: false,
+  ephemeral: false,
   lan_access: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -118,6 +129,7 @@ async function handleSubmit() {
       kiosk_dark: urlCapable.value && form.kiosk ? form.kiosk_dark : false,
       kiosk_menu: urlCapable.value && form.kiosk ? form.kiosk_menu : false,
       use_tailscale: form.use_tailscale,
+      ephemeral: urlCapable.value ? form.ephemeral : false,
       lan_access: form.lan_access,
       ...(form.use_tailscale
         ? {
@@ -144,6 +156,7 @@ async function handleSubmit() {
     form.kiosk = false
     form.kiosk_dark = false
     form.kiosk_menu = false
+    form.ephemeral = false
     form.use_tailscale = false
     form.lan_access = false
     form.ts_exit_node = ''
@@ -173,4 +186,5 @@ async function handleSubmit() {
 }
 .checkbox-row input { width: auto; margin: 0; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
+.hint { font-size: 11px; line-height: 1.5; color: var(--text-muted); margin: 0; }
 </style>

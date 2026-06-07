@@ -108,6 +108,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0021_workspace_lan_access",
         "ALTER TABLE workspace ADD COLUMN lan_access BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Ephemeral workspaces: no persistent /config mount.
+    (
+        "0022_workspace_ephemeral",
+        "ALTER TABLE workspace ADD COLUMN ephemeral BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

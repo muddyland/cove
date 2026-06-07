@@ -91,6 +91,8 @@ class WorkspaceCreate(BaseModel):
     kiosk_dark: bool = False
     kiosk_menu: bool = False
     use_tailscale: bool = False
+    # Ephemeral: no persistent storage — nothing is saved between sessions.
+    ephemeral: bool = False
     # Opt-in for direct LAN egress (only effective when the admin enables LAN
     # access and configures subnets). Tailnet-routed LAN is independent of this.
     lan_access: bool = False
@@ -118,6 +120,7 @@ class WorkspaceUpdate(BaseModel):
     kiosk_dark: Optional[bool] = None
     kiosk_menu: Optional[bool] = None
     use_tailscale: Optional[bool] = None
+    ephemeral: Optional[bool] = None
     lan_access: Optional[bool] = None
     ts_exit_node: Optional[str] = None
     ts_accept_routes: Optional[bool] = None
@@ -179,6 +182,7 @@ class WorkspaceOut(BaseModel):
     kiosk_dark: bool
     kiosk_menu: bool
     use_tailscale: bool
+    ephemeral: bool
     lan_access: bool
     ts_exit_node: Optional[str]
     ts_accept_routes: bool
@@ -226,6 +230,7 @@ class WorkspaceOut(BaseModel):
             kiosk_dark=ws.kiosk_dark,
             kiosk_menu=ws.kiosk_menu,
             use_tailscale=ws.use_tailscale,
+            ephemeral=ws.ephemeral,
             lan_access=ws.lan_access,
             ts_exit_node=ws.ts_exit_node,
             ts_accept_routes=ws.ts_accept_routes,

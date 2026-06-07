@@ -616,7 +616,12 @@ class DockerManager:
 
             self._ensure_ws_network(net_name)
 
-            mount_source, _ = _resolve_mount(ws.user.username, ws.name, ws.user_id)
+            # Ephemeral workspaces get NO persistent bind mount: /config lives in
+            # the container's writable layer and is discarded when the container is
+            # removed (which happens on halt), so nothing is saved between sessions.
+            mount_source = (
+                None if ws.ephemeral else _resolve_mount(ws.user.username, ws.name, ws.user_id)[0]
+            )
 
             env = {
                 "PUID": str(settings.workspace_puid),
@@ -632,9 +637,9 @@ class DockerManager:
                 # Legacy webtop-based link workspaces use a custom init script.
                 env["LAUNCH_URL"] = ws.target_url
 
-            volumes = {
-                mount_source: {"bind": "/config", "mode": "rw"},
-            }
+            volumes = {}
+            if mount_source:
+                volumes[mount_source] = {"bind": "/config", "mode": "rw"}
             if ws.workspace_type == "link" and not image.url_env:
                 volumes[_helper_script_path("launch-url.sh")] = {
                     "bind": "/custom-cont-init.d/99-launch-url.sh",

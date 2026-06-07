@@ -61,6 +61,7 @@ export interface Workspace {
   stopped_at: string | null
   error_message: string | null
   use_tailscale: boolean
+  ephemeral: boolean
   lan_access: boolean
   ts_exit_node: string | null
   ts_accept_routes: boolean

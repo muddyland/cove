@@ -64,6 +64,11 @@ class Workspace(Base):
     use_tailscale: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Ephemeral: skip the persistent /config bind mount entirely, so no data is
+    # saved between sessions (the home lives only in the container's layer).
+    ephemeral: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     # Opt-in for direct (raw-bridge) egress to the admin-configured LAN subnets.
     # Only takes effect when the admin master toggle + LAN subnets are also set;
     # tailnet-routed LAN access is independent of this flag.

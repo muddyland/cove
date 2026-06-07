@@ -24,6 +24,10 @@
           <span>Allow right-click / refresh menu</span>
         </label>
       </template>
+      <label v-if="urlCapable" class="checkbox-row">
+        <input type="checkbox" v-model="form.ephemeral" />
+        <span>Ephemeral (no saved data — wiped when halted)</span>
+      </label>
 
       <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" />
 
@@ -67,6 +71,7 @@ const form = reactive({
   kiosk: false,
   kiosk_dark: false,
   kiosk_menu: false,
+  ephemeral: false,
   use_tailscale: false,
   lan_access: false,
   ts_exit_node: '',
@@ -91,6 +96,7 @@ function resetFromWs() {
   form.kiosk = props.ws.kiosk
   form.kiosk_dark = props.ws.kiosk_dark
   form.kiosk_menu = props.ws.kiosk_menu
+  form.ephemeral = props.ws.ephemeral
   form.use_tailscale = props.ws.use_tailscale
   form.lan_access = props.ws.lan_access
   form.ts_exit_node = props.ws.ts_exit_node ?? ''
@@ -136,6 +142,7 @@ async function handleSubmit() {
       kiosk: urlCapable.value ? form.kiosk : undefined,
       kiosk_dark: urlCapable.value ? form.kiosk_dark : undefined,
       kiosk_menu: urlCapable.value ? form.kiosk_menu : undefined,
+      ephemeral: urlCapable.value ? form.ephemeral : undefined,
       use_tailscale: form.use_tailscale,
       lan_access: form.lan_access,
       ...(form.use_tailscale
