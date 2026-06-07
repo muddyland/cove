@@ -37,6 +37,36 @@
             </p>
           </div>
 
+          <div class="form-group">
+            <label>// default CPU limit (cores)</label>
+            <input
+              v-model.number="form.workspace_cpu_limit"
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="0"
+            />
+            <p class="hint">
+              Max CPU cores each workspace container may use (fractions allowed, e.g.
+              <code>1.5</code>). 0 = unlimited. Applies to newly started workspaces.
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label>// default memory limit (MB)</label>
+            <input
+              v-model.number="form.workspace_memory_limit_mb"
+              type="number"
+              min="0"
+              step="256"
+              placeholder="0"
+            />
+            <p class="hint">
+              Max RAM each workspace container may use, in MB (e.g. <code>4096</code> = 4 GB).
+              0 = unlimited. Applies to newly started workspaces.
+            </p>
+          </div>
+
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_lan_access" />
             <span>Workspace LAN access</span>
@@ -119,6 +149,8 @@ const form = reactive({
   workspace_lan_access: false,
   workspace_no_new_privileges: false,
   workspace_max_runtime_hours: 24,
+  workspace_cpu_limit: 0,
+  workspace_memory_limit_mb: 0,
 })
 
 onMounted(async () => {
@@ -128,6 +160,8 @@ onMounted(async () => {
     form.workspace_lan_access = settings.workspace_lan_access
     form.workspace_no_new_privileges = settings.workspace_no_new_privileges
     form.workspace_max_runtime_hours = settings.workspace_max_runtime_hours
+    form.workspace_cpu_limit = settings.workspace_cpu_limit
+    form.workspace_memory_limit_mb = settings.workspace_memory_limit_mb
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -153,11 +187,15 @@ async function handleSave() {
       workspace_lan_access: form.workspace_lan_access,
       workspace_no_new_privileges: form.workspace_no_new_privileges,
       workspace_max_runtime_hours: form.workspace_max_runtime_hours,
+      workspace_cpu_limit: form.workspace_cpu_limit,
+      workspace_memory_limit_mb: form.workspace_memory_limit_mb,
     })
     form.tailscale_image = updated.tailscale_image
     form.workspace_lan_access = updated.workspace_lan_access
     form.workspace_no_new_privileges = updated.workspace_no_new_privileges
     form.workspace_max_runtime_hours = updated.workspace_max_runtime_hours
+    form.workspace_cpu_limit = updated.workspace_cpu_limit
+    form.workspace_memory_limit_mb = updated.workspace_memory_limit_mb
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
     error.value = e.message

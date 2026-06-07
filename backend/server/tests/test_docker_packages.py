@@ -234,3 +234,25 @@ def test_apply_appimages_noop_when_empty():
     DockerManager._apply_appimages(env, volumes, None)
     assert env == {}
     assert volumes == {}
+
+# ── _resource_limits (admin CPU/memory caps) ───────────────────────────────────
+
+def test_resource_limits_empty_when_zero(monkeypatch):
+    import server.docker_manager as dm
+    monkeypatch.setattr(dm, "get_workspace_cpu_limit", lambda _db: 0.0)
+    monkeypatch.setattr(dm, "get_workspace_memory_limit_mb", lambda _db: 0)
+    assert dm._resource_limits(None) == {}
+
+
+def test_resource_limits_builds_kwargs(monkeypatch):
+    import server.docker_manager as dm
+    monkeypatch.setattr(dm, "get_workspace_cpu_limit", lambda _db: 2.5)
+    monkeypatch.setattr(dm, "get_workspace_memory_limit_mb", lambda _db: 4096)
+    assert dm._resource_limits(None) == {"nano_cpus": 2_500_000_000, "mem_limit": "4096m"}
+
+
+def test_resource_limits_partial(monkeypatch):
+    import server.docker_manager as dm
+    monkeypatch.setattr(dm, "get_workspace_cpu_limit", lambda _db: 0.0)
+    monkeypatch.setattr(dm, "get_workspace_memory_limit_mb", lambda _db: 512)
+    assert dm._resource_limits(None) == {"mem_limit": "512m"}

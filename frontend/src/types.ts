@@ -95,6 +95,8 @@ export interface AppSettings {
   workspace_lan_access: boolean
   workspace_no_new_privileges: boolean
   workspace_max_runtime_hours: number
+  workspace_cpu_limit: number
+  workspace_memory_limit_mb: number
 }
 
 export interface EnvEntry {

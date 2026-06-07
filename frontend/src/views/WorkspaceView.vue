@@ -27,6 +27,10 @@
         </div>
         <StatusBadge v-if="ws" :status="ws.status" />
       </div>
+      <RouterLink to="/" class="brand-center" title="Back to grid">
+        <img src="/favicon.svg" alt="" />
+        <span>COVE</span>
+      </RouterLink>
       <div class="top-actions">
         <button
           v-if="ws?.status === 'running'"
@@ -61,11 +65,6 @@
       <!-- CRT scanline / flicker overlay (pointer-events:none so the stream stays
            interactive). Toggled per-user from the top bar. -->
       <div v-if="ui.crt" class="crt-overlay" aria-hidden="true" />
-      <!-- Branding overlay -->
-      <div class="branding">
-        <img src="/favicon.svg" alt="" />
-        <span>COVE</span>
-      </div>
     </div>
 
     <div v-else-if="ws?.status === 'error'" class="overlay-state error">
@@ -413,26 +412,33 @@ async function handleStop() {
   box-shadow: 0 0 8px rgba(0, 255, 157, 0.5);
 }
 
-.branding {
+/* COVE logo centered in the top bar. Absolutely positioned so the back-link,
+   switcher, and actions keep their natural left/right flow. */
+.brand-center {
   position: absolute;
-  bottom: 12px;
-  right: 12px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--accent);
-  opacity: 0.35;
-  pointer-events: none;
-  transition: opacity 0.3s;
+  text-decoration: none;
+  opacity: 0.85;
+  transition: opacity 0.2s;
 }
-.branding:hover { opacity: 0.7; }
-.branding img { width: 20px; height: 20px; }
-.branding span {
+.brand-center:hover { opacity: 1; }
+.brand-center img { width: 20px; height: 20px; }
+.brand-center span {
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
   text-shadow: var(--glow-sm);
+}
+/* Hide the centered logo on narrow screens so it can't overlap the controls. */
+@media (max-width: 700px) {
+  .brand-center { display: none; }
 }
 
 .overlay-state {

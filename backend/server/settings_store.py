@@ -15,6 +15,8 @@ KEY_TAILSCALE_IMAGE = "tailscale_image"
 KEY_WORKSPACE_LAN_ACCESS = "workspace_lan_access"
 KEY_WORKSPACE_NO_NEW_PRIVILEGES = "workspace_no_new_privileges"
 KEY_WORKSPACE_MAX_RUNTIME_HOURS = "workspace_max_runtime_hours"
+KEY_WORKSPACE_CPU_LIMIT = "workspace_cpu_limit"
+KEY_WORKSPACE_MEMORY_LIMIT_MB = "workspace_memory_limit_mb"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
@@ -24,6 +26,10 @@ DEFAULT_WORKSPACE_LAN_ACCESS = False
 DEFAULT_WORKSPACE_NO_NEW_PRIVILEGES = False
 # Auto-stop running workspaces after this many hours (0 = unlimited).
 DEFAULT_WORKSPACE_MAX_RUNTIME_HOURS = 24
+# Per-workspace CPU cores (float) and memory (MB) caps. 0 = unlimited (the
+# historical behaviour), so containers are uncapped until an admin sets these.
+DEFAULT_WORKSPACE_CPU_LIMIT = 0.0
+DEFAULT_WORKSPACE_MEMORY_LIMIT_MB = 0
 
 
 def get_setting(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -70,10 +76,32 @@ def get_workspace_max_runtime_hours(db: Session) -> int:
         return DEFAULT_WORKSPACE_MAX_RUNTIME_HOURS
 
 
+def get_workspace_cpu_limit(db: Session) -> float:
+    raw = get_setting(db, KEY_WORKSPACE_CPU_LIMIT)
+    if raw is None:
+        return DEFAULT_WORKSPACE_CPU_LIMIT
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_WORKSPACE_CPU_LIMIT
+
+
+def get_workspace_memory_limit_mb(db: Session) -> int:
+    raw = get_setting(db, KEY_WORKSPACE_MEMORY_LIMIT_MB)
+    if raw is None:
+        return DEFAULT_WORKSPACE_MEMORY_LIMIT_MB
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_WORKSPACE_MEMORY_LIMIT_MB
+
+
 def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
         "workspace_lan_access": get_workspace_lan_access(db),
         "workspace_no_new_privileges": get_workspace_no_new_privileges(db),
         "workspace_max_runtime_hours": get_workspace_max_runtime_hours(db),
+        "workspace_cpu_limit": get_workspace_cpu_limit(db),
+        "workspace_memory_limit_mb": get_workspace_memory_limit_mb(db),
     }

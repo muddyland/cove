@@ -28,6 +28,8 @@ const baseSettings: AppSettings = {
   workspace_lan_access: false,
   workspace_no_new_privileges: false,
   workspace_max_runtime_hours: 24,
+  workspace_cpu_limit: 0,
+  workspace_memory_limit_mb: 0,
 }
 
 describe('AdminSettingsView', () => {
@@ -57,6 +59,8 @@ describe('AdminSettingsView', () => {
       workspace_lan_access: true,
       workspace_no_new_privileges: false,
       workspace_max_runtime_hours: 24,
+      workspace_cpu_limit: 0,
+      workspace_memory_limit_mb: 0,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()

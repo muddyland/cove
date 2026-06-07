@@ -244,6 +244,8 @@ class AppSettingsOut(BaseModel):
     workspace_lan_access: bool
     workspace_no_new_privileges: bool
     workspace_max_runtime_hours: int
+    workspace_cpu_limit: float
+    workspace_memory_limit_mb: int
 
 
 class EnvEntry(BaseModel):
@@ -260,6 +262,8 @@ class AppSettingsUpdate(BaseModel):
     workspace_lan_access: Optional[bool] = None
     workspace_no_new_privileges: Optional[bool] = None
     workspace_max_runtime_hours: Optional[int] = None
+    workspace_cpu_limit: Optional[float] = None
+    workspace_memory_limit_mb: Optional[int] = None
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

@@ -18,6 +18,8 @@ def test_settings_defaults(client):
         "workspace_lan_access": False,
         "workspace_no_new_privileges": False,
         "workspace_max_runtime_hours": 24,
+        "workspace_cpu_limit": 0.0,
+        "workspace_memory_limit_mb": 0,
     }
 
 
@@ -33,11 +35,30 @@ def test_settings_put_updates_both(client):
         "workspace_lan_access": True,
         "workspace_no_new_privileges": False,
         "workspace_max_runtime_hours": 24,
+        "workspace_cpu_limit": 0.0,
+        "workspace_memory_limit_mb": 0,
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()
     assert got["tailscale_image"] == "tailscale/tailscale:v1.2"
     assert got["workspace_lan_access"] is True
+
+
+def test_settings_cpu_and_memory_limits(client):
+    setup_admin(client)
+    resp = client.put(
+        "/api/admin/settings",
+        json={"workspace_cpu_limit": 2.5, "workspace_memory_limit_mb": 4096},
+    )
+    assert resp.status_code == 200, resp.text
+    got = resp.json()
+    assert got["workspace_cpu_limit"] == 2.5
+    assert got["workspace_memory_limit_mb"] == 4096
+    # Persisted + negatives are clamped to 0 (unlimited).
+    client.put("/api/admin/settings", json={"workspace_cpu_limit": -3, "workspace_memory_limit_mb": -1})
+    got = client.get("/api/admin/settings").json()
+    assert got["workspace_cpu_limit"] == 0.0
+    assert got["workspace_memory_limit_mb"] == 0
 
 
 def test_settings_no_new_privileges_toggle(client):

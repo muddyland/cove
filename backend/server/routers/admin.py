@@ -215,5 +215,17 @@ def update_app_settings(
             settings_store.KEY_WORKSPACE_MAX_RUNTIME_HOURS,
             str(max(0, body.workspace_max_runtime_hours)),
         )
+    if body.workspace_cpu_limit is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_CPU_LIMIT,
+            str(max(0.0, body.workspace_cpu_limit)),
+        )
+    if body.workspace_memory_limit_mb is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_MEMORY_LIMIT_MB,
+            str(max(0, body.workspace_memory_limit_mb)),
+        )
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

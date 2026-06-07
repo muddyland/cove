@@ -18,8 +18,10 @@ from server.models import UserTailscale, Workspace, WorkspaceImage
 from server.security import decrypt_secret
 from server.settings_store import (
     get_tailscale_image,
+    get_workspace_cpu_limit,
     get_workspace_lan_access,
     get_workspace_max_runtime_hours,
+    get_workspace_memory_limit_mb,
     get_workspace_no_new_privileges,
 )
 
@@ -197,6 +199,22 @@ def _dns_list(ws) -> list[str] | None:
     raw = (getattr(ws, "dns_servers", None) or "").strip()
     servers = [s for s in re.split(r"[,\s]+", raw) if s]
     return servers or list(_DEFAULT_PUBLIC_DNS)
+
+
+def _resource_limits(db) -> dict:
+    """Docker run kwargs for the admin-configured CPU/memory caps.
+
+    Returns ``nano_cpus`` (CPU cores → billionths) and/or ``mem_limit`` (MB →
+    "<n>m"). Empty when a limit is 0/unset, leaving the container uncapped.
+    """
+    limits: dict = {}
+    cpus = get_workspace_cpu_limit(db)
+    if cpus > 0:
+        limits["nano_cpus"] = int(cpus * 1_000_000_000)
+    mem_mb = get_workspace_memory_limit_mb(db)
+    if mem_mb > 0:
+        limits["mem_limit"] = f"{mem_mb}m"
+    return limits
 
 
 def _parse_stats(raw: dict) -> dict | None:
@@ -571,6 +589,9 @@ class DockerManager:
                 # (which owns the shared netns resolv.conf), so it isn't overridable.
                 dns = None if ws.use_tailscale else _dns_list(ws)
 
+                # Admin-configured CPU/memory caps (empty = uncapped).
+                limits = _resource_limits(db)
+
                 if ws.use_tailscale:
                     ts_cfg = db.scalar(
                         select(UserTailscale).where(UserTailscale.user_id == ws.user_id)
@@ -589,6 +610,7 @@ class DockerManager:
                         volumes=volumes,
                         network_mode=f"container:{self._ts_sidecar_name(ws.id)}",
                         shm_size="1g",
+                        **limits,
                         **hardening,
                     )
                 else:
@@ -602,6 +624,7 @@ class DockerManager:
                         network=net_name,
                         shm_size="1g",
                         **({"dns": dns} if dns else {}),
+                        **limits,
                         **hardening,
                     )
                 logger.info("Started container %s for workspace %s", container.id[:12], ws_id)
