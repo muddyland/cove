@@ -11,9 +11,13 @@ class ApiError extends Error {
   }
 }
 
-// Attempt a single token refresh via the raw fetch (never recurses through
-// request(), so it can't loop). Returns the new access token, or null on failure.
-async function tryRefresh(): Promise<string | null> {
+// A single shared in-flight refresh: when several requests 401 at once (the
+// dashboard polls multiple endpoints), they all await ONE /auth/refresh instead
+// of each firing their own — which previously hammered the endpoint and could
+// trip rate limits, logging the user out mid-session.
+let refreshInFlight: Promise<string | null> | null = null
+
+async function doRefresh(): Promise<string | null> {
   try {
     const resp = await fetch(BASE + '/auth/refresh', {
       method: 'POST',
@@ -25,6 +29,18 @@ async function tryRefresh(): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+// Attempt a token refresh via the raw fetch (never recurses through request(),
+// so it can't loop). Concurrent callers share one request. Returns the new
+// access token, or null on failure.
+function tryRefresh(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
 }
 
 async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {

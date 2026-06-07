@@ -191,9 +191,11 @@ def login(body: LoginRequest, request: Request, db: DbSession):
 
 @router.post("/refresh")
 def refresh(request: Request, db: DbSession):
+    # Intentionally NOT rate-limited: the SPA refreshes routinely (and on every
+    # 401-retry), so a cap here logs active users out. It's also cheap and
+    # self-authenticating — refresh requires a valid signed refresh cookie; a
+    # caller without one gets a fast 401, so there's no brute-force/DoS surface.
     settings = get_settings()
-    if not _check_rate_limit(client_ip(request), "refresh"):
-        raise HTTPException(status_code=429, detail="Too many requests")
     token = request.cookies.get(settings.cookie_refresh_name)
     if not token:
         raise HTTPException(status_code=401, detail="No refresh token")

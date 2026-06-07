@@ -130,12 +130,13 @@ def test_change_password_rate_limited(client):
     assert resp.status_code == 429
 
 
-def test_refresh_rate_limited(client):
+def test_refresh_not_rate_limited(client):
+    # Refresh is deliberately uncapped (the SPA refreshes routinely); rapid
+    # refreshes keep returning 200, not 429.
     setup_admin(client)  # sets the refresh cookie
     settings = get_settings()
-    for _ in range(settings.login_rate_limit):
-        client.post("/api/auth/refresh")
-    assert client.post("/api/auth/refresh").status_code == 429
+    for _ in range(settings.login_rate_limit + 5):
+        assert client.post("/api/auth/refresh").status_code == 200
 
 
 # ── CSRF / cross-origin protection ──────────────────────────────────────────────
