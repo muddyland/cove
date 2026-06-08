@@ -1,7 +1,7 @@
 <template>
   <div class="workspace-page">
     <div class="top-bar">
-      <RouterLink v-if="!showHalted" to="/app" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
+      <RouterLink v-if="!lockedToWorkspace" to="/app" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
       <div class="ws-info">
         <!-- Locked to this one node when launched as its own installed app: a
              per-workspace PWA is single-purpose, so no cross-node switching. -->
@@ -32,7 +32,7 @@
         </div>
         <StatusBadge v-if="ws" :status="ws.status" class="ws-status" />
       </div>
-      <RouterLink v-if="!showHalted" to="/app" class="brand-center" title="Back to grid">
+      <RouterLink v-if="!lockedToWorkspace" to="/app" class="brand-center" title="Back to grid">
         <img src="/favicon.svg" alt="" />
         <span>COVE</span>
       </RouterLink>
