@@ -154,7 +154,7 @@ async function handleSubmit() {
     tsAcceptDns.value = true
     ephemeral.value = false
     useGluetun.value = false
-    router.push(`/workspace/${ws.id}`)
+    router.push(`/app/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
   } finally {

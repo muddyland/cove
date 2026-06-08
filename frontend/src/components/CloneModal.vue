@@ -73,7 +73,7 @@ async function handleSubmit() {
     })
     open.value = false
     ui.toast(`Cloning ${props.ws.name} → ${form.name}…`, 'info')
-    router.push(`/workspace/${clone.id}`)
+    router.push(`/app/workspace/${clone.id}`)
   } catch (e: any) {
     error.value = e.message
   } finally {

@@ -185,7 +185,7 @@ async function handleSubmit() {
     form.install_packages = ''
     form.proot_apps = []
     form.appimages = ''
-    router.push(`/workspace/${ws.id}`)
+    router.push(`/app/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
   } finally {

@@ -19,8 +19,14 @@ const router = createRouter({
     { path: '/app/admin/audit', component: () => import('@/views/AdminAuditView.vue'), meta: { admin: true } },
     { path: '/app/admin/settings', component: () => import('@/views/AdminSettingsView.vue'), meta: { admin: true } },
 
-    // Per-workspace app — kept at the root so each workspace's PWA scope
-    // (/workspace/{id}) sits outside the dashboard app's /app scope.
+    // Viewing a node *inside* the dashboard app: in-scope (/app) so navigating
+    // here from the grid doesn't trip the browser's out-of-scope "in-app browser"
+    // bar. Same component as the standalone entry below.
+    { path: '/app/workspace/:id', component: () => import('@/views/WorkspaceView.vue') },
+
+    // Per-workspace app entry — kept at the root so each workspace's PWA scope
+    // (/workspace/{id}) sits outside the dashboard app's /app scope and installs
+    // as its own app. This is the per-workspace manifest's start_url.
     { path: '/workspace/:id', component: () => import('@/views/WorkspaceView.vue') },
 
     // Back-compat: redirect the old root-level paths to their /app homes so

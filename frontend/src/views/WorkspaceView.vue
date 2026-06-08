@@ -128,7 +128,9 @@ async function selectNode(w: { id: number; name: string; status: string }) {
       return
     }
   }
-  router.push(`/workspace/${w.id}`)
+  // Stay in the current context: inside the dashboard app keep the /app prefix;
+  // from a standalone per-workspace entry switch to the sibling node's entry.
+  router.push(`${inAppRoute.value ? '/app' : ''}/workspace/${w.id}`)
 }
 watch(menuOpen, (open) => {
   if (open) document.addEventListener('click', closeMenu)
@@ -211,6 +213,11 @@ function startPollIfNeeded() {
 // into it. Restored to the Cove defaults when leaving the page.
 const standalone = ref(isStandalone())
 
+// True when viewing inside the dashboard app (/app/workspace/:id) rather than at
+// the standalone per-workspace entry (/workspace/:id). Only the standalone entry
+// carries the per-workspace PWA identity + is installable as its own app.
+const inAppRoute = computed(() => route.path.startsWith('/app/'))
+
 function isIos(): boolean {
   const ua = navigator.userAgent || ''
   return (
@@ -289,14 +296,28 @@ function restoreAppIdentity() {
   savedManifestCrossOrigin = null
 }
 
+// Swap in the per-workspace identity only on the standalone entry; inside the
+// dashboard app keep the Cove identity (and don't make /app/workspace claim the
+// workspace manifest).
+function syncAppIdentity() {
+  if (ws.value && !inAppRoute.value) applyAppIdentity(ws.value)
+  else restoreAppIdentity()
+}
 watch(
-  () => [ws.value?.id, ws.value?.name, ws.value?.image_logo] as const,
-  () => { if (ws.value) applyAppIdentity(ws.value) },
+  () => [ws.value?.id, ws.value?.name, ws.value?.image_logo, inAppRoute.value] as const,
+  syncAppIdentity,
   { immediate: true },
 )
 onUnmounted(restoreAppIdentity)
 
 async function handleInstall() {
+  // Inside the dashboard app the page is within its /app scope, so the browser
+  // suppresses installing a second app here. Hop to the standalone entry (its own
+  // scope) where the per-workspace app is installable.
+  if (inAppRoute.value) {
+    window.location.assign(`/workspace/${wsId.value}`)
+    return
+  }
   const outcome = await promptInstall()
   if (outcome === 'accepted') {
     standalone.value = true

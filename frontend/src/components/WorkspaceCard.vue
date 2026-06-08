@@ -161,7 +161,7 @@ function truncateUrl(url: string) {
 }
 
 function open() {
-  if (props.ws.status === 'running') router.push(`/workspace/${props.ws.id}`)
+  if (props.ws.status === 'running') router.push(`/app/workspace/${props.ws.id}`)
 }
 
 async function handleStop() {
