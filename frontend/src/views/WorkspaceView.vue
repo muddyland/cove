@@ -91,6 +91,11 @@
       <p v-else class="boot-sub">Waiting for the container to start…</p>
     </div>
 
+    <div v-else-if="bootError" class="overlay-state error">
+      <p class="error-text">⚠ {{ bootError }}</p>
+      <NeonButton variant="secondary" :loading="booting" @click="retryBoot">RETRY</NeonButton>
+    </div>
+
     <div class="frame-wrap" v-else-if="ws?.status === 'running' && streamUrl" ref="frameWrap">
       <iframe
         :src="streamUrl"
@@ -260,9 +265,12 @@ const lockedToWorkspace = computed(() => standalone.value && !inAppRoute.value)
 const halted = ref(false)
 // Set while auto-booting an offline node on PWA launch.
 const booting = ref(false)
+// Set when the PWA auto-boot is refused (e.g. the single VPN connection is
+// already in use by another workspace) — shown instead of a blank screen.
+const bootError = ref<string | null>(null)
 const showHalted = computed(() => lockedToWorkspace.value && halted.value)
 const isBooting = computed(
-  () => !showHalted.value && (booting.value || !ws.value || ws.value.status === 'creating'),
+  () => !showHalted.value && !bootError.value && (booting.value || !ws.value || ws.value.status === 'creating'),
 )
 
 // A per-workspace PWA opened while its node is offline boots it automatically and
@@ -273,14 +281,22 @@ async function ensureRunningIfLocked() {
   if (!lockedToWorkspace.value || halted.value) return
   if (ws.value?.status !== 'stopped') return
   booting.value = true
+  bootError.value = null
   try {
     await store.start(wsId.value)
   } catch (e: any) {
-    ui.toast(e.message || 'Failed to start workspace', 'error')
+    // Most likely the single VPN connection is already taken by another node
+    // (409). Surface it in place — there's no grid to fall back to in a PWA.
+    bootError.value = e.message || 'Failed to start workspace'
     booting.value = false
     return
   }
   startPollIfNeeded()
+}
+
+function retryBoot() {
+  bootError.value = null
+  ensureRunningIfLocked()
 }
 
 function isIos(): boolean {
