@@ -35,6 +35,18 @@
           </div>
         </div>
         <StatusBadge v-if="ws" :status="ws.status" class="ws-status" />
+        <!-- Connection indicators: a running node with a routing flag means its
+             sidecar is healthy (a failed one would force the node into error). -->
+        <span
+          v-if="ws?.status === 'running' && ws.use_gluetun"
+          class="conn-icon vpn-on"
+          title="VPN connected"
+        ><Lock :size="14" /></span>
+        <span
+          v-if="ws?.status === 'running' && ws.use_tailscale"
+          class="conn-icon ts-on"
+          :title="ws.ts_exit_node ? `Tailscale connected · exit node: ${ws.ts_exit_node}` : 'Tailscale connected'"
+        ><Network :size="14" /></span>
       </div>
       <RouterLink v-if="!lockedToWorkspace" to="/app" class="brand-center" title="Back to grid">
         <img src="/favicon.svg" alt="" />
@@ -107,7 +119,7 @@ import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { promptInstall, isStandalone } from '@/pwa'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -474,6 +486,9 @@ async function handleStop() {
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
 .ws-name-locked { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; color: var(--text); }
 .ws-icon { width: 16px; height: 16px; border-radius: 3px; object-fit: contain; flex-shrink: 0; }
+.conn-icon { display: inline-flex; align-items: center; flex-shrink: 0; }
+.conn-icon.vpn-on { color: var(--green); filter: drop-shadow(0 0 4px rgba(0, 255, 157, 0.5)); }
+.conn-icon.ts-on { color: var(--accent-2); filter: drop-shadow(0 0 4px rgba(255, 0, 170, 0.5)); }
 
 /* Quick-switch dropdown */
 .ws-switcher { position: relative; }
