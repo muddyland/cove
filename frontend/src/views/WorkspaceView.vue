@@ -6,10 +6,14 @@
         <!-- Locked to this one node when launched as its own installed app: a
              per-workspace PWA is single-purpose, so no cross-node switching. -->
         <div v-if="lockedToWorkspace" class="ws-switcher">
-          <span class="ws-name ws-name-locked">{{ ws?.name }}</span>
+          <span class="ws-name ws-name-locked">
+            <img v-if="ws" class="ws-icon" :src="ws.image_logo || '/favicon.svg'" alt="" />
+            {{ ws?.name }}
+          </span>
         </div>
         <div v-else class="ws-switcher">
           <button class="ws-switch-btn" :class="{ open: menuOpen }" @click.stop="menuOpen = !menuOpen">
+            <img v-if="ws" class="ws-icon" :src="ws.image_logo || '/favicon.svg'" alt="" />
             <span class="ws-name">{{ ws?.name }}</span>
             <ChevronDown :size="14" class="chev" />
           </button>
@@ -468,7 +472,8 @@ async function handleStop() {
 
 .ws-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
-.ws-name-locked { display: inline-flex; align-items: center; padding: 3px 8px; color: var(--text); }
+.ws-name-locked { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; color: var(--text); }
+.ws-icon { width: 16px; height: 16px; border-radius: 3px; object-fit: contain; flex-shrink: 0; }
 
 /* Quick-switch dropdown */
 .ws-switcher { position: relative; }
