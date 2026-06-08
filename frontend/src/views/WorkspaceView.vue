@@ -1,7 +1,7 @@
 <template>
   <div class="workspace-page">
     <div class="top-bar">
-      <RouterLink to="/app" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
+      <RouterLink v-if="!showHalted" to="/app" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
       <div class="ws-info">
         <!-- Locked to this one node when launched as its own installed app: a
              per-workspace PWA is single-purpose, so no cross-node switching. -->
@@ -32,7 +32,7 @@
         </div>
         <StatusBadge v-if="ws" :status="ws.status" class="ws-status" />
       </div>
-      <RouterLink to="/app" class="brand-center" title="Back to grid">
+      <RouterLink v-if="!showHalted" to="/app" class="brand-center" title="Back to grid">
         <img src="/favicon.svg" alt="" />
         <span>COVE</span>
       </RouterLink>
@@ -60,13 +60,22 @@
       </div>
     </div>
 
-    <div v-if="!ws || ws.status === 'creating'" class="overlay-state">
+    <!-- Halted takeover for a per-workspace PWA: it's a single-purpose app, so on
+         halt there's nowhere to go back to — just confirm it's safe to close. -->
+    <div v-if="showHalted" class="overlay-state halted">
+      <PowerOff class="halt-icon" :size="56" />
+      <p class="boot-text">WORKSPACE HALTED</p>
+      <p class="boot-sub">{{ ws?.name ? `“${ws.name}” has stopped.` : 'The workspace has stopped.' }} It’s safe to close this app now.</p>
+    </div>
+
+    <div v-else-if="isBooting" class="overlay-state">
       <img class="boot-icon" src="/favicon.svg" alt="" />
       <p class="boot-text">{{ installing ? 'PROVISIONING NODE' : 'BOOTING NODE' }}<span class="ellipsis" /></p>
       <p v-if="installing" class="boot-sub">Installing packages &amp; proot-apps — this can take a few minutes.</p>
+      <p v-else class="boot-sub">Waiting for the container to start…</p>
     </div>
 
-    <div class="frame-wrap" v-else-if="ws.status === 'running' && streamUrl" ref="frameWrap">
+    <div class="frame-wrap" v-else-if="ws?.status === 'running' && streamUrl" ref="frameWrap">
       <iframe
         :src="streamUrl"
         class="workspace-frame"
@@ -94,7 +103,7 @@ import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { promptInstall, isStandalone } from '@/pwa'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, Square, Download } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -183,6 +192,7 @@ async function loadStreamUrl() {
 onMounted(async () => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
   if (!ws.value) await store.fetch()
+  await ensureRunningIfLocked()
   startPollIfNeeded()
   await loadStreamUrl()
 })
@@ -195,6 +205,7 @@ onUnmounted(() => {
 watch(() => ws.value?.status, (s) => {
   if (s === 'running' || s === 'error') {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+    booting.value = false
   }
   if (s === 'running') loadStreamUrl()
 })
@@ -227,6 +238,34 @@ const inAppRoute = computed(() => route.path.startsWith('/app/'))
 // locked to this single node — no switcher. The dashboard PWA (/app/...) keeps
 // switching, since browsing across nodes is its whole purpose.
 const lockedToWorkspace = computed(() => standalone.value && !inAppRoute.value)
+
+// Set when the user halts from inside the per-workspace PWA: there's nowhere to
+// go back to, so we show a "safe to close" takeover instead of navigating.
+const halted = ref(false)
+// Set while auto-booting an offline node on PWA launch.
+const booting = ref(false)
+const showHalted = computed(() => lockedToWorkspace.value && halted.value)
+const isBooting = computed(
+  () => !showHalted.value && (booting.value || !ws.value || ws.value.status === 'creating'),
+)
+
+// A per-workspace PWA opened while its node is offline boots it automatically and
+// shows the booting screen — the app is for that one node, so there's nothing to
+// do but bring it up. Not in the dashboard/browser, where the user starts nodes
+// explicitly from the grid.
+async function ensureRunningIfLocked() {
+  if (!lockedToWorkspace.value || halted.value) return
+  if (ws.value?.status !== 'stopped') return
+  booting.value = true
+  try {
+    await store.start(wsId.value)
+  } catch (e: any) {
+    ui.toast(e.message || 'Failed to start workspace', 'error')
+    booting.value = false
+    return
+  }
+  startPollIfNeeded()
+}
 
 function isIos(): boolean {
   const ua = navigator.userAgent || ''
@@ -361,7 +400,12 @@ async function handleStop() {
   stopping.value = true
   try {
     await store.stop(wsId.value)
-    router.push('/app')
+    if (lockedToWorkspace.value) {
+      // Per-workspace PWA: no grid to return to — show the "safe to close" state.
+      halted.value = true
+    } else {
+      router.push('/app')
+    }
   } catch (e: any) {
     ui.toast(e.message, 'error')
   } finally {
@@ -684,6 +728,8 @@ async function handleStop() {
   100% { content: ''; }
 }
 
+.halt-icon { color: var(--amber); filter: drop-shadow(0 0 10px rgba(255, 176, 0, 0.5)); }
+.overlay-state.halted .boot-text { color: var(--amber); }
 .overlay-state.error { color: var(--red); }
 .error-text { font-family: var(--font-mono); font-size: 13px; }
 </style>
