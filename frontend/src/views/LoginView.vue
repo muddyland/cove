@@ -66,7 +66,7 @@ async function handleLogin() {
   loading.value = true
   try {
     await auth.login(username.value, password.value)
-    router.push('/')
+    router.push('/app')
   } catch (e: any) {
     error.value = e.message
   } finally {

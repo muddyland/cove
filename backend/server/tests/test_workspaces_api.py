@@ -712,6 +712,9 @@ def test_workspace_manifest_no_logo_uses_fallback_icons(client, fake_docker_mana
     body = resp.json()
     assert body["name"] == "My Box"
     assert body["start_url"] == f"/workspace/{ws['id']}"
+    # Scoped to its own subtree (not "/") so it never overlaps the /app dashboard
+    # app or sibling workspace apps — overlapping scopes block multi-PWA install.
+    assert body["scope"] == f"/workspace/{ws['id']}"
     assert body["display"] == "standalone"
     # No logo on the image -> bundled Cove icons.
     srcs = [i["src"] for i in body["icons"]]

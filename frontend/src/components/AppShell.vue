@@ -1,7 +1,7 @@
 <template>
   <div class="shell">
     <header class="topnav">
-      <RouterLink to="/" class="logo">
+      <RouterLink to="/app" class="logo">
         <img class="logo-icon" src="/favicon.svg" alt="" />
         <span class="logo-text">COVE</span>
       </RouterLink>
@@ -17,33 +17,33 @@
 
       <div class="nav-drawer" :class="{ open: mobileOpen }">
         <nav class="nav-links">
-          <RouterLink to="/" class="nav-link" :class="{ active: $route.path === '/' }">
+          <RouterLink to="/app" class="nav-link" :class="{ active: $route.path === '/app' }">
             <LayoutGrid class="nav-icon" :size="16" /> Dashboard
           </RouterLink>
-          <RouterLink to="/files" class="nav-link" :class="{ active: $route.path === '/files' }">
+          <RouterLink to="/app/files" class="nav-link" :class="{ active: $route.path === '/app/files' }">
             <FolderOpen class="nav-icon" :size="16" /> Files
           </RouterLink>
           <template v-if="auth.isAdmin">
-            <RouterLink to="/admin/sessions" class="nav-link" :class="{ active: $route.path === '/admin/sessions' }">
+            <RouterLink to="/app/admin/sessions" class="nav-link" :class="{ active: $route.path === '/app/admin/sessions' }">
               <MonitorPlay class="nav-icon" :size="16" /> Sessions
             </RouterLink>
-            <RouterLink to="/admin/users" class="nav-link" :class="{ active: $route.path === '/admin/users' }">
+            <RouterLink to="/app/admin/users" class="nav-link" :class="{ active: $route.path === '/app/admin/users' }">
               <Users class="nav-icon" :size="16" /> Users
             </RouterLink>
-            <RouterLink to="/admin/images" class="nav-link" :class="{ active: $route.path === '/admin/images' }">
+            <RouterLink to="/app/admin/images" class="nav-link" :class="{ active: $route.path === '/app/admin/images' }">
               <Boxes class="nav-icon" :size="16" /> Images
             </RouterLink>
-            <RouterLink to="/admin/audit" class="nav-link" :class="{ active: $route.path === '/admin/audit' }">
+            <RouterLink to="/app/admin/audit" class="nav-link" :class="{ active: $route.path === '/app/admin/audit' }">
               <ScrollText class="nav-icon" :size="16" /> Audit
             </RouterLink>
-            <RouterLink to="/admin/settings" class="nav-link" :class="{ active: $route.path === '/admin/settings' }">
+            <RouterLink to="/app/admin/settings" class="nav-link" :class="{ active: $route.path === '/app/admin/settings' }">
               <Settings class="nav-icon" :size="16" /> Settings
             </RouterLink>
           </template>
         </nav>
 
         <div class="nav-right">
-          <RouterLink to="/preferences" class="user-chip" title="Preferences">
+          <RouterLink to="/app/preferences" class="user-chip" title="Preferences">
             <UserRound class="nav-icon" :size="14" />
             <span class="username">{{ auth.user?.username }}</span>
             <span v-if="auth.user?.is_admin" class="admin-tag">ADMIN</span>
@@ -78,7 +78,7 @@ watch(() => route.path, () => { mobileOpen.value = false })
 
 async function handleLogout() {
   await auth.logout()
-  router.push('/login')
+  router.push('/app/login')
 }
 </script>
 

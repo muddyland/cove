@@ -98,7 +98,7 @@ describe('api client', () => {
     expect(locationHref).toBe('/')
   })
 
-  it('clears auth and redirects to /login (no loop) when refresh fails', async () => {
+  it('clears auth and redirects to /app/login (no loop) when refresh fails', async () => {
     const auth = useAuthStore()
     auth.setToken('old-token')
 
@@ -116,7 +116,7 @@ describe('api client', () => {
 
     expect(auth.token).toBeNull()
     expect(localStorage.getItem('cove_token')).toBeNull()
-    expect(locationHref).toBe('/login')
+    expect(locationHref).toBe('/app/login')
   })
 
   it('clears auth and redirects when refresh succeeds but the retry still 401s', async () => {
@@ -133,7 +133,7 @@ describe('api client', () => {
     // original + refresh + single retry = 3, no further refresh.
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(auth.token).toBeNull()
-    expect(locationHref).toBe('/login')
+    expect(locationHref).toBe('/app/login')
   })
 
   it('does NOT refresh on a 401 when no token existed (e.g. bad login)', async () => {

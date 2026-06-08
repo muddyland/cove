@@ -43,7 +43,7 @@ async function handleSetup() {
   loading.value = true
   try {
     await auth.setup(username.value, password.value)
-    router.push('/')
+    router.push('/app')
   } catch (e: any) {
     error.value = e.message
   } finally {

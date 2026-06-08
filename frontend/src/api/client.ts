@@ -70,11 +70,11 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
       }
       // Refresh failed for an expired session — clear and bounce to login.
       auth.clear()
-      window.location.href = '/login'
+      window.location.href = '/app/login'
     } else if (hadToken && path !== '/auth/refresh') {
       // 401 again after a successful refresh+retry — session is unusable.
       auth.clear()
-      window.location.href = '/login'
+      window.location.href = '/app/login'
     }
     let detail = 'Unauthorized'
     try {

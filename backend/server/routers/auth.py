@@ -360,7 +360,8 @@ async def oidc_callback(
     db.refresh(user)
 
     _record_audit(db, "login.oidc", user=user, ip=client_ip(request))
-    resp = RedirectResponse(url="/")
+    # Land in the dashboard app (the SPA lives under /app now).
+    resp = RedirectResponse(url="/app")
     resp.delete_cookie("oidc_state", path="/")
     resp.delete_cookie("oidc_nonce", path="/")
     _set_auth_cookies(resp, user)

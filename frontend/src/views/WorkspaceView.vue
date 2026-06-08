@@ -1,7 +1,7 @@
 <template>
   <div class="workspace-page">
     <div class="top-bar">
-      <RouterLink to="/" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
+      <RouterLink to="/app" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
       <div class="ws-info">
         <div class="ws-switcher">
           <button class="ws-switch-btn" :class="{ open: menuOpen }" @click.stop="menuOpen = !menuOpen">
@@ -27,13 +27,13 @@
         </div>
         <StatusBadge v-if="ws" :status="ws.status" class="ws-status" />
       </div>
-      <RouterLink to="/" class="brand-center" title="Back to grid">
+      <RouterLink to="/app" class="brand-center" title="Back to grid">
         <img src="/favicon.svg" alt="" />
         <span>COVE</span>
       </RouterLink>
       <div class="top-actions">
         <button
-          v-if="ws && canInstall"
+          v-if="ws"
           class="bar-btn install-btn"
           title="Install this workspace as an app"
           @click="handleInstall"
@@ -75,7 +75,7 @@
 
     <div v-else-if="ws?.status === 'error'" class="overlay-state error">
       <p class="error-text">⚠ {{ ws.error_message || 'Node failed to boot' }}</p>
-      <NeonButton variant="secondary" @click="$router.push('/')">← RETURN TO GRID</NeonButton>
+      <NeonButton variant="secondary" @click="$router.push('/app')">← RETURN TO GRID</NeonButton>
     </div>
   </div>
 </template>
@@ -210,9 +210,15 @@ function startPollIfNeeded() {
 // like the workspace (e.g. a Brave icon named "Brave") and launches straight
 // into it. Restored to the Cove defaults when leaving the page.
 const standalone = ref(isStandalone())
-// Hide the in-app install button once already installed (no point) — but keep it
-// for iOS too, where promptInstall() falls back to showing instructions.
-const canInstall = computed(() => !standalone.value)
+
+function isIos(): boolean {
+  const ua = navigator.userAgent || ''
+  return (
+    /iP(hone|ad|od)/.test(ua) ||
+    // iPadOS reports as desktop Safari but has touch points.
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  )
+}
 
 let savedManifestHref: string | null = null
 let savedManifestCrossOrigin: string | null = null
@@ -292,20 +298,39 @@ onUnmounted(restoreAppIdentity)
 
 async function handleInstall() {
   const outcome = await promptInstall()
-  if (outcome === 'unavailable') {
-    // iOS Safari (and other browsers without a programmatic prompt).
-    ui.toast('Tap the Share button, then "Add to Home Screen"', 'info')
-  } else if (outcome === 'accepted') {
+  if (outcome === 'accepted') {
     standalone.value = true
     ui.toast(`Installed ${ws.value?.name ?? 'app'}`, 'success')
+    return
   }
+  if (outcome === 'dismissed') return
+  // 'unavailable' — the browser gave us no install prompt. Why depends on platform.
+  if (isIos()) {
+    if (isStandalone()) {
+      // Inside the installed app there's no Share menu; bounce to Safari where
+      // "Add to Home Screen" is available.
+      window.open(window.location.href, '_blank')
+      ui.toast('Opened in your browser — use Share → Add to Home Screen to install', 'info', 7000)
+    } else {
+      ui.toast('Tap the Share button, then "Add to Home Screen" to install this app', 'info', 7000)
+    }
+    return
+  }
+  // Desktop / Android Chromium (incl. Brave): no programmatic prompt means it's
+  // either already installed or the browser is offering it elsewhere. Point at the
+  // address-bar install icon.
+  ui.toast(
+    'Use the install icon in your browser’s address bar to install this workspace as an app.',
+    'info',
+    7000,
+  )
 }
 
 async function handleStop() {
   stopping.value = true
   try {
     await store.stop(wsId.value)
-    router.push('/')
+    router.push('/app')
   } catch (e: any) {
     ui.toast(e.message, 'error')
   } finally {

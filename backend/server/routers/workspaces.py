@@ -448,7 +448,10 @@ async def workspace_manifest(ws_id: int, user: CurrentUser, db: DbSession):
         "short_name": name[:12],
         "description": f"{ws.image.name if ws.image else 'Workspace'} on Cove",
         "start_url": f"/workspace/{ws.id}",
-        "scope": "/",
+        # Scope this workspace's own subtree (not "/") so it doesn't overlap the
+        # dashboard app (/app) or other workspace apps — overlapping scopes stop
+        # the browser from installing more than one PWA per origin.
+        "scope": f"/workspace/{ws.id}",
         "display": "standalone",
         "orientation": "any",
         "theme_color": "#06060f",
