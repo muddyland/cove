@@ -34,7 +34,7 @@ def create_user_via_admin(client, admin_token, username, password="password123",
 
 
 def add_image(name="Ubuntu Desktop", docker_image="lscr.io/linuxserver/webtop:latest",
-              image_type="desktop", url_env=None, internal_port=3000):
+              image_type="desktop", url_env=None, internal_port=3000, logo_url=None):
     """Insert a WorkspaceImage directly into the DB and return its id.
 
     Used because the create-image API path currently rejects the "browser"
@@ -48,6 +48,7 @@ def add_image(name="Ubuntu Desktop", docker_image="lscr.io/linuxserver/webtop:la
             image_type=image_type,
             url_env=url_env,
             internal_port=internal_port,
+            logo_url=logo_url,
             enabled=True,
         )
         db.add(img)

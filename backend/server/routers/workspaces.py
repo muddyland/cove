@@ -1,9 +1,13 @@
+import base64
 import ipaddress
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi.responses import Response
 from sqlalchemy import func, select
 
 from server.config import get_settings
@@ -362,6 +366,101 @@ def lan_policy(user: CurrentUser, db: DbSession):
     return LanPolicyOut(
         enabled=settings_store.get_workspace_lan_access(db),
         subnets=settings_store.get_workspace_lan_subnets(db),
+    )
+
+
+# In-memory cache of fetched project logos (url -> (bytes, content_type)). Logos
+# are small, immutable, and shared across users, so a process-lifetime cache is
+# plenty — it just spares the upstream CDN a fetch per manifest request.
+_LOGO_CACHE: dict[str, "tuple[bytes, str] | None"] = {}
+_LOGO_MAX_BYTES = 512 * 1024
+
+
+async def _fetch_logo(url: str) -> "tuple[bytes, str] | None":
+    """Fetch a project logo, returning (bytes, content_type) or None. Cached."""
+    if url in _LOGO_CACHE:
+        return _LOGO_CACHE[url]
+    result: "tuple[bytes, str] | None" = None
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            r = await client.get(url)
+        ctype = (r.headers.get("content-type") or "").split(";")[0].strip()
+        if r.status_code == 200 and r.content and ctype.startswith("image/"):
+            if len(r.content) <= _LOGO_MAX_BYTES:
+                result = (r.content, ctype or "image/png")
+    except (httpx.HTTPError, ValueError):
+        result = None
+    if len(_LOGO_CACHE) < 256:
+        _LOGO_CACHE[url] = result
+    return result
+
+
+def _png_size(data: bytes) -> "str | None":
+    """Pixel size of a PNG ("WxH") read straight from the IHDR header, or None.
+
+    Lets the manifest declare the logo's real dimensions (Chrome's installability
+    check verifies icon size) without pulling in an image library.
+    """
+    if len(data) >= 24 and data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
+        w = int.from_bytes(data[16:20], "big")
+        h = int.from_bytes(data[20:24], "big")
+        if w and h:
+            return f"{w}x{h}"
+    return None
+
+
+@router.get("/{ws_id}/manifest.webmanifest")
+async def workspace_manifest(ws_id: int, user: CurrentUser, db: DbSession):
+    """A per-workspace PWA manifest so each workspace installs as its own app.
+
+    Name = the workspace name, icon = the image's project logo, start_url = this
+    workspace's stream. Installing from the workspace page (the SPA swaps in this
+    manifest) yields a home-screen app that launches straight into the node and
+    looks like the app it runs (e.g. a "Brave" icon that opens the Brave node).
+    """
+    ws = _get_workspace_or_404(ws_id, user, db)
+    name = ws.name or "Workspace"
+
+    icons: list[dict] = []
+    logo = (
+        await _fetch_logo(ws.image.logo_url)
+        if ws.image and ws.image.logo_url
+        else None
+    )
+    if logo:
+        data, ctype = logo
+        b64 = base64.b64encode(data).decode("ascii")
+        sizes = (_png_size(data) if ctype == "image/png" else None) or "any"
+        icons.append(
+            {"src": f"data:{ctype};base64,{b64}", "sizes": sizes, "type": ctype, "purpose": "any"}
+        )
+    else:
+        # No logo — fall back to the Cove icon so the app is still installable.
+        icons.append({"src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"})
+        icons.append({"src": "/pwa-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"})
+        icons.append(
+            {"src": "/pwa-maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+        )
+
+    manifest = {
+        "id": f"/workspace/{ws.id}",
+        "name": name,
+        "short_name": name[:12],
+        "description": f"{ws.image.name if ws.image else 'Workspace'} on Cove",
+        "start_url": f"/workspace/{ws.id}",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "any",
+        "theme_color": "#06060f",
+        "background_color": "#06060f",
+        "icons": icons,
+    }
+    # no-store: the manifest is per-workspace and cheap to regenerate; this avoids
+    # a stale name/icon sticking after a rename.
+    return Response(
+        content=json.dumps(manifest),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-store"},
     )
 
 

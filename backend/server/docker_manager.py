@@ -938,6 +938,42 @@ class DockerManager:
         ip = out.decode(errors="ignore").strip().splitlines()
         return ip[0].strip() if ip and ip[0].strip() else None
 
+    def _sidecar_failure(self, ws: Workspace) -> "str | None":
+        """If this workspace's required routing sidecar has definitively failed,
+        return a user-facing message; otherwise None.
+
+        For Gluetun, an *unhealthy* sidecar means the VPN tunnel never came up —
+        and Traefik's Docker provider drops unhealthy containers from routing, so
+        the stream would 404 with no explanation. We surface that as a workspace
+        error instead. A sidecar that is still "starting" is treated as pending
+        (not a failure). Tailscale has no healthcheck (and its stream works even
+        when egress is down), so we only flag a sidecar that has actually died.
+        """
+        if not (ws.use_gluetun or ws.use_tailscale):
+            return None
+        gluetun = ws.use_gluetun
+        name = (
+            self._gluetun_sidecar_name(ws.id)
+            if gluetun
+            else self._ts_sidecar_name(ws.id)
+        )
+        label = "VPN" if gluetun else "Tailscale"
+        try:
+            sidecar = self._client.containers.get(name)
+        except docker.errors.NotFound:
+            return f"{label} sidecar is not running"
+        except docker.errors.APIError:
+            return None  # transient; don't flap the status on a Docker hiccup
+        state = sidecar.attrs.get("State", {})
+        if state.get("Status") in ("exited", "dead"):
+            hint = "check your Gluetun config" if gluetun else "check your auth key"
+            return f"{label} sidecar stopped — {hint}"
+        if gluetun:
+            health = (state.get("Health") or {}).get("Status")
+            if health == "unhealthy":
+                return "VPN failed to connect — check your Gluetun config"
+        return None
+
     def stop_workspace(self, ws_id: int) -> None:
         db = self._get_db()
         try:
@@ -1027,9 +1063,20 @@ class DockerManager:
                         ws.status = "error"
                         ws.error_message = f"Container exited unexpectedly (status: {container.status})"
                         db.commit()
+                        continue
                 except docker.errors.NotFound:
                     ws.status = "error"
                     ws.error_message = "Container not found"
+                    db.commit()
+                    continue
+                # The workload is up, but a routing sidecar (Gluetun/Tailscale)
+                # may have failed — e.g. a Gluetun tunnel that never connected.
+                # Traefik drops the unhealthy sidecar, so the stream 404s; surface
+                # that as an error rather than leaving the workspace "running".
+                sidecar_msg = self._sidecar_failure(ws)
+                if sidecar_msg:
+                    ws.status = "error"
+                    ws.error_message = sidecar_msg
                     db.commit()
 
             # Promote provisioning workspaces once their GUI answers — and also
@@ -1053,6 +1100,15 @@ class DockerManager:
                         db.commit()
                     continue
                 if container.status != "running":
+                    continue
+                # A failed routing sidecar keeps the workspace in error even if the
+                # GUI answers on localhost (it answers regardless of VPN health).
+                sidecar_msg = self._sidecar_failure(ws)
+                if sidecar_msg:
+                    if ws.status != "error" or ws.error_message != sidecar_msg:
+                        ws.status = "error"
+                        ws.error_message = sidecar_msg
+                        db.commit()
                     continue
                 port = ws.image.internal_port if ws.image else 3000
                 if self._wait_for_http_ready(ws.id, port, 5):

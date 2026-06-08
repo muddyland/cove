@@ -33,6 +33,12 @@
       </RouterLink>
       <div class="top-actions">
         <button
+          v-if="ws && canInstall"
+          class="bar-btn install-btn"
+          title="Install this workspace as an app"
+          @click="handleInstall"
+        ><Download :size="14" /><span class="bar-label"> APP</span></button>
+        <button
           v-if="ws?.status === 'running'"
           class="bar-btn crt-btn"
           :class="{ active: ui.crt }"
@@ -82,7 +88,8 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, Square } from 'lucide-vue-next'
+import { promptInstall, isStandalone } from '@/pwa'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, Square, Download } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -194,6 +201,103 @@ function startPollIfNeeded() {
       else store.items.push(fresh)
       if (fresh.status !== 'creating') { clearInterval(pollTimer!); pollTimer = null }
     }, 2000)
+  }
+}
+
+// --- Per-workspace PWA identity ---------------------------------------------
+// While viewing a workspace, swap the app's manifest/title/icon to that node's
+// so the browser's "Install" / "Add to Home Screen" creates an app that looks
+// like the workspace (e.g. a Brave icon named "Brave") and launches straight
+// into it. Restored to the Cove defaults when leaving the page.
+const standalone = ref(isStandalone())
+// Hide the in-app install button once already installed (no point) — but keep it
+// for iOS too, where promptInstall() falls back to showing instructions.
+const canInstall = computed(() => !standalone.value)
+
+let savedManifestHref: string | null = null
+let savedManifestCrossOrigin: string | null = null
+let savedTitle: string | null = null
+let savedAppleTitle: string | null = null
+let savedAppleIcon: string | null = null
+
+function headLink(rel: string): HTMLLinkElement {
+  let el = document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`)
+  if (!el) {
+    el = document.createElement('link')
+    el.rel = rel
+    document.head.appendChild(el)
+  }
+  return el
+}
+function headMeta(name: string): HTMLMetaElement {
+  let el = document.head.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)
+  if (!el) {
+    el = document.createElement('meta')
+    el.name = name
+    document.head.appendChild(el)
+  }
+  return el
+}
+
+function applyAppIdentity(w: { id: number; name: string; image_logo?: string | null }) {
+  const manifest = headLink('manifest')
+  if (savedManifestHref === null) {
+    savedManifestHref = manifest.getAttribute('href') ?? ''
+    savedManifestCrossOrigin = manifest.getAttribute('crossorigin')
+  }
+  // use-credentials so the browser sends the session cookie when fetching this
+  // authenticated, same-origin manifest.
+  manifest.setAttribute('crossorigin', 'use-credentials')
+  manifest.setAttribute('href', `/api/workspaces/${w.id}/manifest.webmanifest`)
+
+  if (savedTitle === null) savedTitle = document.title
+  document.title = w.name
+
+  const appleTitle = headMeta('apple-mobile-web-app-title')
+  if (savedAppleTitle === null) savedAppleTitle = appleTitle.getAttribute('content')
+  appleTitle.setAttribute('content', w.name)
+
+  // iOS uses apple-touch-icon (not manifest icons) for the home-screen icon.
+  const appleIcon = headLink('apple-touch-icon')
+  if (savedAppleIcon === null) savedAppleIcon = appleIcon.getAttribute('href')
+  appleIcon.setAttribute('href', w.image_logo || '/apple-touch-icon.png')
+}
+
+function restoreAppIdentity() {
+  const manifest = document.head.querySelector<HTMLLinkElement>('link[rel="manifest"]')
+  if (manifest && savedManifestHref !== null) {
+    manifest.setAttribute('href', savedManifestHref)
+    if (savedManifestCrossOrigin === null) manifest.removeAttribute('crossorigin')
+    else manifest.setAttribute('crossorigin', savedManifestCrossOrigin)
+  }
+  if (savedTitle !== null) document.title = savedTitle
+  if (savedAppleTitle !== null) {
+    const el = document.head.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]')
+    if (el) el.setAttribute('content', savedAppleTitle)
+  }
+  if (savedAppleIcon !== null) {
+    const el = document.head.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')
+    if (el) el.setAttribute('href', savedAppleIcon)
+  }
+  savedManifestHref = savedTitle = savedAppleTitle = savedAppleIcon = null
+  savedManifestCrossOrigin = null
+}
+
+watch(
+  () => [ws.value?.id, ws.value?.name, ws.value?.image_logo] as const,
+  () => { if (ws.value) applyAppIdentity(ws.value) },
+  { immediate: true },
+)
+onUnmounted(restoreAppIdentity)
+
+async function handleInstall() {
+  const outcome = await promptInstall()
+  if (outcome === 'unavailable') {
+    // iOS Safari (and other browsers without a programmatic prompt).
+    ui.toast('Tap the Share button, then "Add to Home Screen"', 'info')
+  } else if (outcome === 'accepted') {
+    standalone.value = true
+    ui.toast(`Installed ${ws.value?.name ?? 'app'}`, 'success')
   }
 }
 
@@ -415,6 +519,17 @@ async function handleStop() {
   background: var(--accent-2);
   border-color: var(--accent-2);
   box-shadow: 0 0 10px rgba(255, 0, 170, 0.6);
+}
+
+/* Install-as-app — cyan (matches the brand accent). */
+.install-btn {
+  color: var(--accent);
+  border-color: rgba(0, 245, 255, 0.45);
+}
+.install-btn:hover {
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(0, 245, 255, 0.5);
 }
 
 /* Fullscreen — green. */

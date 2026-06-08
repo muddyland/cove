@@ -43,6 +43,12 @@ def _fake_images():
             "tags": [{"tag": "latest", "desc": "Firefox"}],
         },
         {
+            "name": "msedge",
+            "deprecated": False,
+            "description": "Microsoft Edge browser",
+            "tags": [{"tag": "latest", "desc": "Edge"}],
+        },
+        {
             # Should be skipped entirely.
             "name": "deprecated-thing",
             "deprecated": True,
@@ -84,6 +90,9 @@ def test_browser_specs_have_correct_url_env():
     assert by_name["Brave"]["url_env"] == "BRAVE_CLI"
     assert by_name["Firefox"]["image_type"] == "browser"
     assert by_name["Firefox"]["url_env"] == "FIREFOX_CLI"
+    assert by_name["Edge"]["image_type"] == "browser"
+    assert by_name["Edge"]["url_env"] == "MSEDGE_CLI"
+    assert by_name["Edge"]["docker_image"] == "lscr.io/linuxserver/msedge:latest"
     for name in ("Chromium", "Brave", "Firefox"):
         assert by_name[name]["docker_image"] == f"lscr.io/linuxserver/{name.lower()}:latest"
 

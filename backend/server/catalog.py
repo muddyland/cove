@@ -28,6 +28,7 @@ BROWSERS: dict[str, tuple[str, str]] = {
     "chromium": ("Chromium", "CHROME_CLI"),
     "brave": ("Brave", "BRAVE_CLI"),
     "firefox": ("Firefox", "FIREFOX_CLI"),
+    "msedge": ("Edge", "MSEDGE_CLI"),
 }
 
 WEBTOP_PORT = 3000

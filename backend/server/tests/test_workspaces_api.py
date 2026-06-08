@@ -690,3 +690,65 @@ def test_browser_workspace_rejects_bad_url_among_many(client, fake_docker_manage
               "target_url": "https://ok.io\nhttps://x.io/ --proxy=evil"},
     )
     assert resp.status_code == 400, resp.text
+
+
+# --- Per-workspace PWA manifest --------------------------------------------
+
+# A minimal 1x1 PNG (valid signature + IHDR declaring 1x1).
+_PNG_1x1 = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000a49444154789c6360000002000154a24f9d0000000049454e44ae426082"
+)
+
+
+def test_workspace_manifest_no_logo_uses_fallback_icons(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": "My Box", "image_id": image_id}).json()
+
+    resp = client.get(f"/api/workspaces/{ws['id']}/manifest.webmanifest")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("application/manifest+json")
+    body = resp.json()
+    assert body["name"] == "My Box"
+    assert body["start_url"] == f"/workspace/{ws['id']}"
+    assert body["display"] == "standalone"
+    # No logo on the image -> bundled Cove icons.
+    srcs = [i["src"] for i in body["icons"]]
+    assert any(s.startswith("/pwa-") for s in srcs)
+    assert not any(s.startswith("data:") for s in srcs)
+
+
+def test_workspace_manifest_embeds_logo_as_data_uri(client, fake_docker_manager, monkeypatch):
+    setup_admin(client)
+    image_id = add_image(
+        name="Brave", image_type="browser", url_env="BRAVE_CLI",
+        logo_url="https://logos.example/brave.png",
+    )
+    ws = client.post("/api/workspaces", json={"name": "Brave", "image_id": image_id}).json()
+
+    async def fake_fetch(url):
+        assert url == "https://logos.example/brave.png"
+        return (_PNG_1x1, "image/png")
+
+    monkeypatch.setattr("server.routers.workspaces._fetch_logo", fake_fetch)
+    resp = client.get(f"/api/workspaces/{ws['id']}/manifest.webmanifest")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    icon = body["icons"][0]
+    assert icon["src"].startswith("data:image/png;base64,")
+    assert icon["sizes"] == "1x1"  # read straight from the PNG IHDR header
+
+
+def test_workspace_manifest_ownership_enforced(client):
+    admin_token, _ = setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws_id = client.post("/api/workspaces", json={"name": "a", "image_id": image_id}).json()["id"]
+
+    create_user_via_admin(client, admin_token, "bob")
+    client.cookies.clear()
+    bob_token = login(client, "bob", "password123").json()["access_token"]
+    resp = client.get(
+        f"/api/workspaces/{ws_id}/manifest.webmanifest", headers=auth_header(bob_token)
+    )
+    assert resp.status_code == 403, resp.text
