@@ -3,7 +3,12 @@
     <div class="top-bar">
       <RouterLink to="/app" class="back-link"><span aria-hidden="true">←</span><span class="bl-label"> GRID</span></RouterLink>
       <div class="ws-info">
-        <div class="ws-switcher">
+        <!-- Locked to this one node when launched as its own installed app: a
+             per-workspace PWA is single-purpose, so no cross-node switching. -->
+        <div v-if="lockedToWorkspace" class="ws-switcher">
+          <span class="ws-name ws-name-locked">{{ ws?.name }}</span>
+        </div>
+        <div v-else class="ws-switcher">
           <button class="ws-switch-btn" :class="{ open: menuOpen }" @click.stop="menuOpen = !menuOpen">
             <span class="ws-name">{{ ws?.name }}</span>
             <ChevronDown :size="14" class="chev" />
@@ -33,7 +38,7 @@
       </RouterLink>
       <div class="top-actions">
         <button
-          v-if="ws"
+          v-if="ws && !standalone"
           class="bar-btn install-btn"
           title="Install this workspace as an app"
           @click="handleInstall"
@@ -217,6 +222,11 @@ const standalone = ref(isStandalone())
 // the standalone per-workspace entry (/workspace/:id). Only the standalone entry
 // carries the per-workspace PWA identity + is installable as its own app.
 const inAppRoute = computed(() => route.path.startsWith('/app/'))
+
+// A standalone per-workspace app (its own icon, launched at /workspace/:id) is
+// locked to this single node — no switcher. The dashboard PWA (/app/...) keeps
+// switching, since browsing across nodes is its whole purpose.
+const lockedToWorkspace = computed(() => standalone.value && !inAppRoute.value)
 
 function isIos(): boolean {
   const ua = navigator.userAgent || ''
@@ -414,6 +424,7 @@ async function handleStop() {
 
 .ws-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
+.ws-name-locked { display: inline-flex; align-items: center; padding: 3px 8px; color: var(--text); }
 
 /* Quick-switch dropdown */
 .ws-switcher { position: relative; }
