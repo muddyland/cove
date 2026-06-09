@@ -73,6 +73,7 @@ export interface Workspace {
   proot_apps: string | null
   appimages: string | null
   allow_sudo: boolean
+  inject_ssh_key: boolean
 }
 
 export interface LanPolicy {
@@ -94,6 +95,13 @@ export interface GluetunConfig {
   has_wireguard_private_key: boolean
   has_openvpn_user: boolean
   has_openvpn_password: boolean
+}
+
+export interface SshKeyConfig {
+  has_key: boolean
+  public_key: string | null
+  key_type: string | null
+  fingerprint: string | null
 }
 
 export interface FileEntry {

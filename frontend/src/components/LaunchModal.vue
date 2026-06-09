@@ -104,6 +104,7 @@ const form = reactive({
   custom_dns: false,
   dns_servers: '',
   allow_sudo: false,
+  inject_ssh_key: true,
   install_packages: '',
   proot_apps: [] as string[],
   appimages: '',
@@ -160,6 +161,7 @@ async function handleSubmit() {
               : {}),
           }),
       allow_sudo: form.allow_sudo,
+      inject_ssh_key: form.inject_ssh_key,
       ...(form.install_packages.trim() ? { install_packages: form.install_packages.trim() } : {}),
       ...(form.proot_apps.length ? { proot_apps: form.proot_apps.join(' ') } : {}),
       ...(form.appimages.trim() ? { appimages: form.appimages.trim() } : {}),
@@ -182,6 +184,7 @@ async function handleSubmit() {
     form.custom_dns = false
     form.dns_servers = ''
     form.allow_sudo = false
+    form.inject_ssh_key = true
     form.install_packages = ''
     form.proot_apps = []
     form.appimages = ''

@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
+from server import ssh_keys
 from server.deps import CurrentUser, DbSession
 from server.models import UserGluetun, UserTailscale
 from server.net import client_ip
@@ -11,6 +12,8 @@ from server.schemas import (
     _UNSET,
     GluetunConfigOut,
     GluetunConfigUpdate,
+    SshKeyOut,
+    SshKeyUpdate,
     TailscaleConfigOut,
     TailscaleConfigUpdate,
 )
@@ -18,6 +21,8 @@ from server.security import encrypt_secret
 
 # Cap the uploaded VPN config; real .ovpn / wg .conf files are a few KB.
 _MAX_GLUETUN_CONFIG_BYTES = 128 * 1024
+# Cap an uploaded SSH private key; even a 4096-bit RSA key is only a few KB.
+_MAX_SSH_KEY_BYTES = 64 * 1024
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -156,3 +161,75 @@ def update_my_gluetun(
 
     _audit(db, "user.gluetun.update", user=user, request=request)
     return _masked_gluetun(g)
+
+
+# ── SSH key (per-user) ──────────────────────────────────────────────────────────
+
+def _masked_ssh(user) -> SshKeyOut:
+    """SSH key view — never exposes the private key."""
+    pub = user.ssh_public_key
+    return SshKeyOut(
+        has_key=bool(user.ssh_private_key),
+        public_key=pub,
+        key_type=user.ssh_key_type,
+        fingerprint=ssh_keys.fingerprint(pub) if pub else None,
+    )
+
+
+def _store_ssh_key(user, parsed: ssh_keys.ParsedKey) -> None:
+    user.ssh_private_key = encrypt_secret(parsed.private_key)
+    user.ssh_public_key = parsed.public_key
+    user.ssh_key_type = parsed.key_type
+
+
+def _clear_ssh_key(user) -> None:
+    user.ssh_private_key = None
+    user.ssh_public_key = None
+    user.ssh_key_type = None
+
+
+@router.get("/me/ssh", response_model=SshKeyOut)
+def get_my_ssh(user: CurrentUser, db: DbSession):
+    return _masked_ssh(user)
+
+
+@router.put("/me/ssh", response_model=SshKeyOut)
+def update_my_ssh(body: SshKeyUpdate, user: CurrentUser, db: DbSession, request: Request):
+    """Upload an existing private key, or clear it with an empty value."""
+    if body.private_key:
+        if len(body.private_key.encode("utf-8")) > _MAX_SSH_KEY_BYTES:
+            raise HTTPException(status_code=400, detail="SSH key is too large")
+        try:
+            parsed = ssh_keys.parse_private_key(body.private_key, comment=f"cove:{user.username}")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        _store_ssh_key(user, parsed)
+        action = "user.ssh.upload"
+    else:
+        _clear_ssh_key(user)
+        action = "user.ssh.clear"
+
+    db.commit()
+    db.refresh(user)
+    _audit(db, action, user=user, request=request)
+    return _masked_ssh(user)
+
+
+@router.post("/me/ssh/generate", response_model=SshKeyOut)
+def generate_my_ssh(user: CurrentUser, db: DbSession, request: Request):
+    """Generate a fresh Ed25519 keypair, replacing any existing key."""
+    parsed = ssh_keys.generate_keypair(comment=f"cove:{user.username}")
+    _store_ssh_key(user, parsed)
+    db.commit()
+    db.refresh(user)
+    _audit(db, "user.ssh.generate", user=user, request=request)
+    return _masked_ssh(user)
+
+
+@router.delete("/me/ssh", response_model=SshKeyOut)
+def delete_my_ssh(user: CurrentUser, db: DbSession, request: Request):
+    _clear_ssh_key(user)
+    db.commit()
+    db.refresh(user)
+    _audit(db, "user.ssh.clear", user=user, request=request)
+    return _masked_ssh(user)

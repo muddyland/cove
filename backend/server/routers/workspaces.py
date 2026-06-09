@@ -223,6 +223,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         proot_apps=body.proot_apps or None,
         appimages=body.appimages or None,
         allow_sudo=body.allow_sudo,
+        inject_ssh_key=body.inject_ssh_key,
         status="creating",
     )
     db.add(ws)
@@ -339,6 +340,7 @@ def clone_workspace(
         proot_apps=src.proot_apps,
         appimages=src.appimages,
         allow_sudo=src.allow_sudo,
+        inject_ssh_key=src.inject_ssh_key,
         status="creating",
     )
     db.add(clone)

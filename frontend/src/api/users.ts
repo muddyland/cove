@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { GluetunConfig, TailscaleConfig } from '@/types'
+import type { GluetunConfig, SshKeyConfig, TailscaleConfig } from '@/types'
 
 export interface TailscaleUpdate {
   auth_key?: string
@@ -24,4 +24,9 @@ export const usersApi = {
   getGluetun: () => api.get<GluetunConfig>('/users/me/gluetun'),
   updateGluetun: (payload: GluetunUpdate) =>
     api.put<GluetunConfig>('/users/me/gluetun', payload),
+  getSshKey: () => api.get<SshKeyConfig>('/users/me/ssh'),
+  uploadSshKey: (privateKey: string) =>
+    api.put<SshKeyConfig>('/users/me/ssh', { private_key: privateKey }),
+  generateSshKey: () => api.post<SshKeyConfig>('/users/me/ssh/generate'),
+  deleteSshKey: () => api.delete<SshKeyConfig>('/users/me/ssh'),
 }

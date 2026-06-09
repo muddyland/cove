@@ -35,7 +35,12 @@ logger = logging.getLogger(__name__)
 # Where the helper scripts live inside the cove container (baked by the Dockerfile
 # / bind-mounted from the host checkout).
 _SCRIPTS_SRC_DIR = "/app/scripts"
-_HELPER_SCRIPTS = ("install-proot-apps.sh", "install-appimages.sh", "launch-url.sh")
+_HELPER_SCRIPTS = (
+    "install-proot-apps.sh",
+    "install-appimages.sh",
+    "launch-url.sh",
+    "install-ssh-key.sh",
+)
 
 
 def _stage_helper_scripts() -> "Path":
@@ -306,6 +311,39 @@ def _remove_gluetun_config(ws_id: int) -> None:
         _gluetun_config_path(ws_id).unlink()
     except (FileNotFoundError, OSError):
         pass
+
+
+def _ssh_key_dir(ws_id: int) -> Path:
+    """Host-resolvable dir holding a workspace's staged SSH key files."""
+    settings = get_settings()
+    base = settings.storage_path or (settings.data_dir / "workspaces")
+    return Path(base) / ".cove-ssh" / f"cove-ssh-{ws_id}"
+
+
+def _stage_ssh_key(ws_id: int, private_key: str, public_key: str, key_type: str) -> str:
+    """Write the decrypted private key (and public key) to a 0600/0644 host dir for
+    read-only mounting into the workspace; return the dir path. Decrypted at runtime
+    like the Gluetun config (the host is trusted); the DB copy stays encrypted."""
+    from server.ssh_keys import key_filename
+
+    d = _ssh_key_dir(ws_id)
+    # Re-create clean so a changed key type doesn't leave a stale id_* file behind.
+    if d.exists():
+        shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True, exist_ok=True)
+    name = key_filename(key_type)
+    priv = d / name
+    priv.write_text(private_key if private_key.endswith("\n") else private_key + "\n")
+    os.chmod(priv, 0o600)
+    if public_key:
+        pub = d / f"{name}.pub"
+        pub.write_text(public_key.rstrip("\n") + "\n")
+        os.chmod(pub, 0o644)
+    return str(d)
+
+
+def _remove_ssh_key(ws_id: int) -> None:
+    shutil.rmtree(_ssh_key_dir(ws_id), ignore_errors=True)
 
 
 # Public resolvers used when a workspace opts into custom DNS without naming any.
@@ -710,6 +748,7 @@ class DockerManager:
             self._apply_package_env(env, ws.install_packages)
             self._apply_proot_apps(env, volumes, ws.proot_apps)
             self._apply_appimages(env, volumes, ws.appimages)
+            self._apply_ssh_key(ws, volumes)
 
             labels = self._build_traefik_labels(ws, image, net_name)
 
@@ -983,6 +1022,7 @@ class DockerManager:
                     self._cleanup_tailscale_sidecar(ws.id)
                     self._cleanup_gluetun_sidecar(ws.id)
                     self._cleanup_ws_network(self._ws_network_name(ws.id))
+                    _remove_ssh_key(ws.id)
                     ws.status = "stopped"
                     ws.stopped_at = datetime.now(timezone.utc)
                     db.commit()
@@ -999,6 +1039,7 @@ class DockerManager:
             self._cleanup_tailscale_sidecar(ws.id)
             self._cleanup_gluetun_sidecar(ws.id)
             self._cleanup_ws_network(self._ws_network_name(ws.id))
+            _remove_ssh_key(ws.id)
 
             ws.status = "stopped"
             ws.stopped_at = datetime.now(timezone.utc)
@@ -1027,6 +1068,7 @@ class DockerManager:
             self._cleanup_tailscale_sidecar(ws.id)
             self._cleanup_gluetun_sidecar(ws.id)
             self._cleanup_ws_network(self._ws_network_name(ws.id))
+            _remove_ssh_key(ws.id)
             if purge_storage:
                 delete_workspace_storage(ws)
             db.delete(ws)
@@ -1473,6 +1515,32 @@ class DockerManager:
         env["COVE_APPIMAGES"] = " ".join(urls)
         volumes[_helper_script_path("install-appimages.sh")] = {
             "bind": "/custom-cont-init.d/97-install-appimages.sh",
+            "mode": "ro",
+        }
+
+    @staticmethod
+    def _apply_ssh_key(ws, volumes: dict) -> None:
+        """Inject the owner's account SSH key into the container's ~/.ssh.
+
+        Stages the decrypted key to a host dir and mounts it read-only alongside
+        an init script that copies it into /config/.ssh with strict perms. No-op
+        when the workspace opts out or the owner has no key on file. Mutates
+        ``volumes`` in place.
+        """
+        if not ws.inject_ssh_key:
+            return
+        user = ws.user
+        if not user or not user.ssh_private_key:
+            return
+        private = decrypt_secret(user.ssh_private_key)
+        if not private:
+            return
+        key_dir = _stage_ssh_key(
+            ws.id, private, user.ssh_public_key or "", user.ssh_key_type or "ed25519"
+        )
+        volumes[key_dir] = {"bind": "/cove/ssh-key", "mode": "ro"}
+        volumes[_helper_script_path("install-ssh-key.sh")] = {
+            "bind": "/custom-cont-init.d/96-install-ssh-key.sh",
             "mode": "ro",
         }
 

@@ -88,6 +88,7 @@ const form = reactive({
   custom_dns: false,
   dns_servers: '',
   allow_sudo: false,
+  inject_ssh_key: true,
   install_packages: '',
   proot_apps: [] as string[],
   appimages: '',
@@ -114,6 +115,7 @@ function resetFromWs() {
   form.custom_dns = props.ws.custom_dns
   form.dns_servers = props.ws.dns_servers ?? ''
   form.allow_sudo = props.ws.allow_sudo
+  form.inject_ssh_key = props.ws.inject_ssh_key
   form.install_packages = props.ws.install_packages ?? ''
   form.proot_apps = parseProotApps(props.ws.proot_apps)
   form.appimages = props.ws.appimages ?? ''
@@ -173,6 +175,7 @@ async function handleSubmit() {
             dns_servers: form.custom_dns ? form.dns_servers.trim() : '',
           }),
       allow_sudo: form.allow_sudo,
+      inject_ssh_key: form.inject_ssh_key,
       install_packages: form.install_packages.trim(),
       proot_apps: form.proot_apps.join(' '),
       appimages: form.appimages.trim(),

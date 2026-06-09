@@ -86,6 +86,15 @@
         Settings, which overrides this choice.
       </p>
 
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="form.inject_ssh_key" />
+        <span>Inject my SSH key</span>
+      </label>
+      <p class="hint">
+        Copy your account SSH key into the container's <code>~/.ssh</code> at launch
+        (set it in Preferences → SSH key). Turn off to keep this workspace key-free.
+      </p>
+
       <div class="form-group">
         <label>Install packages</label>
         <input v-model="form.install_packages" type="text" placeholder="git vim htop" />
@@ -133,6 +142,7 @@ export interface WorkspaceOptionsForm {
   custom_dns: boolean
   dns_servers: string
   allow_sudo: boolean
+  inject_ssh_key: boolean
   install_packages: string
   proot_apps: string[]
   appimages: string
@@ -183,6 +193,7 @@ const appsSummary = computed(() => {
   const bits: string[] = []
   if (n) bits.push(`${n} app${n === 1 ? '' : 's'}`)
   if (props.form.allow_sudo) bits.push('sudo')
+  if (props.form.inject_ssh_key) bits.push('ssh key')
   return bits.join(', ')
 })
 

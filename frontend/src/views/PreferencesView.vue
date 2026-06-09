@@ -121,6 +121,58 @@
           </div>
         </form>
       </section>
+
+      <section class="panel">
+        <h3>// SSH KEY</h3>
+        <div v-if="sshLoading" class="loading">Loading…</div>
+        <div v-else class="form">
+          <p class="hint">
+            Your account SSH key is copied into each workspace's <code>~/.ssh</code> at
+            launch (toggle off per workspace in its options). The private key is stored
+            <strong>encrypted</strong> at rest and never shown.
+          </p>
+
+          <template v-if="ssh.has_key">
+            <div class="form-group">
+              <label>// public key ({{ ssh.key_type }})</label>
+              <textarea :value="ssh.public_key || ''" readonly rows="3" class="mono" @focus="selectAll" />
+              <p class="hint">Fingerprint: <code>{{ ssh.fingerprint }}</code></p>
+            </div>
+            <div v-if="sshError" class="form-error">⚠ {{ sshError }}</div>
+            <div class="form-actions ssh-actions">
+              <NeonButton variant="ghost" @click="copyPublic">Copy public key</NeonButton>
+              <NeonButton variant="secondary" :loading="sshSaving" @click="generate">Regenerate</NeonButton>
+              <NeonButton variant="danger" :loading="sshSaving" @click="removeKey">Remove</NeonButton>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="form-group">
+              <label>// upload private key</label>
+              <input type="file" @change="onKeyFile" />
+              <textarea
+                v-model="uploadText"
+                rows="4"
+                class="mono"
+                placeholder="Paste an unencrypted private key, or pick a file above"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <p class="hint">
+                Unencrypted keys only (no passphrase). The matching public key is derived
+                automatically.
+              </p>
+            </div>
+            <div v-if="sshError" class="form-error">⚠ {{ sshError }}</div>
+            <div class="form-actions ssh-actions">
+              <NeonButton variant="secondary" :loading="sshSaving" :disabled="!uploadText.trim()" @click="upload">
+                Upload key
+              </NeonButton>
+              <NeonButton variant="primary" :loading="sshSaving" @click="generate">Generate new key</NeonButton>
+            </div>
+          </template>
+        </div>
+      </section>
     </div>
   </AppShell>
 </template>
@@ -131,6 +183,7 @@ import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { authApi } from '@/api/auth'
 import { usersApi, type GluetunUpdate } from '@/api/users'
+import type { SshKeyConfig } from '@/types'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 
@@ -204,6 +257,14 @@ onMounted(async () => {
     gError.value = e.message
   } finally {
     gLoading.value = false
+  }
+
+  try {
+    ssh.value = await usersApi.getSshKey()
+  } catch (e: any) {
+    sshError.value = e.message
+  } finally {
+    sshLoading.value = false
   }
 })
 
@@ -279,6 +340,82 @@ async function handleTailscale() {
     tsSaving.value = false
   }
 }
+
+// --- SSH key ---
+const sshLoading = ref(true)
+const sshSaving = ref(false)
+const sshError = ref('')
+const uploadText = ref('')
+const ssh = ref<SshKeyConfig>({
+  has_key: false,
+  public_key: null,
+  key_type: null,
+  fingerprint: null,
+})
+
+function selectAll(e: FocusEvent) {
+  (e.target as HTMLTextAreaElement).select()
+}
+
+async function copyPublic() {
+  if (!ssh.value.public_key) return
+  try {
+    await navigator.clipboard.writeText(ssh.value.public_key)
+    ui.toast('Public key copied', 'success')
+  } catch {
+    ui.toast('Copy failed — select and copy manually', 'error')
+  }
+}
+
+async function onKeyFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  uploadText.value = await file.text()
+}
+
+async function upload() {
+  if (!uploadText.value.trim()) return
+  sshError.value = ''
+  sshSaving.value = true
+  try {
+    ssh.value = await usersApi.uploadSshKey(uploadText.value)
+    uploadText.value = ''
+    ui.toast('SSH key saved', 'success')
+  } catch (e: any) {
+    sshError.value = e.message
+  } finally {
+    sshSaving.value = false
+  }
+}
+
+async function generate() {
+  if (ssh.value.has_key && !confirm('Replace your current SSH key with a new one?')) return
+  sshError.value = ''
+  sshSaving.value = true
+  try {
+    ssh.value = await usersApi.generateSshKey()
+    uploadText.value = ''
+    ui.toast('New SSH key generated', 'success')
+  } catch (e: any) {
+    sshError.value = e.message
+  } finally {
+    sshSaving.value = false
+  }
+}
+
+async function removeKey() {
+  if (!confirm('Remove your SSH key? New workspaces will launch without it.')) return
+  sshError.value = ''
+  sshSaving.value = true
+  try {
+    ssh.value = await usersApi.deleteSshKey()
+    ui.toast('SSH key removed', 'success')
+  } catch (e: any) {
+    sshError.value = e.message
+  } finally {
+    sshSaving.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -318,4 +455,12 @@ async function handleTailscale() {
   line-height: 1.5;
   margin: 0;
 }
+.mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-all;
+  resize: vertical;
+}
+.ssh-actions { gap: 10px; flex-wrap: wrap; }
 </style>

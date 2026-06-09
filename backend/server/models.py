@@ -20,6 +20,12 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     tokens_valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Per-user SSH key, injected into containers' ~/.ssh by default. The private
+    # key is encrypted at rest; the public key + type are not secret (shown so the
+    # user can copy the public key elsewhere).
+    ssh_private_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ssh_public_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ssh_key_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
 
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"
@@ -121,6 +127,11 @@ class Workspace(Base):
     # Whether in-container sudo is allowed. When False, the container gets the
     # no-new-privileges flag which blocks setuid (sudo).
     allow_sudo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
+    # Inject the owner's account SSH key into this container's ~/.ssh. On by
+    # default; can be disabled per workspace.
+    inject_ssh_key: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("1")
     )
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)

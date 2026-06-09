@@ -113,6 +113,8 @@ class WorkspaceCreate(BaseModel):
     # escalation) unless the creator explicitly opts in. Shrinks the blast radius
     # of an in-container compromise.
     allow_sudo: bool = False
+    # Inject the owner's account SSH key into ~/.ssh (on by default).
+    inject_ssh_key: bool = True
 
 
 class WorkspaceUpdate(BaseModel):
@@ -134,6 +136,7 @@ class WorkspaceUpdate(BaseModel):
     proot_apps: Optional[str] = None
     appimages: Optional[str] = None
     allow_sudo: Optional[bool] = None
+    inject_ssh_key: Optional[bool] = None
 
 
 class LanPolicyOut(BaseModel):
@@ -197,6 +200,7 @@ class WorkspaceOut(BaseModel):
     proot_apps: Optional[str]
     appimages: Optional[str]
     allow_sudo: bool
+    inject_ssh_key: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -246,6 +250,7 @@ class WorkspaceOut(BaseModel):
             proot_apps=ws.proot_apps,
             appimages=ws.appimages,
             allow_sudo=ws.allow_sudo,
+            inject_ssh_key=ws.inject_ssh_key,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,
@@ -340,6 +345,21 @@ class GluetunConfigUpdate(BaseModel):
     wireguard_private_key: Optional[str] = _UNSET
     openvpn_user: Optional[str] = _UNSET
     openvpn_password: Optional[str] = _UNSET
+
+
+# ── SSH key (per-user) ──────────────────────────────────────────────────────────
+
+class SshKeyOut(BaseModel):
+    # Never returns the private key — only the public key + metadata.
+    has_key: bool
+    public_key: Optional[str]
+    key_type: Optional[str]
+    fingerprint: Optional[str]
+
+
+class SshKeyUpdate(BaseModel):
+    # Upload an existing private key. "" or null clears the stored key.
+    private_key: Optional[str] = None
 
 
 # ── Files ─────────────────────────────────────────────────────────────────────

@@ -68,6 +68,7 @@ const desktopWs: Workspace = {
   proot_apps: null,
   appimages: null,
   allow_sudo: true,
+  inject_ssh_key: true,
 }
 
 describe('EditWorkspaceModal', () => {

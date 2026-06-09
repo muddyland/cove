@@ -119,6 +119,24 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0023_workspace_use_gluetun",
         "ALTER TABLE workspace ADD COLUMN use_gluetun BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Per-user SSH key (private encrypted at rest, public + type in the clear).
+    (
+        "0024_user_ssh_private_key",
+        "ALTER TABLE user ADD COLUMN ssh_private_key TEXT",
+    ),
+    (
+        "0025_user_ssh_public_key",
+        "ALTER TABLE user ADD COLUMN ssh_public_key TEXT",
+    ),
+    (
+        "0026_user_ssh_key_type",
+        "ALTER TABLE user ADD COLUMN ssh_key_type VARCHAR(16)",
+    ),
+    # Inject the owner's SSH key into a workspace's ~/.ssh (on by default).
+    (
+        "0027_workspace_inject_ssh_key",
+        "ALTER TABLE workspace ADD COLUMN inject_ssh_key BOOLEAN NOT NULL DEFAULT 1",
+    ),
 ]
 
 
