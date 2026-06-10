@@ -977,6 +977,56 @@ class DockerManager:
         ip = out.decode(errors="ignore").strip().splitlines()
         return ip[0].strip() if ip and ip[0].strip() else None
 
+    def tailscale_status(self, ws_id: int) -> str | None:
+        """Output of ``tailscale status`` from a workspace's Tailscale sidecar.
+
+        Returns the raw text (which is exactly what we want to surface even when
+        the command exits non-zero, e.g. logged-out), or None if the sidecar is
+        missing / not running / produced nothing.
+        """
+        sidecar_name = self._ts_sidecar_name(ws_id)
+        try:
+            sidecar = self._client.containers.get(sidecar_name)
+            if sidecar.status != "running":
+                return None
+            _code, out = sidecar.exec_run(["tailscale", "status"])
+        except (docker.errors.NotFound, docker.errors.APIError):
+            return None
+        except Exception as exc:  # defensive: never let this break the API
+            logger.debug("tailscale status read failed for ws %s: %s", ws_id, exc)
+            return None
+        text = out.decode(errors="ignore").strip() if out else ""
+        return text or None
+
+    def _diag_container_name(self, ws: Workspace, source: str) -> "str | None":
+        """Resolve a diagnostics log source to a concrete container name/id, or
+        None if the source doesn't apply to this workspace."""
+        if source == "desktop":
+            return ws.container_id or f"cove-ws-{ws.id}"
+        if source == "tailscale" and ws.use_tailscale:
+            return self._ts_sidecar_name(ws.id)
+        if source == "gluetun" and ws.use_gluetun:
+            return self._gluetun_sidecar_name(ws.id)
+        return None
+
+    def container_logs(self, ws: Workspace, source: str, tail: int = 200) -> str | None:
+        """Recent logs from one of a workspace's containers — the desktop itself
+        or its Tailscale / Gluetun sidecar. Returns decoded text (possibly empty),
+        or None if the container is missing or the source doesn't apply.
+        """
+        name = self._diag_container_name(ws, source)
+        if not name:
+            return None
+        try:
+            container = self._client.containers.get(name)
+            raw = container.logs(tail=tail, timestamps=False)
+        except (docker.errors.NotFound, docker.errors.APIError):
+            return None
+        except Exception as exc:  # defensive: never let a log read break the API
+            logger.debug("logs read failed for ws %s/%s: %s", ws.id, source, exc)
+            return None
+        return raw.decode(errors="ignore") if raw else ""
+
     def _sidecar_failure(self, ws: Workspace) -> "str | None":
         """If this workspace's required routing sidecar has definitively failed,
         return a user-facing message; otherwise None.

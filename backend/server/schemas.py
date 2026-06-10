@@ -362,6 +362,20 @@ class SshKeyUpdate(BaseModel):
     private_key: Optional[str] = None
 
 
+# ── Diagnostics ───────────────────────────────────────────────────────────────
+
+class TailscaleStatusOut(BaseModel):
+    # Output of `tailscale status` from the workspace's Tailscale sidecar.
+    available: bool  # False when the sidecar is missing / not running
+    output: str
+
+
+class ContainerLogsOut(BaseModel):
+    source: str  # 'desktop' | 'tailscale' | 'gluetun'
+    available: bool  # False when the backing container is missing
+    output: str
+
+
 # ── Files ─────────────────────────────────────────────────────────────────────
 
 class FileEntry(BaseModel):

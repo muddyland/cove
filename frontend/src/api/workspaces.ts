@@ -1,5 +1,7 @@
 import { api } from './client'
-import type { LanPolicy, Workspace, WorkspaceStats } from '@/types'
+import type { ContainerLogs, LanPolicy, TailscaleStatus, Workspace, WorkspaceStats } from '@/types'
+
+export type LogSource = 'desktop' | 'tailscale' | 'gluetun'
 
 export const workspacesApi = {
   list: () => api.get<Workspace[]>('/workspaces'),
@@ -55,6 +57,10 @@ export const workspacesApi = {
   ) => api.patch<Workspace>(`/workspaces/${id}`, payload),
   clone: (id: number, payload: { name: string; image_id?: number }) =>
     api.post<Workspace>(`/workspaces/${id}/clone`, payload),
+  tailscaleStatus: (id: number) =>
+    api.get<TailscaleStatus>(`/workspaces/${id}/tailscale-status`),
+  logs: (id: number, source: LogSource, tail = 200) =>
+    api.get<ContainerLogs>(`/workspaces/${id}/logs?source=${source}&tail=${tail}`),
   streamAuth: (id: number) => api.post<{ url: string }>(`/workspaces/${id}/stream-auth`),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),
   start: (id: number) => api.post<Workspace>(`/workspaces/${id}/start`),

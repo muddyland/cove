@@ -39,6 +39,17 @@ export interface WorkspaceStats {
   tailscale_ip?: string | null
 }
 
+export interface TailscaleStatus {
+  available: boolean
+  output: string
+}
+
+export interface ContainerLogs {
+  source: 'desktop' | 'tailscale' | 'gluetun'
+  available: boolean
+  output: string
+}
+
 export interface Workspace {
   id: number
   public_id: string

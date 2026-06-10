@@ -15,8 +15,10 @@ from server.deps import CurrentUser, DbSession
 from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage
 from server.net import client_ip
 from server.schemas import (
+    ContainerLogsOut,
     LanPolicyOut,
     StreamAuthOut,
+    TailscaleStatusOut,
     WorkspaceClone,
     WorkspaceCreate,
     WorkspaceOut,
@@ -473,6 +475,44 @@ async def workspace_manifest(ws_id: int, user: CurrentUser, db: DbSession):
 def get_workspace(ws_id: int, user: CurrentUser, db: DbSession):
     ws = _get_workspace_or_404(ws_id, user, db)
     return WorkspaceOut.from_workspace(ws)
+
+
+@router.get("/{ws_id}/tailscale-status", response_model=TailscaleStatusOut)
+def tailscale_status(ws_id: int, user: CurrentUser, db: DbSession):
+    """On-demand ``tailscale status`` from the workspace's Tailscale sidecar."""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if not ws.use_tailscale:
+        raise HTTPException(status_code=400, detail="Workspace is not using Tailscale")
+    from server.docker_manager import get_docker_manager
+
+    out = get_docker_manager().tailscale_status(ws.id)
+    return TailscaleStatusOut(available=out is not None, output=out or "")
+
+
+_LOG_SOURCES = {"desktop", "tailscale", "gluetun"}
+
+
+@router.get("/{ws_id}/logs", response_model=ContainerLogsOut)
+def container_logs(
+    ws_id: int,
+    user: CurrentUser,
+    db: DbSession,
+    source: str = "desktop",
+    tail: int = 200,
+):
+    """On-demand container logs for the desktop, VPN (gluetun), or Tailscale sidecar."""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if source not in _LOG_SOURCES:
+        raise HTTPException(status_code=400, detail="Unknown log source")
+    if source == "tailscale" and not ws.use_tailscale:
+        raise HTTPException(status_code=400, detail="Workspace is not using Tailscale")
+    if source == "gluetun" and not ws.use_gluetun:
+        raise HTTPException(status_code=400, detail="Workspace is not using a VPN")
+    tail = max(1, min(tail, 2000))
+    from server.docker_manager import get_docker_manager
+
+    out = get_docker_manager().container_logs(ws, source, tail)
+    return ContainerLogsOut(source=source, available=out is not None, output=out or "")
 
 
 @router.post("/{ws_id}/stream-auth", response_model=StreamAuthOut)

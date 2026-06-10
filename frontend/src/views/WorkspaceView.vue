@@ -72,9 +72,17 @@
           :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
           @click="toggleFullscreen"
         ><component :is="isFullscreen ? Minimize : Maximize" :size="14" /><span class="bar-label"> {{ isFullscreen ? 'WINDOW' : 'FULL' }}</span></button>
+        <button
+          v-if="ws?.status === 'running'"
+          class="bar-btn"
+          title="Diagnostics — Tailscale status &amp; container logs"
+          @click="showDiag = true"
+        ><Activity :size="14" /><span class="bar-label"> LOGS</span></button>
         <NeonButton v-if="ws?.status === 'running'" variant="warn" :loading="stopping" @click="handleStop"><Square :size="14" /><span class="bar-label"> HALT</span></NeonButton>
       </div>
     </div>
+
+    <DiagnosticsModal v-if="ws" v-model="showDiag" :ws="ws" />
 
     <!-- Halted takeover for a per-workspace PWA: it's a single-purpose app, so on
          halt there's nowhere to go back to — just confirm it's safe to close. -->
@@ -123,8 +131,9 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -135,6 +144,7 @@ const wsId = computed(() => Number(route.params.id))
 const ws = computed(() => store.items.find(w => w.id === wsId.value))
 const installing = computed(() => !!(ws.value?.install_packages || ws.value?.proot_apps))
 const stopping = ref(false)
+const showDiag = ref(false)
 const streamUrl = ref<string | null>(null)
 const frameWrap = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
