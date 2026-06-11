@@ -235,6 +235,35 @@ def test_apply_appimages_noop_when_empty():
     assert env == {}
     assert volumes == {}
 
+# ── _apply_username (alias the desktop user to the Cove username) ───────────────
+
+def test_apply_username_sets_env_and_mount():
+    env: dict = {}
+    volumes: dict = {}
+    ws = SimpleNamespace(user=SimpleNamespace(username="alice"))
+    DockerManager._apply_username(env, volumes, ws)
+    assert env["COVE_USERNAME"] == "alice"
+    key = _helper_script_path("install-username.sh")
+    assert key.endswith("/.cove-scripts/install-username.sh")
+    assert volumes[key] == {
+        "bind": "/custom-cont-init.d/01-install-username.sh",
+        "mode": "ro",
+    }
+
+
+def test_apply_username_noop_for_reserved_and_missing():
+    for uname in ("abc", "root", None, ""):
+        env: dict = {}
+        volumes: dict = {}
+        ws = SimpleNamespace(user=SimpleNamespace(username=uname))
+        DockerManager._apply_username(env, volumes, ws)
+        assert env == {}
+        assert volumes == {}
+    # No user at all (shouldn't happen, but stay defensive).
+    env, volumes = {}, {}
+    DockerManager._apply_username(env, volumes, SimpleNamespace(user=None))
+    assert env == {} and volumes == {}
+
 # ── _resource_limits (admin CPU/memory caps) ───────────────────────────────────
 
 def test_resource_limits_empty_when_zero(monkeypatch):

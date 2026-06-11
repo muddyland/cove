@@ -40,6 +40,7 @@ _HELPER_SCRIPTS = (
     "install-appimages.sh",
     "launch-url.sh",
     "install-ssh-key.sh",
+    "install-username.sh",
 )
 
 
@@ -745,6 +746,7 @@ class DockerManager:
                 }
 
             # Per-workspace package installation (applies to both launch paths).
+            self._apply_username(env, volumes, ws)
             self._apply_package_env(env, ws.install_packages)
             self._apply_proot_apps(env, volumes, ws.proot_apps)
             self._apply_appimages(env, volumes, ws.appimages)
@@ -1565,6 +1567,27 @@ class DockerManager:
         env["COVE_APPIMAGES"] = " ".join(urls)
         volumes[_helper_script_path("install-appimages.sh")] = {
             "bind": "/custom-cont-init.d/97-install-appimages.sh",
+            "mode": "ro",
+        }
+
+    @staticmethod
+    def _apply_username(env: dict, volumes: dict, ws) -> None:
+        """Make the desktop user show the owner's Cove username.
+
+        LinuxServer images hardwire the 'abc' user by name throughout their own
+        s6 services, so a true rename breaks the desktop. Instead we pass the
+        Cove username and mount an init script that adds an alias passwd/group
+        entry sharing abc's UID/GID — so whoami / the shell prompt / ``ls -l``
+        show the Cove name while ``s6-setuidgid abc`` keeps working. Mutates both
+        dicts in place. No-op for the reserved 'abc'/'root' names. Runs early
+        (01-) so later init scripts (e.g. ssh-key) see the alias in place.
+        """
+        user = ws.user
+        if not user or not user.username or user.username in ("abc", "root"):
+            return
+        env["COVE_USERNAME"] = user.username
+        volumes[_helper_script_path("install-username.sh")] = {
+            "bind": "/custom-cont-init.d/01-install-username.sh",
             "mode": "ro",
         }
 
