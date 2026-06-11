@@ -25,8 +25,11 @@ defineEmits(['update:modelValue'])
 <style scoped>
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
+  /* Solid scrim only — no backdrop-filter. A full-viewport backdrop blur keeps a
+     GPU compositing layer alive for as long as any modal is mounted, which can
+     drop the browser's hardware video-overlay path and make video stutter in
+     other windows/screens. The 0.8 black already separates the modal cleanly. */
+  background: rgba(0, 0, 0, 0.8);
   display: flex; align-items: center; justify-content: center;
   z-index: 1000;
 }
