@@ -17,7 +17,7 @@
 </div>
 
 <p align="center">
-  <img src="screenshots/dashboard.png" width="90%" alt="Cove dashboard — the workspace grid with live CPU/memory stats and the launch flow" />
+  <img src="screenshots/cove-launch.gif" width="90%" alt="Launching a workspace in Cove — deploy a node, then a full Linux desktop streams into the browser" />
 </p>
 
 ---
@@ -34,15 +34,21 @@ overhead, multi-user.
 
 <table>
   <tr>
-    <td width="33%" align="center">
+    <td width="50%" align="center">
+      <img src="screenshots/dashboard.png" alt="The Cove dashboard — the workspace grid with live CPU/memory stats" /><br />
+      <sub><b>Dashboard</b> — workspace grid with live CPU/memory stats</sub>
+    </td>
+    <td width="50%" align="center">
       <img src="screenshots/desktop-stream.png" alt="A full Linux desktop streamed to the browser" /><br />
       <sub><b>Desktops</b> — full XFCE/KDE/MATE/i3 sessions in a tab</sub>
     </td>
-    <td width="33%" align="center">
+  </tr>
+  <tr>
+    <td width="50%" align="center">
       <img src="screenshots/browser-stream.png" alt="A single-app browser workspace streamed to the browser" /><br />
       <sub><b>Browsers</b> — kiosk-style Chromium/Brave/Firefox</sub>
     </td>
-    <td width="33%" align="center">
+    <td width="50%" align="center">
       <img src="screenshots/image-registry.png" alt="The admin image registry listing available workspace images" /><br />
       <sub><b>Image registry</b> — auto-populated catalog, one-click pulls</sub>
     </td>
