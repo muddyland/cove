@@ -114,9 +114,10 @@ Vue 3 + TypeScript + Vite + Pinia, `lucide-vue-next` icons, installable PWA
 
 ### Workspace images
 
-`lscr.io/linuxserver/*` webtop & Selkies/KasmVNC images. They serve a desktop or
-single-app browser on an internal port (default **3000**) and persist user data
-in **`/config`**. Cove never bakes these; they're pulled on demand.
+`lscr.io/linuxserver/*` webtop & browser images — all Selkies-based (KasmVNC
+images also work). They serve a desktop or single-app browser on an internal port
+(default **3000**) and persist user data in **`/config`**. Cove never bakes these;
+they're pulled on demand.
 
 ---
 

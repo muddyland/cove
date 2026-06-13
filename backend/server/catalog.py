@@ -2,8 +2,8 @@
 
 LinuxServer publishes metadata for all their images at
 https://api.linuxserver.io/api/v1/images . We curate the subset that follows
-the "webtop" model — KasmVNC desktops that listen on port 3000 and persist to
-/config — since those are the images Cove can launch as workspaces. The other
+the "webtop" model — Selkies-based desktops that listen on port 3000 and persist
+to /config — since those are the images Cove can launch as workspaces. The other
 "Remote Desktop" category entries (remote-desktop *clients*, the full Kasm
 platform, etc.) do not fit that model and are intentionally excluded.
 """
@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 LINUXSERVER_API = "https://api.linuxserver.io/api/v1/images"
 
-# Base images known to be webtop-compatible (KasmVNC desktop, port 3000, /config).
+# Base images known to be webtop-compatible (Selkies desktop, port 3000, /config).
 WEBTOP_COMPATIBLE: dict[str, str] = {
     "webtop": "Webtop",
     "kali-linux": "Kali Linux",
 }
 
-# Single-app browser images (KasmVNC, port 3000). Each accepts a startup URL via
+# Single-app browser images (Selkies, port 3000). Each accepts a startup URL via
 # the given env var, enabling the "open a website in a browser" web-app flow.
 BROWSERS: dict[str, tuple[str, str]] = {
     "chromium": ("Chromium", "CHROME_CLI"),

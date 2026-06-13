@@ -5,14 +5,14 @@
   <p>
     A self-hosted, Kasm-style VDI built on
     <a href="https://docs.linuxserver.io/images/docker-webtop/">LinuxServer.io</a>
-    webtop images and streamed to the browser via KasmVNC — fronted by Traefik
+    webtop images and streamed to the browser via Selkies — fronted by Traefik
     with per-workspace network isolation.
   </p>
   <p>
     <img src="https://img.shields.io/badge/license-GPLv3-blue.svg" alt="License: GPLv3" />
     <img src="https://img.shields.io/badge/backend-FastAPI%20%C2%B7%20Python%203.12-009688.svg" alt="Backend: FastAPI / Python 3.12" />
     <img src="https://img.shields.io/badge/frontend-Vue%203%20%C2%B7%20TypeScript-42b883.svg" alt="Frontend: Vue 3 / TypeScript" />
-    <img src="https://img.shields.io/badge/stream-KasmVNC-ff2e88.svg" alt="Streaming: KasmVNC" />
+    <img src="https://img.shields.io/badge/stream-Selkies-ff2e88.svg" alt="Streaming: Selkies" />
   </p>
 </div>
 
@@ -139,7 +139,7 @@ CI runs lint, both test suites, a frontend build, and a Docker image build (see 
 
 Cove is glue around excellent open-source projects — all credit to their authors and maintainers:
 
-- **[LinuxServer.io](https://www.linuxserver.io/)** ([images](https://docs.linuxserver.io/)) — the webtop/desktop & browser container images, the `universal-package-install` Docker mod, and [proot-apps](https://github.com/linuxserver/proot-apps). Workspaces stream via **[KasmVNC](https://github.com/kasmtech/KasmVNC)** (Kasm Technologies) and **[Selkies](https://github.com/selkies-project/selkies)**.
+- **[LinuxServer.io](https://www.linuxserver.io/)** ([images](https://docs.linuxserver.io/)) — the webtop/desktop & browser container images, the `universal-package-install` Docker mod, and [proot-apps](https://github.com/linuxserver/proot-apps). Workspaces stream via **[Selkies](https://github.com/selkies-project/selkies)** (the LinuxServer images Cove ships are all Selkies-based; **[KasmVNC](https://github.com/kasmtech/KasmVNC)** images also work).
 - **[Tailscale](https://tailscale.com/)** ([tailscale/tailscale](https://github.com/tailscale/tailscale)) — the per-workspace tailnet routing sidecar.
 - **[Gluetun](https://github.com/qdm12/gluetun)** by Quentin McGaw ([@qdm12](https://github.com/qdm12)) — the per-workspace VPN (OpenVPN/WireGuard) sidecar.
 - **[Traefik](https://traefik.io/)** (Traefik Labs) — reverse proxy, ForwardAuth, and ACME/Let's Encrypt TLS.
