@@ -28,7 +28,7 @@ browsers (Chromium, Brave, Firefox) **on demand** — then open them in any brow
 tab, with no client to install. It's built for home labs: simple to run, low
 overhead, multi-user.
 
-**[Quick start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [Setup guide](SETUP.md) · [Architecture deep-dive](ARCH.md)**
+**[Quick start](#quick-start) · [Features](#features) · [Documentation](docs/) · [Architecture deep-dive](ARCH.md)**
 
 ## Screenshots
 

@@ -1,5 +1,10 @@
 # Cove — Setup & Installation
 
+> 📚 **The full documentation now lives in [`docs/`](docs/)** — see
+> [Installation](docs/installation.md), [Configuration](docs/configuration.md),
+> and [Deployment & HTTPS](docs/deployment.md). This page remains as a concise
+> single-file setup reference.
+
 Cove runs as a small Docker Compose stack: **Traefik** (reverse proxy), a **docker-socket-proxy** (filtered Docker API), and the **cove** backend/SPA. Workspace containers are launched on demand on their own isolated networks.
 
 ## 1. Requirements
