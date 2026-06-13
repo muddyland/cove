@@ -1,0 +1,28 @@
+# README/docs assets — never part of the runtime image.
+screenshots/
+
+# VCS + CI metadata
+.git/
+.gitignore
+.gitlab-ci.yml
+
+# Local runtime state (DB, workspace storage, staged scripts/keys)
+data/
+
+# Dependencies / build output regenerated inside the image
+frontend/node_modules/
+frontend/dist/
+
+# Python virtualenvs and caches
+.venv/
+backend/.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Local env / editor files
+.env
+*.env.local
+.vscode/
+.idea/
