@@ -112,7 +112,7 @@ def upload_file(
                 if total > max_bytes:
                     # Abort: stop reading, drop the partial file, and reject.
                     raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                         detail=f"File exceeds maximum upload size of {settings.max_upload_mb} MiB",
                     )
                 out.write(chunk)
