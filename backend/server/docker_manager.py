@@ -41,6 +41,7 @@ _HELPER_SCRIPTS = (
     "launch-url.sh",
     "install-ssh-key.sh",
     "install-username.sh",
+    "install-cove-theme.sh",
 )
 
 
@@ -751,6 +752,7 @@ class DockerManager:
             self._apply_proot_apps(env, volumes, ws.proot_apps)
             self._apply_appimages(env, volumes, ws.appimages)
             self._apply_ssh_key(ws, volumes)
+            self._apply_cove_theme(volumes)
 
             labels = self._build_traefik_labels(ws, image, net_name)
 
@@ -1614,6 +1616,20 @@ class DockerManager:
         volumes[key_dir] = {"bind": "/cove/ssh-key", "mode": "ro"}
         volumes[_helper_script_path("install-ssh-key.sh")] = {
             "bind": "/custom-cont-init.d/96-install-ssh-key.sh",
+            "mode": "ro",
+        }
+
+    @staticmethod
+    def _apply_cove_theme(volumes: dict) -> None:
+        """Restyle the in-stream Selkies dashboard/menu with Cove's cyberpunk theme.
+
+        Mounts an init script that appends Cove's neon palette over the Selkies
+        dashboard's CSS variables. Mounted unconditionally: the script self-guards
+        on the dashboard files existing, so it's a harmless no-op on any
+        non-Selkies image. Mutates ``volumes`` in place.
+        """
+        volumes[_helper_script_path("install-cove-theme.sh")] = {
+            "bind": "/custom-cont-init.d/50-cove-theme.sh",
             "mode": "ro",
         }
 
