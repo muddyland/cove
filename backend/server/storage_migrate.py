@@ -49,9 +49,15 @@ _MIGRATION_EXCLUDE_TOP = {"proot-apps"}
 
 def export_tar_stream(src_dir: Path) -> Iterator[bytes]:
     """Yield gzip-compressed tar chunks of ``src_dir`` (symlinks preserved),
-    skipping regeneratable top-level entries (see ``_MIGRATION_EXCLUDE_TOP``)."""
+    skipping regeneratable top-level entries (see ``_MIGRATION_EXCLUDE_TOP``).
+
+    Compression level 1, NOT tarfile's default of 9: a workspace home is mostly
+    incompressible binaries/caches, where level 9 burns minutes of CPU for almost
+    no size win (a 7GB home took >5min to compress). Level 1 produces the stream
+    ~5-10x faster, so the transfer finishes before the cross-segment link's
+    connection limit drops it (the slow producer was holding it open → HTTP 499)."""
     sink = _ChunkSink()
-    tar = tarfile.open(fileobj=sink, mode="w|gz")
+    tar = tarfile.open(fileobj=sink, mode="w|gz", compresslevel=1)
     try:
         for item in sorted(src_dir.rglob("*")):
             rel = item.relative_to(src_dir)
