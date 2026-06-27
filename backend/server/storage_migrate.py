@@ -7,6 +7,7 @@ re-staged per launch on the destination, so they are never part of the payload.
 """
 
 import logging
+import os
 import tarfile
 from pathlib import Path
 from typing import BinaryIO, Iterator
@@ -73,3 +74,31 @@ def import_tar(dst_dir: Path, fileobj: BinaryIO) -> None:
     dst_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=fileobj, mode="r|gz") as tar:
         tar.extractall(dst_dir, filter=_tolerant_data_filter)
+    _normalize_ownership(dst_dir)
+
+
+def _normalize_ownership(root: Path) -> None:
+    """Chown the imported tree to the workspace user (PUID/PGID).
+
+    The tar preserves the source's uids, which on a webtop home include
+    root-owned subdirectories (e.g. ``.config/pulse``, ``.cache``) created by
+    root-run processes. The destination webtop runs as PUID (1000), and those
+    root-owned dirs break it — pulseaudio's secure-dir check fails on a root-owned
+    ``.config/pulse``, so it never starts and the Selkies stream hangs. Normalising
+    to PUID:PGID makes a migrated home behave like a freshly-created one.
+    Best-effort: a no-op when not running as root (chown raises)."""
+    from server.config import get_settings
+
+    settings = get_settings()
+    uid, gid = settings.workspace_puid, settings.workspace_pgid
+    try:
+        os.chown(root, uid, gid, follow_symlinks=False)
+    except OSError as exc:
+        logger.warning("import: could not chown %s (not root?): %s", root, exc)
+        return
+    for parent, dirs, files in os.walk(root):
+        for name in dirs + files:
+            try:
+                os.chown(os.path.join(parent, name), uid, gid, follow_symlinks=False)
+            except OSError:
+                pass
