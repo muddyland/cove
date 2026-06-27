@@ -12,6 +12,8 @@ import logging
 import tempfile
 from pathlib import Path
 
+import httpx
+
 from server import storage_local, storage_migrate
 from server.config import get_settings
 from server.db import SessionLocal
@@ -19,6 +21,12 @@ from server.docker_manager import zone_agent_client
 from server.models import Workspace, Zone
 
 logger = logging.getLogger(__name__)
+
+# A migration streams a whole /config tar (potentially gigabytes) and waits for
+# the agent to extract it before responding. httpx's 5s default would time out on
+# any non-trivial workspace, so use a short connect with long per-operation
+# read/write windows for the transfer.
+_MIGRATE_TIMEOUT = httpx.Timeout(connect=15.0, read=900.0, write=900.0, pool=15.0)
 
 
 def _cp_storage_root() -> Path:
@@ -39,7 +47,7 @@ def _zone(db, zone_id: int) -> Zone:
 
 
 def _push_to_remote(db, zone_id: int, username: str, ws_name: str, byte_iter) -> None:
-    with zone_agent_client(_zone(db, zone_id)) as c:
+    with zone_agent_client(_zone(db, zone_id), timeout=_MIGRATE_TIMEOUT) as c:
         resp = c.post(
             "/agent/migrate/import",
             params={"username": username, "ws_name": ws_name},
@@ -68,13 +76,13 @@ def _relay(db, src_zone: int, dst_zone: int, username: str, ws_name: str) -> Non
         _push_to_remote(db, dst_zone, username, ws_name, gen)
     elif dst_zone == 0:
         # Remote source -> local dest.
-        with zone_agent_client(_zone(db, src_zone)) as c:
+        with zone_agent_client(_zone(db, src_zone), timeout=_MIGRATE_TIMEOUT) as c:
             with c.stream("GET", "/agent/migrate/export", params=params) as r:
                 r.raise_for_status()
                 _import_local(username, ws_name, r.iter_bytes())
     else:
         # Remote -> remote, relayed through the control plane.
-        with zone_agent_client(_zone(db, src_zone)) as cs:
+        with zone_agent_client(_zone(db, src_zone), timeout=_MIGRATE_TIMEOUT) as cs:
             with cs.stream("GET", "/agent/migrate/export", params=params) as r:
                 r.raise_for_status()
                 _push_to_remote(db, dst_zone, username, ws_name, r.iter_bytes())
@@ -85,7 +93,7 @@ def _delete_source(db, src_zone: int, username: str, ws_name: str) -> None:
     if src_zone == 0:
         storage_local.delete(_local_user_base(username), dirname)
     else:
-        with zone_agent_client(_zone(db, src_zone)) as c:
+        with zone_agent_client(_zone(db, src_zone), timeout=_MIGRATE_TIMEOUT) as c:
             c.delete("/agent/files", params={"username": username, "path": dirname})
 
 
