@@ -1,5 +1,5 @@
 <template>
-  <div class="card" :class="{ interactive: ws.status === 'running' }" @click="open">
+  <div class="card" :class="{ interactive: ws.status === 'running', 'menu-open': actionsOpen }" @click="open">
     <div class="card-header">
       <div class="card-title">{{ ws.name }}</div>
       <div class="card-header-right">
@@ -260,6 +260,8 @@ async function handleRemove() {
   position: relative;
   overflow: hidden;
 }
+/* Let the Actions dropdown escape the card's clip (and sit above neighbours). */
+.card.menu-open { overflow: visible; z-index: 10; }
 /* Corner accent */
 .card::before {
   content: '';
