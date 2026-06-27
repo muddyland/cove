@@ -43,12 +43,36 @@
         </nav>
 
         <div class="nav-right">
-          <RouterLink to="/app/preferences" class="user-chip" title="Preferences">
-            <UserRound class="nav-icon" :size="14" />
-            <span class="username">{{ auth.user?.username }}</span>
-            <span v-if="auth.user?.is_admin" class="admin-tag">ADMIN</span>
+          <RouterLink
+            to="/app/docs"
+            class="icon-link"
+            :class="{ active: $route.path.startsWith('/app/docs') }"
+            title="Documentation"
+          >
+            <HelpCircle :size="18" />
           </RouterLink>
-          <button class="logout-btn" @click="handleLogout"><LogOut class="nav-icon" :size="14" /> EXIT</button>
+
+          <div ref="userDropdown" class="user-dropdown" :class="{ open: userOpen }">
+            <button
+              type="button"
+              class="user-chip"
+              :aria-expanded="userOpen"
+              @click="userOpen = !userOpen"
+            >
+              <UserRound class="nav-icon" :size="14" />
+              <span class="username">{{ auth.user?.username }}</span>
+              <span v-if="auth.user?.is_admin" class="admin-tag">ADMIN</span>
+              <ChevronDown class="chevron" :size="13" />
+            </button>
+            <div v-show="userOpen" class="user-menu">
+              <RouterLink to="/app/preferences" class="user-menu-item">
+                <Settings class="nav-icon" :size="15" /> Settings
+              </RouterLink>
+              <button type="button" class="user-menu-item danger" @click="handleLogout">
+                <LogOut class="nav-icon" :size="15" /> Exit
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -65,7 +89,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
-  ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X,
+  ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -84,16 +108,18 @@ const adminItems = [
 const mobileOpen = ref(false)
 const adminOpen = ref(false)
 const adminDropdown = ref<HTMLElement | null>(null)
+const userOpen = ref(false)
+const userDropdown = ref<HTMLElement | null>(null)
 const isAdminRoute = computed(() => route.path.startsWith('/app/admin'))
 
-// Collapse the mobile drawer + admin dropdown whenever navigation happens.
-watch(() => route.path, () => { mobileOpen.value = false; adminOpen.value = false })
+// Collapse the mobile drawer + dropdowns whenever navigation happens.
+watch(() => route.path, () => { mobileOpen.value = false; adminOpen.value = false; userOpen.value = false })
 
-// Close the admin dropdown on an outside click (desktop floating menu).
+// Close the floating dropdowns on an outside click (desktop).
 function onDocClick(e: MouseEvent) {
-  if (adminOpen.value && adminDropdown.value && !adminDropdown.value.contains(e.target as Node)) {
-    adminOpen.value = false
-  }
+  const t = e.target as Node
+  if (adminOpen.value && adminDropdown.value && !adminDropdown.value.contains(t)) adminOpen.value = false
+  if (userOpen.value && userDropdown.value && !userDropdown.value.contains(t)) userOpen.value = false
 }
 onMounted(() => document.addEventListener('click', onDocClick))
 onUnmounted(() => document.removeEventListener('click', onDocClick))
@@ -263,21 +289,80 @@ async function handleLogout() {
   margin-left: auto;
 }
 
+/* ── Docs ? icon ─────────────────────────────────────────────────────────── */
+.icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  transition: all 0.15s;
+}
+.icon-link:hover { color: var(--accent); border-color: var(--accent); }
+.icon-link.active { color: var(--accent); border-color: var(--accent); box-shadow: var(--glow-sm); }
+
+/* ── User dropdown ───────────────────────────────────────────────────────── */
+.user-dropdown { position: relative; }
 .user-chip {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 4px 10px;
+  padding: 5px 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12px;
-  text-decoration: none;
+  font-family: inherit;
+  color: inherit;
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .user-chip:hover { border-color: var(--accent); }
-.user-chip.router-link-active { border-color: var(--accent); box-shadow: var(--glow-sm); }
+.user-dropdown.open .user-chip { border-color: var(--accent); box-shadow: var(--glow-sm); }
+.user-chip .chevron { transition: transform 0.15s; opacity: 0.7; margin-left: 1px; }
+.user-dropdown.open .chevron { transform: rotate(180deg); }
+
+.user-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 170px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--glow-sm), var(--shadow);
+  padding: 5px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: all 0.15s;
+}
+.user-menu-item:hover { color: var(--text); background: var(--accent-dim); }
+.user-menu-item.danger { color: var(--text-muted); }
+.user-menu-item.danger:hover { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
 .user-dot {
   width: 6px;
   height: 6px;
@@ -300,25 +385,11 @@ async function handleLogout() {
   text-shadow: 0 0 6px var(--accent-2);
 }
 
-.logout-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  letter-spacing: 1px;
-  padding: 4px;
-  transition: color 0.15s;
-}
-.logout-btn:hover { color: var(--red); text-shadow: 0 0 8px var(--red); }
-
 .content { flex: 1; overflow-y: auto; padding: 28px; }
 
 /* Shared icon styling — inherit currentColor, no shrink. */
 .nav-icon { flex-shrink: 0; }
 .nav-link.active .nav-icon { filter: drop-shadow(var(--glow-sm)); }
-.logout-btn { display: inline-flex; align-items: center; gap: 5px; }
 
 /* ── Mobile: collapse the nav into a hamburger-toggled drawer ───────────────── */
 @media (max-width: 860px) {
@@ -389,6 +460,20 @@ async function handleLogout() {
     border-top: 1px solid var(--border);
     margin-top: 8px;
   }
+
+  /* User menu expands inline within the drawer instead of floating. */
+  .user-dropdown { width: 100%; }
+  .user-chip { width: 100%; }
+  .user-chip .chevron { margin-left: auto; }
+  .user-menu {
+    position: static;
+    box-shadow: none;
+    border: none;
+    background: var(--surface-2);
+    padding: 0;
+    margin-top: 6px;
+  }
+  .user-menu-item { height: 42px; }
 }
 
 @media (max-width: 640px) {

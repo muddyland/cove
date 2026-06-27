@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
 COPY --from=frontend-build /app/dist ./static
 COPY scripts/ ./scripts/
+# Product docs served by the in-app reader (/api/docs).
+COPY docs/ ./docs/
 
 RUN chmod +x ./scripts/*.sh
 
