@@ -240,20 +240,14 @@ tls:
         certFile: /certs/server.crt
         keyFile: /certs/server.key
   options:
-    cove-mtls:
+    # Named "default" so it applies to EVERY TLS connection without a per-router
+    # reference. A named option (e.g. cove-mtls) can't attach to a host-less
+    # PathPrefix(`/`) router (Traefik: "No domain found in rule"); "default" sidesteps that.
+    default:
       clientAuth:
         clientAuthType: RequireAndVerifyClientCert
         caFiles:
           - /certs/ca.crt
-http:
-  middlewares:
-    # Forward the verified client cert's CN to cove-agent, which pins it to this
-    # zone's control-plane cert (cove-cp-<id>).
-    cove-clientcert:
-      passTLSClientCert:
-        info:
-          subject:
-            commonName: true
 DYN
 
 cat > "$AGENT_DIR/docker-compose.yml" <<'COMPOSE'
@@ -297,6 +291,11 @@ services:
       - traefik.http.middlewares.cove-errors.errors.status=502-504
       - traefik.http.middlewares.cove-errors.errors.service=cove-agent
       - traefik.http.middlewares.cove-errors.errors.query=/__cove_error/{status}
+      # Forward the verified client cert's CN to cove-agent (which pins it to this
+      # zone's cove-cp-<id>). Defined as a DOCKER middleware so the docker-provider
+      # router below can resolve it same-provider — a docker router cannot resolve
+      # an @file middleware, which silently drops it (cove-agent then 403s).
+      - traefik.http.middlewares.cove-clientcert.passtlsclientcert.info.subject.commonname=true
       # Catch-all (lowest priority): the agent API, the error page, AND the
       # policy-filtered Docker proxy all live in cove-agent. Workspace stream
       # routers (created by labels) match by host/longer path and win.
@@ -304,13 +303,10 @@ services:
       - traefik.http.routers.cove-agent.priority=1
       - traefik.http.routers.cove-agent.entrypoints=websecure
       - traefik.http.routers.cove-agent.service=cove-agent
-      - traefik.http.routers.cove-agent.middlewares=cove-clientcert@file
-      # TLS + mTLS option live on the router (not the entrypoint): a host-less
-      # PathPrefix(`/`) router can't take the entrypoint's default TLS option
-      # (Traefik spawns a "conflicted" router without our middleware, so the
-      # client-cert CN is never forwarded and cove-agent 403s every request).
+      - traefik.http.routers.cove-agent.middlewares=cove-clientcert@docker
+      # tls=true uses the global "default" TLS options (mTLS) from the file
+      # provider — no per-router option reference (which a host-less router can't take).
       - traefik.http.routers.cove-agent.tls=true
-      - traefik.http.routers.cove-agent.tls.options=cove-mtls@file
       - traefik.http.services.cove-agent.loadbalancer.server.port=8080
     depends_on: [sockproxy]
   traefik:
