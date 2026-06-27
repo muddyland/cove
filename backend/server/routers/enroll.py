@@ -320,6 +320,11 @@ services:
       - --providers.docker.network=cove-agent
       - --providers.file.filename=/etc/traefik/dynamic.yml
       - --entrypoints.websecure.address=:${PORT}
+      # Migration POSTs a whole /config tar in one long request. Traefik v3 defaults
+      # readTimeout to 60s, which aborts any upload taking longer (the control plane
+      # then sees HTTP 499). 0 = no limit; the only client is the control plane over
+      # mTLS. (WebSocket streams are unaffected — they're hijacked after upgrade.)
+      - --entrypoints.websecure.transport.respondingTimeouts.readTimeout=0
       - --log.level=WARN
     environment:
       # Pin the Docker API version so Traefik's client doesn't fall back to 1.24,
