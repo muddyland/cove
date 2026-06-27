@@ -61,8 +61,15 @@ def _stage_helper_scripts() -> "Path":
     for name in _HELPER_SCRIPTS:
         src = Path(_SCRIPTS_SRC_DIR) / name
         if src.exists():
-            shutil.copyfile(src, dest / name)
-            os.chmod(dest / name, 0o755)
+            target = dest / name
+            # A previous launch may have left an empty DIRECTORY here: the Docker
+            # daemon auto-creates a bind-mount source that doesn't exist yet, which
+            # happens on a remote agent that hadn't staged the scripts. copyfile
+            # can't overwrite a directory, so clear it before writing the script.
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target, ignore_errors=True)
+            shutil.copyfile(src, target)
+            os.chmod(target, 0o755)
     return dest
 
 
