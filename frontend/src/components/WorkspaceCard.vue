@@ -2,10 +2,7 @@
   <div class="card" :class="{ interactive: ws.status === 'running' }" @click="open">
     <div class="card-header">
       <div class="card-title">{{ ws.name }}</div>
-      <div class="card-header-right" @click.stop>
-        <button class="edit-btn" type="button" title="Edit workspace" @click="showEdit = true">
-          <Pencil :size="14" />
-        </button>
+      <div class="card-header-right">
         <StatusBadge :status="ws.status" />
       </div>
     </div>
@@ -55,20 +52,31 @@
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
     <div v-if="vpnLocked" class="vpn-lock-msg"><Lock :size="11" /> VPN in use by another workspace</div>
     <div class="card-actions" @click.stop>
+      <!-- Primary: Connect (running) or Boot (stopped/error). -->
       <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
       <NeonButton
-        v-if="ws.status === 'stopped' || ws.status === 'error'"
+        v-else
         variant="success"
         :loading="acting"
         :disabled="vpnLocked"
         :title="vpnLocked ? 'Another VPN workspace is active — only one VPN connection at a time. Stop it first.' : ''"
         @click="handleStart"
       ><component :is="vpnLocked ? Lock : Power" :size="14" /> BOOT</NeonButton>
-      <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" @click="showClone = true"><CopyPlus :size="14" /> CLONE</NeonButton>
-      <NeonButton v-if="(ws.status === 'stopped' || ws.status === 'error') && zonesStore.hasRemote" variant="secondary" @click="showMigrate = true"><ArrowRightLeft :size="14" /> MIGRATE</NeonButton>
-      <NeonButton v-if="ws.status === 'running'" variant="secondary" @click="showDiag = true"><Activity :size="14" /> LOGS</NeonButton>
-      <NeonButton v-if="ws.status === 'running'" variant="warn" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
-      <NeonButton variant="danger" :loading="removing" @click="openPurge"><Trash2 :size="14" /> PURGE</NeonButton>
+
+      <!-- Everything else lives in the Actions menu. -->
+      <div ref="actionsDd" class="actions-dd" :class="{ open: actionsOpen }">
+        <NeonButton variant="secondary" class="actions-trigger" @click="actionsOpen = !actionsOpen">
+          ACTIONS <ChevronDown :size="12" class="chev" />
+        </NeonButton>
+        <div v-show="actionsOpen" class="actions-menu">
+          <button type="button" class="action-item" @click="act(() => (showEdit = true))"><Pencil :size="14" /> Edit</button>
+          <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(() => (showDiag = true))"><Activity :size="14" /> Logs</button>
+          <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(handleStop)"><Square :size="14" /> Halt</button>
+          <button v-if="isStopped" type="button" class="action-item" @click="act(() => (showClone = true))"><CopyPlus :size="14" /> Clone</button>
+          <button v-if="isStopped && zonesStore.hasRemote" type="button" class="action-item" @click="act(() => (showMigrate = true))"><ArrowRightLeft :size="14" /> Migrate</button>
+          <button type="button" class="action-item danger" @click="act(openPurge)"><Trash2 :size="14" /> Purge</button>
+        </div>
+      </div>
     </div>
   </div>
   <ConfirmModal
@@ -94,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useZonesStore } from '@/stores/zones'
@@ -106,7 +114,7 @@ import EditWorkspaceModal from './EditWorkspaceModal.vue'
 import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
-import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity } from 'lucide-vue-next'
+import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown } from 'lucide-vue-next'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -144,6 +152,23 @@ const showEdit = ref(false)
 const showClone = ref(false)
 const showMigrate = ref(false)
 const showDiag = ref(false)
+
+const isStopped = computed(() => props.ws.status === 'stopped' || props.ws.status === 'error')
+
+// Actions dropdown: run the chosen action and close the menu.
+const actionsOpen = ref(false)
+const actionsDd = ref<HTMLElement | null>(null)
+function act(fn: () => void) {
+  actionsOpen.value = false
+  fn()
+}
+function onDocClick(e: MouseEvent) {
+  if (actionsOpen.value && actionsDd.value && !actionsDd.value.contains(e.target as Node)) {
+    actionsOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('click', onDocClick))
+onUnmounted(() => document.removeEventListener('click', onDocClick))
 
 function hideLogo(e: Event) {
   ;(e.target as HTMLImageElement).style.display = 'none'
@@ -266,26 +291,6 @@ async function handleRemove() {
   white-space: nowrap;
 }
 .card-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.edit-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
-}
-.edit-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  box-shadow: var(--glow-sm);
-}
-
 .card-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .image-name { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); display: inline-flex; align-items: center; gap: 6px; }
 .image-logo { width: 20px; height: 20px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
@@ -377,4 +382,47 @@ async function handleRemove() {
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
+
+/* Actions dropdown */
+.actions-dd { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
+.actions-trigger { width: 100%; }
+.actions-trigger .chev { transition: transform 0.15s; margin-left: 2px; }
+.actions-dd.open .actions-trigger .chev { transform: rotate(180deg); }
+.actions-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);   /* open upward — cards sit in a grid */
+  right: 0;
+  min-width: 168px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--glow-sm), var(--shadow);
+  padding: 5px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: all 0.15s;
+}
+.action-item:hover { color: var(--text); background: var(--accent-dim); }
+.action-item svg { flex-shrink: 0; }
+.action-item.danger { color: var(--red); }
+.action-item.danger:hover { background: color-mix(in srgb, var(--red) 14%, transparent); }
 </style>
