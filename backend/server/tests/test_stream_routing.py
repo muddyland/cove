@@ -97,8 +97,15 @@ def test_traefik_config_routes_remote_workspace(client):
     t = http["serversTransports"][transport]
     assert t["rootCAs"] == [f"/zone-certs/{zid}/ca.crt"]
     assert t["certificates"][0]["certFile"] == f"/zone-certs/{zid}/client.crt"
-    # ForwardAuth (cove-auth) is kept on the central edge.
-    assert "cove-auth@docker" in http["routers"][name]["middlewares"]
+    # ForwardAuth (cove-auth) is kept on the central edge, defined in THIS provider
+    # (not referenced @docker) so the router resolves it even while the Docker
+    # provider reloads — otherwise live WebSockets flicker and drop.
+    mws = http["routers"][name]["middlewares"]
+    assert "cove-auth" in mws and "cove-auth@docker" not in mws
+    assert "cove-errors" in mws
+    assert http["middlewares"]["cove-auth"]["forwardAuth"]["address"].endswith("/api/auth/forward")
+    assert http["middlewares"]["cove-errors"]["errors"]["service"] == "cove-app"
+    assert http["services"]["cove-app"]["loadBalancer"]["servers"][0]["url"] == "http://cove:8080"
 
 
 def test_traefik_config_excludes_local_and_stopped(client):

@@ -29,6 +29,27 @@ def build_dynamic_config(db) -> dict:
         select(Workspace).where(Workspace.status == "running", Workspace.zone_id != 0)
     ).all()
 
+    # Define ForwardAuth + the custom error page IN this (HTTP) provider so the
+    # remote-workspace routers below reference them same-provider. Referencing the
+    # control plane's @docker middlewares instead is flaky: every time the Docker
+    # provider reloads (constant, from container stats polling) there is a window
+    # where the HTTP router can't resolve "cove-auth@docker" and drops — which
+    # disconnects live workspace WebSockets ("flicker, then reconnect").
+    services["cove-app"] = {"loadBalancer": {"servers": [{"url": "http://cove:8080"}]}}
+    middlewares["cove-auth"] = {
+        "forwardAuth": {
+            "address": "http://cove:8080/api/auth/forward",
+            "authResponseHeaders": ["X-Cove-User"],
+        }
+    }
+    middlewares["cove-errors"] = {
+        "errors": {
+            "status": ["502-504"],
+            "service": "cove-app",
+            "query": "/__cove_error/{status}",
+        }
+    }
+
     mount = settings.zone_certs_mount.rstrip("/")
     for ws in running:
         zone = db.get(Zone, ws.zone_id)
@@ -75,7 +96,7 @@ def build_dynamic_config(db) -> dict:
                 "rule": f"Host(`{host}`)",
                 "entryPoints": ["web", "websecure"],
                 "service": name,
-                "middlewares": ["cove-errors@docker", "cove-auth@docker", hdr],
+                "middlewares": ["cove-errors", "cove-auth", hdr],
             }
             if settings.cookie_secure:
                 router["tls"] = {}
@@ -87,7 +108,7 @@ def build_dynamic_config(db) -> dict:
                 "rule": f"PathPrefix(`{prefix}/`)",
                 "entryPoints": ["web", "websecure"],
                 "service": name,
-                "middlewares": ["cove-errors@docker", "cove-auth@docker", hdr, strip],
+                "middlewares": ["cove-errors", "cove-auth", hdr, strip],
             }
         routers[name] = router
 
