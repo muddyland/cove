@@ -303,8 +303,13 @@ def create_app() -> FastAPI:
 
             expected = get_settings().agent_expected_client_cn
             if expected:
-                cn = extract_client_cn(request.headers.get(CLIENT_CERT_INFO_HEADER))
+                raw = request.headers.get(CLIENT_CERT_INFO_HEADER)
+                cn = extract_client_cn(raw)
                 if cn != expected:
+                    logger.warning(
+                        "Rejecting %s %s: client-cert CN %r != expected %r (cert-info header=%r)",
+                        request.method, request.url.path, cn, expected, raw,
+                    )
                     return JSONResponse(
                         status_code=403,
                         content={"detail": "client certificate not authorized for this zone"},
