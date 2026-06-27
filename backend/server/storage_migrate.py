@@ -37,13 +37,26 @@ class _ChunkSink:
         return chunks
 
 
+# Top-level entries regenerated on the destination at launch — left out of the
+# migration payload so it carries only real user data. ``proot-apps`` holds the
+# installed app trees (often many GB: full Chrome/Edge/etc.), which are
+# re-installed from the workspace's PROOT_APPS list by install-proot-apps.sh; one
+# VDI home was 14 GB of proot-apps vs ~8 MB of actual config, and shipping it ran
+# the transfer long enough that the cross-segment connection dropped (HTTP 499).
+_MIGRATION_EXCLUDE_TOP = {"proot-apps"}
+
+
 def export_tar_stream(src_dir: Path) -> Iterator[bytes]:
-    """Yield gzip-compressed tar chunks of ``src_dir`` (symlinks preserved)."""
+    """Yield gzip-compressed tar chunks of ``src_dir`` (symlinks preserved),
+    skipping regeneratable top-level entries (see ``_MIGRATION_EXCLUDE_TOP``)."""
     sink = _ChunkSink()
     tar = tarfile.open(fileobj=sink, mode="w|gz")
     try:
         for item in sorted(src_dir.rglob("*")):
-            tar.add(str(item), arcname=str(item.relative_to(src_dir)), recursive=False)
+            rel = item.relative_to(src_dir)
+            if rel.parts[0] in _MIGRATION_EXCLUDE_TOP:
+                continue
+            tar.add(str(item), arcname=str(rel), recursive=False)
             yield from sink.drain()
     finally:
         tar.close()

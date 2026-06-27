@@ -47,6 +47,23 @@ def test_import_skips_absolute_symlink_junk(tmp_path):
     assert not (dst / "SingletonSocket").is_symlink()  # unsafe member skipped
 
 
+def test_export_excludes_proot_apps(tmp_path):
+    # proot-apps re-install on launch, so they must not bloat the payload (a real
+    # VDI home was 14GB of proot-apps vs ~8MB of config).
+    src = tmp_path / "src"
+    (src / "proot-apps" / "chrome").mkdir(parents=True)
+    (src / "proot-apps" / "chrome" / "blob").write_bytes(b"x" * 4096)
+    (src / ".config").mkdir()
+    (src / ".config" / "settings").write_text("keep")
+
+    data = b"".join(storage_migrate.export_tar_stream(src))
+    dst = tmp_path / "dst"
+    storage_migrate.import_tar(dst, io.BytesIO(data))
+
+    assert (dst / ".config" / "settings").read_text() == "keep"
+    assert not (dst / "proot-apps").exists()  # regeneratable, excluded
+
+
 # ── agent export/import endpoints ──────────────────────────────────────────
 
 def _agent_root():
