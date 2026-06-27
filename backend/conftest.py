@@ -13,8 +13,8 @@ monkeypatches).
 """
 
 import os
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
 
 # ── Environment must be set BEFORE importing any server module ─────────────────
@@ -32,18 +32,19 @@ if str(_BACKEND_ROOT) not in sys.path:
 
 import pytest  # noqa: E402
 
+import server.routers.auth as auth_router  # noqa: E402
+
 # Import server modules only after the env is configured.
 from server.db import SessionLocal, engine  # noqa: E402
-from server.migrations import run_migrations  # noqa: E402
-from server.main import create_app  # noqa: E402
 from server.deps import get_db  # noqa: E402
-import server.routers.auth as auth_router  # noqa: E402
+from server.main import create_app  # noqa: E402
+from server.migrations import run_migrations  # noqa: E402
 
 
 def _reset_database() -> None:
     """Drop and recreate every table so each test starts from a clean slate."""
-    from server.db import Base
     import server.models  # noqa: F401  (ensure models are registered on Base)
+    from server.db import Base
 
     Base.metadata.drop_all(engine)
     run_migrations()

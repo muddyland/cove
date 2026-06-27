@@ -3,9 +3,19 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from server.db import SessionLocal
 from server.docker_manager import DockerManager
 from server.models import User, Workspace, WorkspaceImage
+
+
+@pytest.fixture(autouse=True)
+def _stub_docker_from_env(monkeypatch):
+    """DockerManager(0).__init__ calls docker.from_env(), which connects to the
+    daemon for version negotiation. Stub it so these tests run with no Docker
+    socket (CI); each test then overrides ._client with its own mock anyway."""
+    monkeypatch.setattr("docker.from_env", lambda *a, **k: MagicMock())
 
 
 def _seed_ws(zone_id: int = 0) -> int:
