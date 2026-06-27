@@ -269,7 +269,8 @@ services:
     image: tecnativa/docker-socket-proxy
     container_name: cove-agent-sockproxy-ro
     restart: unless-stopped
-    environment: [CONTAINERS=1, NETWORKS=1]
+    # Read-only set Traefik's Docker provider needs (matches the control plane).
+    environment: [CONTAINERS=1, NETWORKS=1, EVENTS=1, INFO=1, VERSION=1, PING=1]
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
     networks: [cove-agent]
   cove-agent:
@@ -320,6 +321,10 @@ services:
       - --entrypoints.websecure.http.tls=true
       - --entrypoints.websecure.http.tls.options=cove-mtls@file
       - --log.level=WARN
+    environment:
+      # Pin the Docker API version so Traefik's client doesn't fall back to 1.24,
+      # which modern daemons reject ("client version 1.24 is too old").
+      - DOCKER_API_VERSION=1.41
     ports: ["${PORT}:${PORT}"]
     volumes:
       - "${CERT_DIR}:/certs:ro"
