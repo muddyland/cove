@@ -102,6 +102,18 @@ async def lifespan(app: FastAPI):
         # Agent mode: no catalog seeding, no multi-zone status monitor (the agent
         # has no workspace DB of its own — the control plane reconciles state).
         logger.info("Starting in agent mode — control-plane features disabled.")
+        # The control plane builds workspace bind-mount sources at
+        # <storage>/.cove-scripts/<name> (the webtop custom-init scripts), which the
+        # AGENT's Docker daemon resolves on the AGENT's filesystem. Stage them here
+        # so they exist locally — otherwise the daemon creates empty directories and
+        # the webtop's custom-init fails (breaking the stream). Same Cove image as
+        # the control plane, so the staged scripts match.
+        try:
+            from server.docker_manager import _stage_helper_scripts
+
+            _stage_helper_scripts()
+        except Exception as exc:
+            logger.warning("Agent: failed to stage helper scripts: %s", exc)
         yield
         return
     if not settings.cookie_secure:
