@@ -13,6 +13,26 @@ class Settings(BaseSettings):
     secret_key_path: Optional[Path] = None  # defaults to data_dir/secret.key
     jwt_algorithm: str = "HS256"
 
+    # When true, this Cove process runs as a zone agent (no SPA/login/admin; only
+    # the mTLS Docker exposure + agent API). Set via COVE_AGENT_MODE on agents.
+    agent_mode: bool = False
+
+    # Dedicated signing key for per-workspace stream tokens, kept separate from
+    # the app secret (which signs session/refresh/access tokens). This is the ONLY
+    # signing key shared with zone agents (provisioned at enrollment) so an agent's
+    # Traefik can verify stream tokens locally without ever holding the app secret —
+    # minting a stream token only grants access to a workspace the agent already
+    # runs, so it is a bounded capability. On the control plane it is generated and
+    # persisted as a file (like secret.key); on an agent it is provided via
+    # COVE_STREAM_SIGNING_KEY. (empty -> None)
+    stream_signing_key: Optional[str] = None
+    # Path, inside the Traefik container, where the control plane's per-zone mTLS
+    # client certs are mounted (used by the HTTP dynamic-config serversTransports).
+    zone_certs_mount: str = "/zone-certs"
+    # Container image a zone agent runs (same Cove image, started with
+    # COVE_AGENT_MODE=1). Baked into the generated install script.
+    zone_agent_image: str = "cove:local"
+
     # Token lifetimes
     access_token_minutes: int = 30
     refresh_token_days: int = 7
@@ -20,6 +40,10 @@ class Settings(BaseSettings):
     # scoped to a single workspace origin; this is how long a stream stays
     # authenticated before the SPA must mint a fresh token.
     stream_token_minutes: int = 480
+    # How long a zone enrollment token stays valid. Generous (default 1h) because
+    # a fresh node may need to install Docker before it can enroll; single-use, so
+    # the window only bounds how long a leaked token is replayable.
+    zone_enroll_token_minutes: int = 60
     # Lifetime of the one-time bootstrap token carried in the ``?__cove_t`` URL.
     # Kept short because it rides in a URL (logs/Referer/history): it is consumed
     # exactly once to set the stream cookie, then useless. Distinct from the
@@ -73,6 +97,7 @@ class Settings(BaseSettings):
         "workspace_domain",
         "app_origin",
         "forward_auth_host",
+        "stream_signing_key",
         mode="before",
     )
     @classmethod
@@ -112,6 +137,15 @@ class Settings(BaseSettings):
     def secret_key_file(self) -> Path:
         return self.secret_key_path or (self.data_dir / "secret.key")
 
+    # Private-CA material for zone mTLS (generated on first use, like secret.key).
+    @property
+    def ca_cert_file(self) -> Path:
+        return self.data_dir / "ca" / "ca.crt"
+
+    @property
+    def ca_key_file(self) -> Path:
+        return self.data_dir / "ca" / "ca.key"
+
     def get_secret_key(self) -> str:
         import os
 
@@ -123,6 +157,24 @@ class Settings(BaseSettings):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(key)
         # Restrict to owner read/write only — the secret key signs all tokens.
+        os.chmod(path, 0o600)
+        return key
+
+    def get_stream_signing_key(self) -> str:
+        """The stream-token signing key. On an agent this is provided via
+        COVE_STREAM_SIGNING_KEY; on the control plane it is generated/persisted
+        as ``data_dir/stream.key`` (0600), mirroring get_secret_key."""
+        if self.stream_signing_key:
+            return self.stream_signing_key
+        import os
+
+        path = self.data_dir / "stream.key"
+        if path.exists():
+            return path.read_text().strip()
+        import secrets
+        key = secrets.token_hex(32)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(key)
         os.chmod(path, 0o600)
         return key
 

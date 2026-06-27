@@ -25,6 +25,7 @@ from server.security import (
     create_access_token,
     create_refresh_token,
     create_stream_token,
+    decode_stream_token,
     decode_token,
     hash_password,
     sign_state,
@@ -398,7 +399,7 @@ def _resolve_stream_user(db: Session, token: str, public_id: str, *, kind: str =
     ``kind`` is the required ``type`` claim: "stream" for the cookie token,
     "stream_bootstrap" for the one-time ``?__cove_t`` URL token.
     """
-    payload = decode_token(token)
+    payload = decode_stream_token(token)
     if not payload or payload.get("type") != kind:
         return None
     if payload.get("ws") != public_id:
@@ -473,7 +474,7 @@ def _forward_auth_subdomain(request, db, settings, public_id: str, uri: str | No
 
     token = _stream_token_from_uri(uri)
     if token:
-        payload = decode_token(token)
+        payload = decode_stream_token(token)
         user = _resolve_stream_user(db, token, public_id, kind="stream_bootstrap")
         # Single-use: consume the jti so a leaked ?__cove_t URL can't be replayed.
         if (

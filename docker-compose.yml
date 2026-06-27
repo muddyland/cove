@@ -53,10 +53,19 @@ services:
       - --providers.docker.endpoint=tcp://docker-socket-proxy-ro:2375
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=cove-net
+      # HTTP dynamic provider: routers/services for workspaces running on remote
+      # zones (the Docker provider only sees local containers). The control plane
+      # serves this, pointing each service at the agent's Traefik over mTLS.
+      - --providers.http.endpoint=http://cove:8080/api/internal/traefik-config
+      - --providers.http.pollInterval=10s
       - --entrypoints.web.address=:80
       - --log.level=WARN
     ports:
       - "${COVE_HTTP_PORT:-80}:80"
+    volumes:
+      # The per-zone mTLS client certs the HTTP-provider serversTransports
+      # reference (staged by the control plane under its data dir).
+      - ${COVE_DATA_DIR_HOST:-./data}/zone-certs:/zone-certs:ro
     networks:
       - cove-net
     environment:

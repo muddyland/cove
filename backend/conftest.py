@@ -100,7 +100,7 @@ def client(monkeypatch, fake_docker_manager):
     # from server.docker_manager, so patching it there covers every router.
     monkeypatch.setattr(
         "server.docker_manager.get_docker_manager",
-        lambda: fake_docker_manager,
+        lambda zone_id=0: fake_docker_manager,
     )
 
     from fastapi.testclient import TestClient

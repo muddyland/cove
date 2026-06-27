@@ -120,7 +120,7 @@ def delete_user(user_id: int, admin: AdminUser, db: DbSession, bg: BackgroundTas
     ).all()
     from server.docker_manager import get_docker_manager
     for ws in running:
-        bg.add_task(get_docker_manager().remove_workspace, ws.id)
+        bg.add_task(get_docker_manager(ws.zone_id).remove_workspace, ws.id)
     username = target.username
     db.delete(target)
     db.commit()
@@ -144,7 +144,7 @@ def kill_session(ws_id: int, admin: AdminUser, db: DbSession, bg: BackgroundTask
         raise HTTPException(status_code=404, detail="Workspace not found")
     _audit(db, "admin.session.kill", detail=ws.public_id, user=admin, request=request)
     from server.docker_manager import get_docker_manager
-    bg.add_task(get_docker_manager().remove_workspace, ws.id)
+    bg.add_task(get_docker_manager(ws.zone_id).remove_workspace, ws.id)
 
 
 @router.get("/audit", response_model=list[AuditOut])

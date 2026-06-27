@@ -6,18 +6,18 @@ import shutil
 import socket
 import time
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 from urllib.parse import urlparse
 
 import docker
 import docker.errors
+import docker.tls
 from sqlalchemy import select
 
 from server.config import get_settings
 from server.db import SessionLocal
-from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage
+from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
 from server.security import decrypt_secret
 from server.settings_store import (
     get_gluetun_image,
@@ -417,20 +417,111 @@ def _parse_stats(raw: dict) -> dict | None:
     }
 
 
+def _zone_cert_dir(zone_id: int) -> Path:
+    settings = get_settings()
+    return Path(settings.data_dir) / "zone-certs" / str(zone_id)
+
+
+def _zone_has_mtls(zone) -> bool:
+    """True once a zone carries the mTLS material to dial it (CA + client cert +
+    encrypted client key)."""
+    return bool(zone.ca_cert_pem and zone.client_cert_pem and zone.client_key_enc)
+
+
+def stage_zone_certs(zone) -> tuple[str, str, str]:
+    """Materialize a zone's mTLS client cert/key + CA to 0600 files and return
+    ``(client_cert_path, client_key_path, ca_cert_path)``.
+
+    docker-py's TLSConfig (and httpx, for the file/migration proxy) want file
+    paths, not in-memory PEMs. The client private key is decrypted at runtime —
+    the host is trusted; the DB copy stays encrypted at rest. Files are owner-only.
+    """
+    d = _zone_cert_dir(zone.id)
+    d.mkdir(parents=True, exist_ok=True)
+    ca = d / "ca.crt"
+    cert = d / "client.crt"
+    key = d / "client.key"
+    ca.write_text(zone.ca_cert_pem)
+    cert.write_text(zone.client_cert_pem)
+    key.write_text(decrypt_secret(zone.client_key_enc))
+    for p in (ca, cert, key):
+        os.chmod(p, 0o600)
+    return str(cert), str(key), str(ca)
+
+
+def zone_agent_base_url(zone) -> str:
+    """The base URL of a zone agent's mTLS API (served by the agent's Traefik on
+    its stream port, alongside the workspace streams)."""
+    return f"https://{zone.endpoint_host}:{zone.stream_port}"
+
+
+def zone_agent_client(zone, **kwargs):
+    """An httpx client that dials a zone agent's API with the control plane's
+    per-zone mTLS client cert (verified against the zone's CA). Used by the file
+    browser proxy and workspace migration relay."""
+    import httpx
+
+    cert, key, ca = stage_zone_certs(zone)
+    return httpx.Client(
+        base_url=zone_agent_base_url(zone), cert=(cert, key), verify=ca, **kwargs
+    )
+
+
 class DockerManager:
-    def __init__(self):
+    def __init__(self, zone_id: int = 0):
+        # One manager per zone (cached by get_docker_manager). zone_id 0 is the
+        # local control-plane daemon; any other id is a remote agent node the
+        # control plane dials. All ~30 self._client call sites below are
+        # daemon-agnostic, so pointing the client at a zone's endpoint runs the
+        # entire workspace lifecycle on that node unchanged.
+        self.zone_id = zone_id
         # Honor DOCKER_API_VERSION so the client skips version negotiation through
         # the socket proxy (which can otherwise fall back to an API version the
         # daemon rejects). Falls back to default behavior when unset.
         api_version = os.environ.get("DOCKER_API_VERSION")
-        self._client = docker.from_env(version=api_version) if api_version else docker.from_env()
+        if zone_id == 0:
+            self._client = docker.from_env(version=api_version) if api_version else docker.from_env()
+        else:
+            self._client = self._build_zone_client(zone_id, api_version)
         self._lock = Lock()
         # Image refs with a manual pull currently in flight (for the Images UI).
         self._pulling: set[str] = set()
         self._pulling_lock = Lock()
 
+    def _build_zone_client(self, zone_id: int, api_version: str | None) -> "docker.DockerClient":
+        """Build a Docker client pointed at a remote zone's endpoint.
+
+        When the zone has mTLS material (CA + client cert/key, populated by
+        enrollment) the connection is HTTPS with a client cert verified against
+        the CA. Otherwise it falls back to plain TCP (Phase 1 / manual testing).
+        """
+        db = self._get_db()
+        try:
+            zone = db.get(Zone, zone_id)
+            if zone is None or not zone.endpoint_host:
+                raise RuntimeError(f"zone {zone_id} has no endpoint configured")
+            host = zone.endpoint_host
+            port = zone.endpoint_port
+            tls = None
+            if _zone_has_mtls(zone):
+                cert, key, ca = stage_zone_certs(zone)
+                tls = docker.tls.TLSConfig(client_cert=(cert, key), ca_cert=ca, verify=True)
+        finally:
+            db.close()
+        scheme = "https" if tls else "tcp"
+        kwargs: dict = {"base_url": f"{scheme}://{host}:{port}"}
+        if tls is not None:
+            kwargs["tls"] = tls
+        if api_version:
+            kwargs["version"] = api_version
+        return docker.DockerClient(**kwargs)
+
     def _get_db(self):
         return SessionLocal()
+
+    def ping(self) -> bool:
+        """Liveness check for this zone's daemon. Raises if unreachable."""
+        return self._client.ping()
 
     def _ensure_named_volume(self, volume_name: str) -> None:
         try:
@@ -1136,19 +1227,26 @@ class DockerManager:
     # workspace is auto-recovered once its GUI finally answers (see sync below).
     _PROVISION_DEADLINE_SECONDS = 3600
 
-    def sync_workspace_statuses(self) -> None:
-        """Reconcile workspace status with reality.
+    def sync_workspace_statuses(self, zone_id: int | None = None) -> None:
+        """Reconcile workspace status with reality, for one zone's workspaces.
 
         - running workspaces whose container has died -> error.
         - creating workspaces whose GUI now answers -> running (self-healing
           promotion, so slow installs that outlast the launch-time probe still
           come up); expired ones -> error.
+
+        Only workspaces pinned to this manager's zone are reconciled — querying a
+        remote workspace's container against the local daemon would wrongly mark
+        it gone. ``zone_id`` defaults to this manager's own zone.
         """
+        zone = self.zone_id if zone_id is None else zone_id
         db = self._get_db()
         try:
             from sqlalchemy import select
             running = db.scalars(
-                select(Workspace).where(Workspace.status == "running")
+                select(Workspace).where(
+                    Workspace.status == "running", Workspace.zone_id == zone
+                )
             ).all()
             for ws in running:
                 if not ws.container_id:
@@ -1179,7 +1277,10 @@ class DockerManager:
             # recover ones we previously marked "error" (e.g. a very large install
             # that outran the deadline but did finish and is now serving).
             pending = db.scalars(
-                select(Workspace).where(Workspace.status.in_(("creating", "error")))
+                select(Workspace).where(
+                    Workspace.status.in_(("creating", "error")),
+                    Workspace.zone_id == zone,
+                )
             ).all()
             now = datetime.now(timezone.utc)
             for ws in pending:
@@ -1226,8 +1327,10 @@ class DockerManager:
         finally:
             db.close()
 
-    def enforce_runtime_limits(self) -> None:
-        """Auto-stop running workspaces older than the configured max runtime."""
+    def enforce_runtime_limits(self, zone_id: int | None = None) -> None:
+        """Auto-stop this zone's running workspaces older than the configured
+        max runtime."""
+        zone = self.zone_id if zone_id is None else zone_id
         db = self._get_db()
         try:
             from sqlalchemy import select
@@ -1237,7 +1340,9 @@ class DockerManager:
                 return
             cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             running = db.scalars(
-                select(Workspace).where(Workspace.status == "running")
+                select(Workspace).where(
+                    Workspace.status == "running", Workspace.zone_id == zone
+                )
             ).all()
             expired_ids = []
             for ws in running:
@@ -1695,6 +1800,30 @@ class DockerManager:
         return base
 
 
-@lru_cache
-def get_docker_manager() -> DockerManager:
-    return DockerManager()
+_managers: dict[int, DockerManager] = {}
+_managers_lock = Lock()
+
+
+def get_docker_manager(zone_id: int = 0) -> DockerManager:
+    """Return the cached DockerManager for a zone (one client per zone).
+
+    zone_id 0 is the local control-plane daemon. Callers tied to a workspace pass
+    ``ws.zone_id`` so every container operation lands on the node the workspace is
+    pinned to.
+    """
+    with _managers_lock:
+        mgr = _managers.get(zone_id)
+        if mgr is None:
+            mgr = DockerManager(zone_id=zone_id)
+            _managers[zone_id] = mgr
+        return mgr
+
+
+def reset_docker_manager(zone_id: int | None = None) -> None:
+    """Drop cached manager(s) so the next call rebuilds the client — used when a
+    zone's endpoint or mTLS certs change (re-enrollment, rotation)."""
+    with _managers_lock:
+        if zone_id is None:
+            _managers.clear()
+        else:
+            _managers.pop(zone_id, None)

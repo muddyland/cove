@@ -1,14 +1,14 @@
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
+from server import storage_local
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
-from server.models import User
+from server.models import User, Zone
 from server.net import client_ip
-from server.schemas import FileEntry, FileListing
+from server.schemas import FileListing
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -28,55 +28,79 @@ def _user_base(user: User) -> Path:
     return base
 
 
-def _resolve(base: Path, rel: str) -> Path:
-    """Resolve a user-supplied relative path against base, rejecting traversal."""
-    rel = (rel or "").lstrip("/")
-    candidate = (base / rel).resolve()
-    if candidate != base and base not in candidate.parents:
-        raise HTTPException(status_code=400, detail="Invalid path")
-    return candidate
+def _zone_or_404(db, zone_id: int) -> Zone:
+    zone = db.get(Zone, zone_id)
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    return zone
+
+
+def _agent_client(db, zone_id: int):
+    """An mTLS client for a remote zone's agent file API, or None for the local
+    zone (zone 0). Raises 409 if the remote zone isn't reachable over mTLS yet."""
+    if zone_id == 0:
+        return None
+    from server.docker_manager import _zone_has_mtls, zone_agent_client
+
+    zone = _zone_or_404(db, zone_id)
+    if not _zone_has_mtls(zone):
+        raise HTTPException(status_code=409, detail="Zone is not enrolled for mTLS")
+    return zone_agent_client(zone)
+
+
+def _raise_for_agent(resp) -> None:
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except Exception:
+            detail = resp.text
+        raise HTTPException(status_code=resp.status_code, detail=detail)
 
 
 @router.get("", response_model=FileListing)
-def list_files(user: CurrentUser, db: DbSession, path: str = ""):
-    base = _user_base(user)
-    target = _resolve(base, path)
-    if not target.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-    if not target.is_dir():
-        raise HTTPException(status_code=400, detail="Not a directory")
-
-    entries: list[FileEntry] = []
-    for child in target.iterdir():
-        try:
-            st = child.stat()
-        except OSError:
-            continue
-        is_dir = child.is_dir()
-        entries.append(
-            FileEntry(
-                name=child.name,
-                type="dir" if is_dir else "file",
-                size=0 if is_dir else st.st_size,
-                modified=datetime.fromtimestamp(st.st_mtime, tz=timezone.utc),
-            )
-        )
-    entries.sort(key=lambda e: (e.type != "dir", e.name.lower()))
-    return FileListing(path=path, entries=entries)
+def list_files(user: CurrentUser, db: DbSession, path: str = "", zone_id: int = 0):
+    client = _agent_client(db, zone_id)
+    if client is None:
+        return storage_local.list_dir(_user_base(user), path)
+    with client as c:
+        resp = c.get("/agent/files", params={"username": user.username, "path": path})
+        _raise_for_agent(resp)
+        return resp.json()
 
 
 @router.get("/download")
-def download_file(user: CurrentUser, db: DbSession, path: str):
-    base = _user_base(user)
-    target = _resolve(base, path)
-    if not target.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-    if target.is_dir():
-        raise HTTPException(status_code=400, detail="Cannot download a directory")
-    return FileResponse(
-        str(target),
-        filename=target.name,
-        content_disposition_type="attachment",
+def download_file(user: CurrentUser, db: DbSession, path: str, zone_id: int = 0):
+    client = _agent_client(db, zone_id)
+    if client is None:
+        target = storage_local.resolve_download(_user_base(user), path)
+        return FileResponse(str(target), filename=target.name, content_disposition_type="attachment")
+
+    # Stream the file through from the agent, keeping the mTLS client open until
+    # the response body is fully sent (closed by the generator's finally).
+    req = client.build_request(
+        "GET", "/agent/files/download", params={"username": user.username, "path": path}
+    )
+    resp = client.send(req, stream=True)
+    if resp.status_code >= 400:
+        try:
+            detail = resp.read().decode()[:200]
+        finally:
+            resp.close()
+            client.close()
+        raise HTTPException(status_code=resp.status_code, detail=detail or "Agent error")
+
+    def _body():
+        try:
+            yield from resp.iter_bytes()
+        finally:
+            resp.close()
+            client.close()
+
+    disposition = resp.headers.get("content-disposition", f'attachment; filename="{Path(path).name}"')
+    return StreamingResponse(
+        _body(),
+        media_type=resp.headers.get("content-type", "application/octet-stream"),
+        headers={"Content-Disposition": disposition},
     )
 
 
@@ -87,57 +111,39 @@ def upload_file(
     request: Request,
     path: str = Form(""),
     file: UploadFile = File(...),
+    zone_id: int = 0,
 ):
-    base = _user_base(user)
-    target_dir = _resolve(base, path)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    if not target_dir.is_dir():
-        raise HTTPException(status_code=400, detail="Destination is not a directory")
+    client = _agent_client(db, zone_id)
+    if client is None:
+        max_bytes = get_settings().max_upload_mb * 1024 * 1024
+        result = storage_local.save_upload(
+            _user_base(user), path, file.file.read, file.filename or "upload", max_bytes
+        )
+        _audit(db, "files.upload", detail=result["path"], user=user, request=request)
+        return result
 
-    filename = Path(file.filename or "upload").name
-    if not filename or filename in (".", ".."):
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    dest = _resolve(base, str(Path(path or "") / filename))
-
-    settings = get_settings()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    total = 0
-    try:
-        with open(dest, "wb") as out:
-            while True:
-                chunk = file.file.read(1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_bytes:
-                    # Abort: stop reading, drop the partial file, and reject.
-                    raise HTTPException(
-                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                        detail=f"File exceeds maximum upload size of {settings.max_upload_mb} MiB",
-                    )
-                out.write(chunk)
-    except HTTPException:
-        dest.unlink(missing_ok=True)
-        raise
-
-    _audit(db, "files.upload", detail=str(dest.relative_to(base)), user=user, request=request)
-    return {"name": filename, "path": str(dest.relative_to(base))}
+    with client as c:
+        files = {"file": (file.filename or "upload", file.file, file.content_type)}
+        resp = c.post(
+            "/agent/files/upload",
+            params={"username": user.username, "path": path},
+            files=files,
+        )
+        _raise_for_agent(resp)
+        result = resp.json()
+    _audit(db, "files.upload", detail=f"zone{zone_id}:{result['path']}", user=user, request=request)
+    return result
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
-def delete_path(user: CurrentUser, db: DbSession, request: Request, path: str):
-    base = _user_base(user)
-    target = _resolve(base, path)
-    if target == base:
-        raise HTTPException(status_code=400, detail="Cannot delete the root directory")
-    if not target.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-
-    import shutil
-
-    if target.is_dir():
-        shutil.rmtree(target)
+def delete_path(
+    user: CurrentUser, db: DbSession, request: Request, path: str, zone_id: int = 0
+):
+    client = _agent_client(db, zone_id)
+    if client is None:
+        storage_local.delete(_user_base(user), path)
     else:
-        target.unlink()
-
-    _audit(db, "files.delete", detail=path, user=user, request=request)
+        with client as c:
+            resp = c.delete("/agent/files", params={"username": user.username, "path": path})
+            _raise_for_agent(resp)
+    _audit(db, "files.delete", detail=f"zone{zone_id}:{path}", user=user, request=request)

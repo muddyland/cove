@@ -59,8 +59,10 @@ def list_images(user: CurrentUser, db: DbSession):
 
 
 @router.get("/pull-status", response_model=dict[int, str])
-def images_pull_status(user: AdminUser, db: DbSession):
-    """Local availability per image: 'present', 'absent', or 'pulling'.
+def images_pull_status(user: AdminUser, db: DbSession, zone_id: int = 0):
+    """Local availability per image on a given zone: 'present', 'absent', or
+    'pulling'. ``zone_id`` selects the node (0 = local control plane); each
+    zone's daemon stores images independently.
 
     Checks run concurrently since each is a Docker daemon round-trip.
     """
@@ -69,7 +71,7 @@ def images_pull_status(user: AdminUser, db: DbSession):
         return {}
 
     from server.docker_manager import get_docker_manager
-    dm = get_docker_manager()
+    dm = get_docker_manager(zone_id)
 
     results: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=min(8, len(images))) as ex:
@@ -80,14 +82,15 @@ def images_pull_status(user: AdminUser, db: DbSession):
 
 
 @router.post("/{image_id}/pull")
-def pull_image(image_id: int, user: AdminUser, db: DbSession, bg: BackgroundTasks):
-    """Manually pull an image in the background. Poll /pull-status for progress."""
+def pull_image(image_id: int, user: AdminUser, db: DbSession, bg: BackgroundTasks, zone_id: int = 0):
+    """Manually pull an image onto a zone in the background (zone_id selects the
+    node, 0 = local). Poll /pull-status?zone_id=N for progress."""
     image = db.get(WorkspaceImage, image_id)
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
     from server.docker_manager import get_docker_manager
-    dm = get_docker_manager()
+    dm = get_docker_manager(zone_id)
     if dm.is_pulling(image.docker_image):
         return {"status": "pulling"}
     bg.add_task(dm.pull_image_blocking, image.docker_image)
@@ -162,15 +165,14 @@ def update_image(image_id: int, body: ImageUpdate, user: AdminUser, db: DbSessio
     return image
 
 
-def _remove_docker_image(docker_image: str) -> None:
-    """Best-effort delete of a local image, raising HTTP errors on conflict.
-
-    Shared by the catalog delete (remove_image=true) and the image-only delete.
-    'absent' is treated as success (idempotent — nothing to remove).
+def _remove_docker_image(docker_image: str, zone_id: int = 0) -> None:
+    """Best-effort delete of an image on a zone's daemon, raising HTTP errors on
+    conflict. Shared by the catalog delete (remove_image=true) and the image-only
+    delete. 'absent' is treated as success (idempotent — nothing to remove).
     """
     from server.docker_manager import get_docker_manager
 
-    result = get_docker_manager().remove_image(docker_image)
+    result = get_docker_manager(zone_id).remove_image(docker_image)
     if result == "in_use":
         raise HTTPException(
             status_code=409,
@@ -182,22 +184,26 @@ def _remove_docker_image(docker_image: str) -> None:
 
 
 @router.delete("/{image_id}/image")
-def remove_image_layers(image_id: int, user: AdminUser, db: DbSession):
-    """Delete the local Docker image from disk but keep the catalog entry.
+def remove_image_layers(image_id: int, user: AdminUser, db: DbSession, zone_id: int = 0):
+    """Delete the Docker image from a zone's daemon but keep the catalog entry
+    (zone_id selects the node, 0 = local).
 
     The entry stays so the admin can re-pull it later; its pull-status flips
-    back to 'absent'.
+    back to 'absent' for that zone.
     """
     image = db.get(WorkspaceImage, image_id)
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
-    _remove_docker_image(image.docker_image)
+    _remove_docker_image(image.docker_image, zone_id)
     return {"status": "removed"}
 
 
 @router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_image(image_id: int, user: AdminUser, db: DbSession, remove_image: bool = False):
-    """Delete a catalog entry. With remove_image=true, also docker-rm the image.
+def delete_image(
+    image_id: int, user: AdminUser, db: DbSession, remove_image: bool = False, zone_id: int = 0
+):
+    """Delete a catalog entry. With remove_image=true, also docker-rm the image
+    from the given zone's daemon (zone_id, 0 = local).
 
     When remove_image is set, the image is removed first so an in-use conflict
     aborts the whole operation (the catalog entry is left intact rather than
@@ -207,6 +213,6 @@ def delete_image(image_id: int, user: AdminUser, db: DbSession, remove_image: bo
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     if remove_image:
-        _remove_docker_image(image.docker_image)
+        _remove_docker_image(image.docker_image, zone_id)
     db.delete(image)
     db.commit()

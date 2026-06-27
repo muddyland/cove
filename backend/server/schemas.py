@@ -85,6 +85,9 @@ class ImageOut(BaseModel):
 class WorkspaceCreate(BaseModel):
     name: str
     image_id: int
+    # Which zone (node) to run the workspace on. 0 = the local control-plane
+    # daemon (default). Must reference an enrolled zone.
+    zone_id: int = 0
     workspace_type: str = "desktop"
     target_url: Optional[str] = None
     kiosk: bool = False
@@ -154,6 +157,12 @@ class WorkspaceClone(BaseModel):
     image_id: Optional[int] = None
 
 
+class WorkspaceMigrate(BaseModel):
+    # The zone to move the (stopped) workspace to. Its /config is copied to the
+    # destination, the pin is flipped, and the source copy is removed.
+    target_zone_id: int
+
+
 class StreamAuthOut(BaseModel):
     # The URL the SPA should point the workspace iframe at. In subdomain mode it
     # carries a one-time ``?__cove_t`` token that bootstraps the per-workspace
@@ -180,6 +189,7 @@ class WorkspaceOut(BaseModel):
     workspace_type: str
     container_id: Optional[str]
     container_name: Optional[str]
+    zone_id: int
     image_id: int
     image_name: str
     image_logo: Optional[str]
@@ -230,6 +240,7 @@ class WorkspaceOut(BaseModel):
             workspace_type=ws.workspace_type,
             container_id=ws.container_id,
             container_name=ws.container_name,
+            zone_id=ws.zone_id,
             image_id=ws.image_id,
             image_name=ws.image.name if ws.image else "",
             image_logo=ws.image.logo_url if ws.image else None,
@@ -388,6 +399,73 @@ class FileEntry(BaseModel):
 class FileListing(BaseModel):
     path: str
     entries: list[FileEntry]
+
+
+# ── Zones ─────────────────────────────────────────────────────────────────────
+
+class ZoneCreate(BaseModel):
+    name: str
+    # Phase 1 manual registration: provide the agent's Docker endpoint directly
+    # (a zone with an endpoint is marked enrolled so workspaces can launch on it).
+    # Phase 3 replaces this with the token enrollment flow.
+    endpoint_host: Optional[str] = None
+    endpoint_port: int = 2376
+    stream_port: int = 8443
+
+
+class ZoneUpdate(BaseModel):
+    name: Optional[str] = None
+    endpoint_host: Optional[str] = None
+    endpoint_port: Optional[int] = None
+    stream_port: Optional[int] = None
+    status: Optional[str] = None
+
+
+class ZoneEnrollTokenOut(BaseModel):
+    # Returned once when an admin mints an enrollment token. The plaintext token
+    # is never stored (only its hash) — this is the only time it is shown.
+    token: str
+    expires_at: datetime
+    install_command: str
+
+
+class ZoneEnrollRequest(BaseModel):
+    # Sent by the install script. The agent generates its server keypair + CSR
+    # locally (private key never leaves the host) and reports the endpoint the
+    # control plane should dial.
+    csr_pem: str
+    endpoint_host: str
+    endpoint_port: int = 2376
+    stream_port: int = 8443
+
+
+class ZoneEnrollResponse(BaseModel):
+    # The CA (so the agent trusts the control plane's client cert) and the agent's
+    # signed server certificate.
+    ca_cert_pem: str
+    server_cert_pem: str
+    # Provisioned so the agent's Traefik can ForwardAuth-validate stream tokens
+    # locally (the stream-signing key is NOT the app secret) and resolve a
+    # workspace public_id from its subdomain host.
+    stream_signing_key: str
+    workspace_domain: Optional[str] = None
+
+
+class ZoneOut(BaseModel):
+    id: int
+    public_id: str
+    name: str
+    status: str
+    endpoint_host: Optional[str]
+    endpoint_port: int
+    stream_port: int
+    enrolled_at: Optional[datetime]
+    last_seen_at: Optional[datetime]
+    created_at: datetime
+    # Number of workspaces pinned to this zone (drives the delete guard + UI).
+    workspace_count: int = 0
+
+    model_config = {"from_attributes": True}
 
 
 # ── Audit ─────────────────────────────────────────────────────────────────────

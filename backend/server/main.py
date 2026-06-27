@@ -15,7 +15,19 @@ from server import oidc as oidc_module
 from server.config import get_settings
 from server.migrations import run_migrations
 from server.models import AuditLog
-from server.routers import admin, auth, files, images, proot, users, workspaces
+from server.routers import (
+    admin,
+    agent,
+    auth,
+    enroll,
+    files,
+    images,
+    internal,
+    proot,
+    users,
+    workspaces,
+    zones,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +97,12 @@ def record_audit(
 async def lifespan(app: FastAPI):
     run_migrations()
     settings = get_settings()
+    if settings.agent_mode:
+        # Agent mode: no catalog seeding, no multi-zone status monitor (the agent
+        # has no workspace DB of its own — the control plane reconciles state).
+        logger.info("Starting in agent mode — control-plane features disabled.")
+        yield
+        return
     if not settings.cookie_secure:
         logger.warning(
             "COVE_COOKIE_SECURE is false: session cookies are sent over plaintext "
@@ -101,8 +119,7 @@ async def lifespan(app: FastAPI):
 
     seed_task = asyncio.create_task(_seed_catalog_if_empty())
 
-    from server.docker_manager import get_docker_manager
-    monitor_task = asyncio.create_task(_status_monitor(get_docker_manager()))
+    monitor_task = asyncio.create_task(_status_monitor())
     try:
         yield
     finally:
@@ -139,17 +156,74 @@ async def _seed_catalog_if_empty():
         db.close()
 
 
-async def _status_monitor(dm):
+async def _status_monitor():
     while True:
         try:
             await asyncio.sleep(10)
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, dm.sync_workspace_statuses)
-            await loop.run_in_executor(None, dm.enforce_runtime_limits)
+            await loop.run_in_executor(None, _sync_all_zones)
         except asyncio.CancelledError:
             break
         except Exception as exc:
             logger.warning("Status monitor error: %s", exc)
+
+
+def _sync_all_zones():
+    """Reconcile every zone that has workspaces, plus the local zone, each
+    against its own Docker daemon. One unreachable zone never blocks the rest."""
+    from sqlalchemy import select
+
+    from server.db import SessionLocal
+    from server.docker_manager import get_docker_manager
+    from server.models import Workspace
+
+    db = SessionLocal()
+    try:
+        zone_ids = set(db.scalars(select(Workspace.zone_id).distinct()).all())
+    finally:
+        db.close()
+    zone_ids.add(0)  # always reconcile the local zone
+    for zid in zone_ids:
+        try:
+            dm = get_docker_manager(zid)
+            dm.ping()  # raises if the zone's daemon is unreachable
+        except Exception as exc:
+            logger.warning("Zone %s unreachable: %s", zid, exc)
+            _mark_zone_reachable(zid, False)
+            continue
+        _mark_zone_reachable(zid, True)
+        try:
+            dm.sync_workspace_statuses(zid)
+            dm.enforce_runtime_limits(zid)
+        except Exception as exc:
+            logger.warning("Status monitor (zone %s): %s", zid, exc)
+
+
+def _mark_zone_reachable(zone_id: int, ok: bool):
+    """Track zone liveness without false-failing its workspaces: an unreachable
+    remote zone flips to 'offline' (workspaces left as-is, not errored); it
+    returns to 'enrolled' once it answers again."""
+    if zone_id == 0:
+        return
+    from datetime import datetime, timezone
+
+    from server.db import SessionLocal
+    from server.models import Zone
+
+    db = SessionLocal()
+    try:
+        zone = db.get(Zone, zone_id)
+        if zone is None:
+            return
+        if ok:
+            zone.last_seen_at = datetime.now(timezone.utc)
+            if zone.status == "offline":
+                zone.status = "enrolled"
+        elif zone.status == "enrolled":
+            zone.status = "offline"
+        db.commit()
+    finally:
+        db.close()
 
 
 _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
@@ -216,10 +290,31 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=403, content={"detail": "Cross-origin request blocked"})
         return await call_next(request)
 
+    if get_settings().agent_mode:
+        # Agent mode exposes only the mTLS agent API (the Docker daemon is reached
+        # over a separate mTLS Docker port). No SPA, login, or control-plane routers.
+        app.include_router(agent.router)
+
+        @app.get("/api/health")
+        def agent_health_root():
+            return {"status": "ok", "role": "agent"}
+
+        # The agent's Traefik attaches the same per-workspace cove-errors
+        # middleware (by label), so the agent must serve the error page too.
+        @app.get("/__cove_error/{status}", include_in_schema=False)
+        def agent_stream_error(status: str):
+            code = status if status.isdigit() else "Error"
+            return HTMLResponse(_STREAM_ERROR_PAGE.replace("{{CODE}}", code))
+
+        return app
+
     app.include_router(auth.router)
     app.include_router(images.router)
     app.include_router(workspaces.router)
     app.include_router(admin.router)
+    app.include_router(zones.router)
+    app.include_router(enroll.router)
+    app.include_router(internal.router)
     app.include_router(users.router)
     app.include_router(files.router)
     app.include_router(proot.router)

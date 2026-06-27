@@ -156,3 +156,23 @@ export interface AuditEntry {
   detail: string | null
   ip: string | null
 }
+
+export interface Zone {
+  id: number
+  public_id: string
+  name: string
+  status: string
+  endpoint_host: string | null
+  endpoint_port: number
+  stream_port: number
+  enrolled_at: string | null
+  last_seen_at: string | null
+  created_at: string
+  workspace_count: number
+}
+
+export interface ZoneEnrollToken {
+  token: string
+  expires_at: string
+  install_command: string
+}

@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
-from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage
+from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
 from server.net import client_ip
 from server.schemas import (
     ContainerLogsOut,
@@ -21,6 +21,7 @@ from server.schemas import (
     TailscaleStatusOut,
     WorkspaceClone,
     WorkspaceCreate,
+    WorkspaceMigrate,
     WorkspaceOut,
     WorkspaceStats,
     WorkspaceUpdate,
@@ -146,6 +147,21 @@ def _validate_routing(db, user_id: int, use_tailscale: bool, use_gluetun: bool) 
             )
 
 
+def _validate_zone(db, zone_id: int) -> None:
+    """Ensure the target zone exists and is enrolled (ready to run workspaces).
+
+    zone_id 0 is the always-present local zone. Any other id must reference an
+    enrolled remote zone, else the launch would fail with no reachable daemon.
+    """
+    zone = db.get(Zone, zone_id)
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    if zone.status != "enrolled":
+        raise HTTPException(
+            status_code=409, detail=f"Zone '{zone.name}' is not ready (status: {zone.status})"
+        )
+
+
 def _check_gluetun_single_connection(db, user_id: int, exclude_ws_id: int | None = None) -> None:
     """A Gluetun VPN config typically allows only one simultaneous connection, so
     permit at most one active Gluetun workspace per user at a time."""
@@ -203,9 +219,12 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     if body.use_gluetun:
         _check_gluetun_single_connection(db, user.id)
 
+    _validate_zone(db, body.zone_id)
+
     ws = Workspace(
         user_id=user.id,
         name=body.name,
+        zone_id=body.zone_id,
         workspace_type=image.image_type,
         image_id=body.image_id,
         target_url=target_url,
@@ -235,7 +254,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     _audit(db, "workspace.launch", detail=ws.public_id, user=user, request=request)
 
     from server.docker_manager import get_docker_manager
-    bg.add_task(get_docker_manager().launch_workspace, ws.id)
+    bg.add_task(get_docker_manager(ws.zone_id).launch_workspace, ws.id)
 
     return WorkspaceOut.from_workspace(ws)
 
@@ -256,7 +275,6 @@ def workspace_stats(user: CurrentUser, db: DbSession):
         return {}
 
     from server.docker_manager import get_docker_manager
-    dm = get_docker_manager()
 
     ts_running = [ws for ws in running if ws.use_tailscale]
 
@@ -264,8 +282,15 @@ def workspace_stats(user: CurrentUser, db: DbSession):
     ts_ips: dict[int, str] = {}
     workers = min(8, len(running) + len(ts_running))
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        stat_futs = {ex.submit(dm.get_stats, ws.container_id): ws for ws in running}
-        ip_futs = {ex.submit(dm.get_tailscale_ip, ws.id): ws for ws in ts_running}
+        # Each workspace's stats come from its own zone's daemon.
+        stat_futs = {
+            ex.submit(get_docker_manager(ws.zone_id).get_stats, ws.container_id): ws
+            for ws in running
+        }
+        ip_futs = {
+            ex.submit(get_docker_manager(ws.zone_id).get_tailscale_ip, ws.id): ws
+            for ws in ts_running
+        }
         for fut in as_completed(stat_futs):
             data = fut.result()
             if data:
@@ -323,6 +348,7 @@ def clone_workspace(
     clone = Workspace(
         user_id=user.id,
         name=name,
+        zone_id=src.zone_id,
         workspace_type=image.image_type,
         image_id=image.id,
         target_url=target_url,
@@ -352,9 +378,48 @@ def clone_workspace(
     _audit(db, "workspace.clone", detail=f"{src.public_id}->{clone.public_id}", user=user, request=request)
 
     from server.docker_manager import get_docker_manager
-    bg.add_task(get_docker_manager().clone_and_launch, src.id, clone.id)
+    bg.add_task(get_docker_manager(clone.zone_id).clone_and_launch, src.id, clone.id)
 
     return WorkspaceOut.from_workspace(clone)
+
+
+@router.post("/{ws_id}/migrate", response_model=WorkspaceOut)
+def migrate_workspace(
+    ws_id: int, body: WorkspaceMigrate, user: CurrentUser, db: DbSession,
+    bg: BackgroundTasks, request: Request,
+):
+    """Move a stopped workspace to another zone, copying its persistent home.
+
+    The source must be stopped so its files are at rest. The workspace's /config
+    is copied to the destination zone, the zone pin flips, and the source copy is
+    removed (copy-then-delete). It is left stopped on the destination.
+    """
+    ws = _get_workspace_or_404(ws_id, user, db)
+    target = body.target_zone_id
+    if target == ws.zone_id:
+        raise HTTPException(status_code=400, detail="Workspace is already on that zone")
+    if ws.ephemeral:
+        raise HTTPException(status_code=400, detail="Ephemeral workspaces have no storage to migrate")
+    if ws.status not in ("stopped", "error"):
+        raise HTTPException(
+            status_code=409, detail="Stop the workspace before migrating so its files are at rest"
+        )
+    _validate_zone(db, target)
+
+    src = ws.zone_id
+    ws.status = "migrating"
+    ws.error_message = None
+    db.commit()
+    db.refresh(ws)
+
+    _audit(
+        db, "workspace.migrate", detail=f"{ws.public_id}:{src}->{target}", user=user, request=request
+    )
+
+    from server.migration import run_migration
+    bg.add_task(run_migration, ws.id, src, target)
+
+    return WorkspaceOut.from_workspace(ws)
 
 
 @router.get("/lan-policy", response_model=LanPolicyOut)
@@ -485,7 +550,7 @@ def tailscale_status(ws_id: int, user: CurrentUser, db: DbSession):
         raise HTTPException(status_code=400, detail="Workspace is not using Tailscale")
     from server.docker_manager import get_docker_manager
 
-    out = get_docker_manager().tailscale_status(ws.id)
+    out = get_docker_manager(ws.zone_id).tailscale_status(ws.id)
     return TailscaleStatusOut(available=out is not None, output=out or "")
 
 
@@ -511,7 +576,7 @@ def container_logs(
     tail = max(1, min(tail, 2000))
     from server.docker_manager import get_docker_manager
 
-    out = get_docker_manager().container_logs(ws, source, tail)
+    out = get_docker_manager(ws.zone_id).container_logs(ws, source, tail)
     return ContainerLogsOut(source=source, available=out is not None, output=out or "")
 
 
@@ -586,7 +651,7 @@ def stop_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: BackgroundT
     db.refresh(ws)
     _audit(db, "workspace.stop", detail=ws.public_id, user=user, request=request)
     from server.docker_manager import get_docker_manager
-    bg.add_task(get_docker_manager().stop_workspace, ws.id)
+    bg.add_task(get_docker_manager(ws.zone_id).stop_workspace, ws.id)
     return WorkspaceOut.from_workspace(ws)
 
 
@@ -605,7 +670,7 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
     db.refresh(ws)
     _audit(db, "workspace.start", detail=ws.public_id, user=user, request=request)
     from server.docker_manager import get_docker_manager
-    bg.add_task(get_docker_manager().launch_workspace, ws.id)
+    bg.add_task(get_docker_manager(ws.zone_id).launch_workspace, ws.id)
     return WorkspaceOut.from_workspace(ws)
 
 
@@ -630,7 +695,7 @@ def delete_workspace(
     from server.docker_manager import delete_workspace_storage, get_docker_manager
 
     if ws.status in ("running", "creating", "stopping"):
-        bg.add_task(get_docker_manager().remove_workspace, ws.id, purge_storage)
+        bg.add_task(get_docker_manager(ws.zone_id).remove_workspace, ws.id, purge_storage)
     else:
         if purge_storage:
             delete_workspace_storage(ws)

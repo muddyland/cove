@@ -54,6 +54,45 @@ class WorkspaceImage(Base):
     workspaces: Mapped[list["Workspace"]] = relationship("Workspace", back_populates="image")
 
 
+class Zone(Base):
+    """A node that runs workspace containers. Zone id 0 is the implicit "local"
+    zone — the control plane's own Docker daemon (seeded by a data migration).
+    Remote zones are enrolled agent nodes the control plane dials over mTLS."""
+
+    __tablename__ = "zone"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_id: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False, default=lambda: uuid4().hex
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Lifecycle: pending -> enrolling -> enrolled -> offline / error.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    # Where the control plane DIALS the agent's mTLS Docker endpoint.
+    endpoint_host: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    endpoint_port: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=2376, server_default=text("2376")
+    )
+    # Port the agent serves workspace HTTP (its own Traefik) on, for stream routing.
+    stream_port: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=8443, server_default=text("8443")
+    )
+    # Enrollment (Phase 3): sha256 of the one-time token + single-use bookkeeping.
+    enroll_token_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    enroll_token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    enroll_consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # mTLS material (Phase 2/3). Public certs in the clear; the CP's per-zone
+    # client private key is encrypted at rest (encrypt_secret, enc:v1: prefix).
+    ca_cert_pem: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    server_cert_pem: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    client_cert_pem: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    client_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    agent_fingerprint: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    enrolled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class Workspace(Base):
     __tablename__ = "workspace"
 
@@ -67,6 +106,12 @@ class Workspace(Base):
     workspace_type: Mapped[str] = mapped_column(String(16), nullable=False, default="desktop")
     container_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     container_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # Which zone (node) this workspace runs on. 0 = the local control-plane daemon
+    # (the default). A workspace is pinned to exactly one zone; moving it requires
+    # an explicit migration that copies its /config to the destination zone.
+    zone_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("zone.id"), nullable=False, default=0, server_default=text("0")
+    )
     use_tailscale: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )

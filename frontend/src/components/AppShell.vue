@@ -33,6 +33,9 @@
             <RouterLink to="/app/admin/images" class="nav-link" :class="{ active: $route.path === '/app/admin/images' }">
               <Boxes class="nav-icon" :size="16" /> Images
             </RouterLink>
+            <RouterLink to="/app/admin/zones" class="nav-link" :class="{ active: $route.path === '/app/admin/zones' }">
+              <Network class="nav-icon" :size="16" /> Zones
+            </RouterLink>
             <RouterLink to="/app/admin/audit" class="nav-link" :class="{ active: $route.path === '/app/admin/audit' }">
               <ScrollText class="nav-icon" :size="16" /> Audit
             </RouterLink>
@@ -64,7 +67,7 @@ import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import {
-  LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes,
+  LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
   ScrollText, Settings, UserRound, LogOut, Menu, X,
 } from 'lucide-vue-next'
 

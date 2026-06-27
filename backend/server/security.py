@@ -126,7 +126,9 @@ def create_stream_token(user_id: int, public_id: str) -> str:
         "iat": now,
         "exp": expire,
     }
-    return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        payload, settings.get_stream_signing_key(), algorithm=settings.jwt_algorithm
+    )
 
 
 def create_stream_bootstrap_token(user_id: int, public_id: str) -> str:
@@ -147,7 +149,9 @@ def create_stream_bootstrap_token(user_id: int, public_id: str) -> str:
         "iat": now,
         "exp": expire,
     }
-    return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        payload, settings.get_stream_signing_key(), algorithm=settings.jwt_algorithm
+    )
 
 
 def decode_token(token: str) -> Optional[dict]:
@@ -155,6 +159,19 @@ def decode_token(token: str) -> Optional[dict]:
     settings = get_settings()
     try:
         return jwt.decode(token, settings.get_secret_key(), algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        return None
+
+
+def decode_stream_token(token: str) -> Optional[dict]:
+    """Verify a stream/stream_bootstrap token against the dedicated stream-signing
+    key; return claims or None. Used by both the control plane and the zone agent
+    (which holds only this key, never the app secret)."""
+    settings = get_settings()
+    try:
+        return jwt.decode(
+            token, settings.get_stream_signing_key(), algorithms=[settings.jwt_algorithm]
+        )
     except JWTError:
         return None
 

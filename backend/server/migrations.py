@@ -137,6 +137,12 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0027_workspace_inject_ssh_key",
         "ALTER TABLE workspace ADD COLUMN inject_ssh_key BOOLEAN NOT NULL DEFAULT 1",
     ),
+    # Multi-zone: which node a workspace runs on. 0 = the local control-plane
+    # daemon. (The zone table itself is created by create_all.)
+    (
+        "0028_workspace_zone_id",
+        "ALTER TABLE workspace ADD COLUMN zone_id INTEGER NOT NULL DEFAULT 0",
+    ),
 ]
 
 
@@ -161,9 +167,25 @@ def _encrypt_tailscale_auth_keys(conn) -> None:
             )
 
 
+def _seed_local_zone(conn) -> None:
+    """Insert the implicit "local" zone (id 0) representing the control plane's
+    own Docker daemon, so every workspace's zone_id FK always resolves and the
+    per-zone client resolver has a single code path. Idempotent."""
+    exists = conn.execute(text("SELECT 1 FROM zone WHERE id = 0")).fetchone()
+    if exists:
+        return
+    conn.execute(
+        text(
+            "INSERT INTO zone (id, public_id, name, status) "
+            "VALUES (0, 'local', 'Local', 'enrolled')"
+        )
+    )
+
+
 # Python data migrations (run after the SQL migrations): (name, callable).
 _DATA_MIGRATIONS = [
     ("0014_encrypt_tailscale_auth_keys", _encrypt_tailscale_auth_keys),
+    ("0029_seed_local_zone", _seed_local_zone),
 ]
 
 
