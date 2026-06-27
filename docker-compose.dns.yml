@@ -33,6 +33,10 @@ services:
       - --providers.docker.endpoint=tcp://docker-socket-proxy-ro:2375
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=cove-net
+      # HTTP dynamic provider for workspaces on remote zones (this override
+      # replaces the base command, so the flag must be repeated here).
+      - --providers.http.endpoint=http://cove:8080/api/internal/traefik-config
+      - --providers.http.pollInterval=10s
       - --entrypoints.web.address=:80
       - --log.level=WARN
       # TLS / HTTPS
