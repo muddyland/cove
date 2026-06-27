@@ -43,6 +43,15 @@ def test_policy_allows_net_admin_and_tun():
     assert check_create_policy(body) is None
 
 
+def test_policy_allows_hardening_cap_set():
+    # Exactly what _build_hardening adds back after cap_drop=ALL.
+    body = _create(
+        CapDrop=["ALL"],
+        CapAdd=["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "KILL"],
+    )
+    assert check_create_policy(body) is None
+
+
 def test_policy_allows_cove_container_network():
     assert check_create_policy(_create(NetworkMode="container:cove-ts-5")) is None
 

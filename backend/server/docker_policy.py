@@ -16,9 +16,17 @@ from pathlib import Path
 
 from server.config import get_settings
 
-# Capabilities Cove adds: NET_ADMIN (iptables egress guard, Tailscale/Gluetun),
-# NET_RAW (ICMP). Anything else (esp. SYS_ADMIN) is a host-escape vector.
-_ALLOWED_CAPS = {"NET_ADMIN", "NET_RAW"}
+# Capabilities Cove legitimately uses. Its launch does cap_drop=ALL then adds
+# back only this safe set, so allowing exactly these matches Cove's own hardened
+# posture. None permit host escape; anything else (esp. SYS_ADMIN, SYS_PTRACE,
+# SYS_MODULE, DAC_READ_SEARCH) is rejected.
+_ALLOWED_CAPS = {
+    # _build_hardening's add-back set — webtop s6-init needs these to chown
+    # /config and drop to the unprivileged user.
+    "CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "KILL",
+    # The egress guard + Tailscale/Gluetun sidecars.
+    "NET_ADMIN", "NET_RAW",
+}
 # Devices Cove maps: the VPN sidecars need the TUN device. Nothing else.
 _ALLOWED_DEVICES = {"/dev/net/tun"}
 # Namespaces that must never be shared with the host.
