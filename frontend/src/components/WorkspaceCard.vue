@@ -21,6 +21,7 @@
         {{ ws.image_name }}
       </span>
       <span v-if="ws.target_url" class="target-url" :title="ws.target_url"><Globe :size="12" /> {{ truncateUrl(ws.target_url) }}</span>
+      <span v-if="ws.zone_id !== 0" class="zone-badge" :title="`Runs on zone: ${ws.zone_name || ''}`"><Server :size="12" /> {{ ws.zone_name || 'Zone' }}</span>
       <span
         v-if="ws.use_tailscale"
         class="ts-badge"
@@ -64,6 +65,7 @@
         @click="handleStart"
       ><component :is="vpnLocked ? Lock : Power" :size="14" /> BOOT</NeonButton>
       <NeonButton v-if="ws.status === 'stopped' || ws.status === 'error'" variant="secondary" @click="showClone = true"><CopyPlus :size="14" /> CLONE</NeonButton>
+      <NeonButton v-if="(ws.status === 'stopped' || ws.status === 'error') && zonesStore.hasRemote" variant="secondary" @click="showMigrate = true"><ArrowRightLeft :size="14" /> MIGRATE</NeonButton>
       <NeonButton v-if="ws.status === 'running'" variant="secondary" @click="showDiag = true"><Activity :size="14" /> LOGS</NeonButton>
       <NeonButton v-if="ws.status === 'running'" variant="warn" :loading="acting" @click="handleStop"><Square :size="14" /> HALT</NeonButton>
       <NeonButton variant="danger" :loading="removing" @click="openPurge"><Trash2 :size="14" /> PURGE</NeonButton>
@@ -87,6 +89,7 @@
   </ConfirmModal>
   <EditWorkspaceModal v-model="showEdit" :ws="ws" />
   <CloneModal v-model="showClone" :ws="ws" />
+  <MigrateModal v-model="showMigrate" :ws="ws" />
   <DiagnosticsModal v-model="showDiag" :ws="ws" />
 </template>
 
@@ -94,14 +97,16 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspacesStore } from '@/stores/workspaces'
+import { useZonesStore } from '@/stores/zones'
 import { useUiStore } from '@/stores/ui'
 import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import EditWorkspaceModal from './EditWorkspaceModal.vue'
 import CloneModal from './CloneModal.vue'
+import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
-import { Globe, Network, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity } from 'lucide-vue-next'
+import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity } from 'lucide-vue-next'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -117,6 +122,7 @@ function barWidth(pct: number): string {
   return Math.min(Math.max(pct, 0), 100).toFixed(0) + '%'
 }
 const store = useWorkspacesStore()
+const zonesStore = useZonesStore()
 const ui = useUiStore()
 const router = useRouter()
 
@@ -136,6 +142,7 @@ const showConfirm = ref(false)
 const purgeStorage = ref(false)
 const showEdit = ref(false)
 const showClone = ref(false)
+const showMigrate = ref(false)
 const showDiag = ref(false)
 
 function hideLogo(e: Event) {
@@ -286,6 +293,8 @@ async function handleRemove() {
 .target-url svg { flex-shrink: 0; }
 .ts-badge { font-size: 11px; color: var(--accent-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
 .ts-badge svg { flex-shrink: 0; }
+.zone-badge { font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
+.zone-badge svg { flex-shrink: 0; }
 .vpn-badge { font-size: 11px; color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); letter-spacing: 0.5px; }
 .vpn-badge svg { flex-shrink: 0; }
 .vpn-lock-msg {

@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Zone, ZoneEnrollToken } from '@/types'
+import type { Zone, ZoneEnrollToken, ZoneOption } from '@/types'
 
 export interface ZoneCreatePayload {
   name: string
@@ -9,6 +9,8 @@ export interface ZoneCreatePayload {
 
 export const zonesApi = {
   list: () => api.get<Zone[]>('/admin/zones'),
+  // User-facing: enrolled zones (id + name) for the launch/migrate pickers.
+  userList: () => api.get<ZoneOption[]>('/zones'),
   create: (payload: ZoneCreatePayload) => api.post<Zone>('/admin/zones', payload),
   update: (id: number, payload: Partial<ZoneCreatePayload> & { status?: string }) =>
     api.patch<Zone>(`/admin/zones/${id}`, payload),

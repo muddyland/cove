@@ -60,7 +60,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  async function launch(payload: { name: string; image_id: number; workspace_type: string; target_url?: string; kiosk?: boolean; kiosk_dark?: boolean; kiosk_menu?: boolean; use_tailscale?: boolean; use_gluetun?: boolean; ephemeral?: boolean; lan_access?: boolean; ts_exit_node?: string; ts_accept_routes?: boolean; ts_accept_dns?: boolean; custom_dns?: boolean; dns_servers?: string; install_packages?: string; proot_apps?: string; appimages?: string; allow_sudo?: boolean; inject_ssh_key?: boolean }) {
+  async function launch(payload: { name: string; image_id: number; workspace_type: string; zone_id?: number; target_url?: string; kiosk?: boolean; kiosk_dark?: boolean; kiosk_menu?: boolean; use_tailscale?: boolean; use_gluetun?: boolean; ephemeral?: boolean; lan_access?: boolean; ts_exit_node?: string; ts_accept_routes?: boolean; ts_accept_dns?: boolean; custom_dns?: boolean; dns_servers?: string; install_packages?: string; proot_apps?: string; appimages?: string; allow_sudo?: boolean; inject_ssh_key?: boolean }) {
     const ws = await workspacesApi.create(payload)
     items.value.unshift(ws)
     schedulePoll()
@@ -123,6 +123,14 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     return ws
   }
 
+  async function migrate(id: number, payload: { zone_id: number }) {
+    const ws = await workspacesApi.migrate(id, payload)
+    const idx = items.value.findIndex(w => w.id === id)
+    if (idx !== -1) items.value[idx] = ws
+    schedulePoll()
+    return ws
+  }
+
   function stopPolling() {
     if (pollTimer) {
       clearInterval(pollTimer)
@@ -134,5 +142,5 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  return { items, stats, loading, fetch, fetchStats, launch, update, stop, start, remove, clone, stopPolling }
+  return { items, stats, loading, fetch, fetchStats, launch, update, stop, start, remove, clone, migrate, stopPolling }
 })

@@ -336,6 +336,7 @@ def create_app() -> FastAPI:
     app.include_router(workspaces.router)
     app.include_router(admin.router)
     app.include_router(zones.router)
+    app.include_router(zones.user_router)
     app.include_router(enroll.router)
     app.include_router(internal.router)
     app.include_router(users.router)

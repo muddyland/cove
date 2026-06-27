@@ -196,18 +196,26 @@ compromised agent cannot forge session/refresh tokens.
 
 ## 7. Running workspaces on a zone
 
-- **Launch:** when creating a workspace, choose its zone (API:
-  `zone_id` on `POST /api/workspaces`). It defaults to **Local** (`0`).
+- **Launch:** the **Launch Workspace** and **Open Website** modals show a **Zone**
+  selector once at least one remote zone is enrolled (it's hidden when only Local
+  exists). Defaults to **Local**. (API: `zone_id` on `POST /api/workspaces`.)
+  Websites opened on a remote zone are forced **ephemeral** — no browser data is
+  written to the agent's storage.
+- **Migration:** a stopped/errored workspace's card shows a **Migrate** button
+  (when a remote zone exists) → pick a destination zone. Its `/config` is copied
+  (relayed through the control plane), the zone pin flips, and the source copy is
+  removed (copy-then-delete — a failure leaves the source intact). The workspace
+  ends **stopped** on the destination; start it when ready. (API:
+  `POST /api/workspaces/{id}/migrate` `{"target_zone_id": <id>}`.) The card shows a
+  zone badge for any workspace not on Local.
 - **Files:** the file browser proxies to the owning zone over mTLS
   (`/api/files?zone_id=<id>`).
 - **Images:** image presence is per-daemon. Pull/inspect/remove per zone with the
   `zone_id` query param on the image endpoints (`/api/images/pull-status?zone_id=…`,
   etc.). The catalog metadata itself is shared.
-- **Migration:** move a **stopped** workspace to another zone with
-  `POST /api/workspaces/{id}/migrate` `{"target_zone_id": <id>}`. Its `/config` is
-  copied (relayed through the control plane), the zone pin flips, and the source
-  copy is removed (copy-then-delete — a failure leaves the source intact). The
-  workspace ends **stopped** on the destination; start it when ready.
+
+> Only **enrolled** zones appear in the pickers. If you added an agent but don't
+> see it, check **Admin → Zones** — it may still be `pending`/`enrolling`.
 
 ---
 

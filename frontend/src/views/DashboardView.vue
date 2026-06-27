@@ -56,8 +56,10 @@ import OpenWebsiteModal from '@/components/OpenWebsiteModal.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { Globe, Plus, MonitorOff, Activity, PowerOff } from 'lucide-vue-next'
 import { useWorkspacesStore } from '@/stores/workspaces'
+import { useZonesStore } from '@/stores/zones'
 
 const store = useWorkspacesStore()
+const zonesStore = useZonesStore()
 const showLaunch = ref(false)
 const showWebsite = ref(false)
 
@@ -66,7 +68,7 @@ const ACTIVE = new Set(['running', 'creating', 'stopping'])
 const active = computed(() => store.items.filter(ws => ACTIVE.has(ws.status)))
 const offline = computed(() => store.items.filter(ws => !ACTIVE.has(ws.status)))
 
-onMounted(() => store.fetch())
+onMounted(() => { store.fetch(); zonesStore.fetch() })
 onUnmounted(() => store.stopPolling())
 </script>
 

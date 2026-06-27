@@ -6,12 +6,24 @@ from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func, select
 
 from server.config import get_settings
-from server.deps import AdminUser, DbSession
+from server.deps import AdminUser, CurrentUser, DbSession
 from server.models import Workspace, Zone
 from server.net import client_ip
-from server.schemas import ZoneCreate, ZoneEnrollTokenOut, ZoneOut, ZoneUpdate
+from server.schemas import ZoneCreate, ZoneEnrollTokenOut, ZoneListItem, ZoneOut, ZoneUpdate
 
 router = APIRouter(prefix="/api/admin/zones", tags=["zones"])
+
+# User-facing (non-admin): a minimal list of enrolled zones for the launch and
+# migrate pickers. Exposes only id + name, never endpoints or cert material.
+user_router = APIRouter(prefix="/api/zones", tags=["zones"])
+
+
+@user_router.get("", response_model=list[ZoneListItem])
+def list_zones_for_user(user: CurrentUser, db: DbSession):
+    zones = db.scalars(
+        select(Zone).where(Zone.status == "enrolled").order_by(Zone.id)
+    ).all()
+    return [ZoneListItem(id=z.id, name=z.name) for z in zones]
 
 
 def _audit(db, action, *, detail=None, user=None, request=None):

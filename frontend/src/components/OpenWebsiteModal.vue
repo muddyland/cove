@@ -19,6 +19,12 @@
           <option v-for="b in browsers" :key="b.id" :value="b.id">{{ b.name }}</option>
         </select>
       </div>
+      <div v-if="zonesStore.hasRemote" class="form-group">
+        <label>// zone</label>
+        <select v-model.number="zoneId">
+          <option v-for="z in zonesStore.items" :key="z.id" :value="z.id">{{ z.name }}</option>
+        </select>
+      </div>
       <label class="checkbox-row">
         <input type="checkbox" :checked="useTailscale" @change="pickTailscale($event)" />
         <span>Route through Tailscale</span>
@@ -48,10 +54,19 @@
         </p>
       </template>
       <label class="checkbox-row">
-        <input type="checkbox" v-model="ephemeral" />
+        <input
+          type="checkbox"
+          :checked="effectiveEphemeral"
+          :disabled="zoneId !== 0"
+          @change="ephemeral = ($event.target as HTMLInputElement).checked"
+        />
         <span>Ephemeral (no saved data — wiped when halted)</span>
       </label>
-      <p v-if="ephemeral" class="hint ts-field">
+      <p v-if="zoneId !== 0" class="hint ts-field">
+        Websites opened on a remote zone are always ephemeral — no browser data
+        is written to the agent's storage.
+      </p>
+      <p v-else-if="ephemeral" class="hint ts-field">
         Cookies, history, and downloads live only in the container and are
         discarded on halt. Nothing is written to persistent storage.
       </p>
@@ -71,6 +86,7 @@ import NeonButton from './NeonButton.vue'
 import { imagesApi } from '@/api/images'
 import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
+import { useZonesStore } from '@/stores/zones'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
 import type { WorkspaceImage } from '@/types'
@@ -85,6 +101,7 @@ const tsExitNode = ref('')
 const tsAcceptRoutes = ref(true)
 const tsAcceptDns = ref(true)
 const ephemeral = ref(false)
+const zoneId = ref(0)
 const useGluetun = ref(false)
 const gluetunReady = ref(false)
 
@@ -100,12 +117,16 @@ function pickGluetun(e: Event) {
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
+const zonesStore = useZonesStore()
 const ui = useUiStore()
 const router = useRouter()
 
 const browsers = computed(() => images.value.filter(i => i.image_type === 'browser' || i.url_env))
+// Websites on a remote zone are always ephemeral (no agent-side storage).
+const effectiveEphemeral = computed(() => (zoneId.value !== 0 ? true : ephemeral.value))
 
 onMounted(async () => {
+  zonesStore.fetch()
   images.value = await imagesApi.list()
   if (browsers.value.length) browserId.value = browsers.value[0].id
   try {
@@ -133,8 +154,9 @@ async function handleSubmit() {
       name: deriveName(url.value),
       image_id: browserId.value as number,
       workspace_type: 'browser',
+      zone_id: zoneId.value,
       target_url: url.value,
-      ephemeral: ephemeral.value,
+      ephemeral: effectiveEphemeral.value,
       use_gluetun: useGluetun.value,
       use_tailscale: useTailscale.value,
       ...(useTailscale.value
@@ -153,6 +175,7 @@ async function handleSubmit() {
     tsAcceptRoutes.value = true
     tsAcceptDns.value = true
     ephemeral.value = false
+    zoneId.value = 0
     useGluetun.value = false
     router.push(`/app/workspace/${ws.id}`)
   } catch (e: any) {

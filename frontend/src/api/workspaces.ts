@@ -12,6 +12,7 @@ export const workspacesApi = {
     name: string
     image_id: number
     workspace_type: string
+    zone_id?: number
     target_url?: string
     kiosk?: boolean
     kiosk_dark?: boolean
@@ -57,6 +58,8 @@ export const workspacesApi = {
   ) => api.patch<Workspace>(`/workspaces/${id}`, payload),
   clone: (id: number, payload: { name: string; image_id?: number }) =>
     api.post<Workspace>(`/workspaces/${id}/clone`, payload),
+  migrate: (id: number, payload: { zone_id: number }) =>
+    api.post<Workspace>(`/workspaces/${id}/migrate`, payload),
   tailscaleStatus: (id: number) =>
     api.get<TailscaleStatus>(`/workspaces/${id}/tailscale-status`),
   logs: (id: number, source: LogSource, tail = 200) =>

@@ -43,6 +43,8 @@ const desktopWs: Workspace = {
   workspace_type: 'desktop',
   container_id: null,
   container_name: null,
+  zone_id: 0,
+  zone_name: 'Local',
   image_id: 7,
   image_name: 'Ubuntu Desktop',
   image_logo: null,

@@ -190,6 +190,7 @@ class WorkspaceOut(BaseModel):
     container_id: Optional[str]
     container_name: Optional[str]
     zone_id: int
+    zone_name: Optional[str]
     image_id: int
     image_name: str
     image_logo: Optional[str]
@@ -241,6 +242,7 @@ class WorkspaceOut(BaseModel):
             container_id=ws.container_id,
             container_name=ws.container_name,
             zone_id=ws.zone_id,
+            zone_name=ws.zone.name if ws.zone else None,
             image_id=ws.image_id,
             image_name=ws.image.name if ws.image else "",
             image_logo=ws.image.logo_url if ws.image else None,
@@ -448,6 +450,12 @@ class ZoneEnrollResponse(BaseModel):
     # The only client-cert CN the agent should accept (this zone's control-plane
     # cert) — pins the zone to its control plane.
     expected_client_cn: str
+
+
+class ZoneListItem(BaseModel):
+    # Minimal, non-sensitive zone info for the launch/migrate pickers (any user).
+    id: int
+    name: str
 
 
 class ZoneOut(BaseModel):

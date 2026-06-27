@@ -185,6 +185,7 @@ class Workspace(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="workspaces")
     image: Mapped["WorkspaceImage"] = relationship("WorkspaceImage", back_populates="workspaces")
+    zone: Mapped[Optional["Zone"]] = relationship("Zone")
 
 
 class UserTailscale(Base):

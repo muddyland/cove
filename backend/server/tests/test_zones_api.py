@@ -108,3 +108,29 @@ def test_delete_zone_with_pinned_workspace_blocked(client):
     # The count is reflected in the listing.
     zone = client.get(f"/api/admin/zones/{zid}").json()
     assert zone["workspace_count"] == 1
+
+
+def test_user_zones_lists_enrolled_only(client):
+    setup_admin(client)
+    client.post("/api/admin/zones", json={"name": "LAN", "endpoint_host": "10.0.0.5"})  # enrolled
+    client.post("/api/admin/zones", json={"name": "Pending"})  # pending (no endpoint)
+    resp = client.get("/api/zones")
+    assert resp.status_code == 200, resp.text
+    names = [z["name"] for z in resp.json()]
+    assert "Local" in names and "LAN" in names
+    assert "Pending" not in names
+    # Minimal, non-sensitive shape.
+    assert set(resp.json()[0].keys()) == {"id", "name"}
+
+
+def test_user_zones_requires_auth(client):
+    resp = client.get("/api/zones")
+    assert resp.status_code == 401
+
+
+def test_workspace_out_includes_zone_name(client):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    ws = client.post("/api/workspaces", json={"name": "ws", "image_id": image_id}).json()
+    assert ws["zone_id"] == 0
+    assert ws["zone_name"] == "Local"

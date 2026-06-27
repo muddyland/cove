@@ -14,6 +14,14 @@
           </option>
         </select>
       </div>
+
+      <div v-if="zonesStore.hasRemote" class="form-group">
+        <label>Zone</label>
+        <select v-model.number="form.zone_id">
+          <option v-for="z in zonesStore.items" :key="z.id" :value="z.id">{{ z.name }}</option>
+        </select>
+        <p class="hint">Which node runs this workspace. Local is this Cove host.</p>
+      </div>
       <div v-if="urlCapable" class="form-group">
         <label>{{ urlRequired ? 'Target URL(s)' : 'Open URL(s) (optional)' }}</label>
         <textarea
@@ -72,6 +80,7 @@ import { imagesApi } from '@/api/images'
 import { workspacesApi } from '@/api/workspaces'
 import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
+import { useZonesStore } from '@/stores/zones'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
 import type { LanPolicy, WorkspaceImage } from '@/types'
@@ -84,12 +93,14 @@ const gluetunReady = ref(false)
 const loading = ref(false)
 const error = ref('')
 const store = useWorkspacesStore()
+const zonesStore = useZonesStore()
 const ui = useUiStore()
 const router = useRouter()
 
 const form = reactive({
   name: '',
   image_id: '' as number | '',
+  zone_id: 0 as number,
   target_url: '',
   kiosk: false,
   kiosk_dark: false,
@@ -118,6 +129,7 @@ const urlRequired = computed(() => selectedImage.value?.image_type === 'link')
 const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
 
 onMounted(async () => {
+  zonesStore.fetch()
   images.value = await imagesApi.list()
   try {
     lanPolicy.value = await workspacesApi.lanPolicy()
@@ -140,6 +152,7 @@ async function handleSubmit() {
       name: form.name,
       image_id: form.image_id as number,
       workspace_type: selectedImage.value?.image_type ?? 'desktop',
+      zone_id: form.zone_id,
       target_url: urlCapable.value && form.target_url ? form.target_url : undefined,
       kiosk: urlCapable.value && urlCount.value <= 1 ? form.kiosk : false,
       kiosk_dark: urlCapable.value && urlCount.value <= 1 && form.kiosk ? form.kiosk_dark : false,
@@ -170,6 +183,7 @@ async function handleSubmit() {
     ui.toast(`Launching ${form.name}…`, 'info')
     form.name = ''
     form.image_id = ''
+    form.zone_id = 0
     form.target_url = ''
     form.kiosk = false
     form.kiosk_dark = false

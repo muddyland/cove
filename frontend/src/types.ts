@@ -59,6 +59,8 @@ export interface Workspace {
   workspace_type: ImageType
   container_id: string | null
   container_name: string | null
+  zone_id: number
+  zone_name: string | null
   image_id: number
   image_name: string
   image_logo: string | null
@@ -174,4 +176,9 @@ export interface ZoneEnrollToken {
   token: string
   expires_at: string
   install_command: string
+}
+
+export interface ZoneOption {
+  id: number
+  name: string
 }
