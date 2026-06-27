@@ -52,16 +52,18 @@
     <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
     <div v-if="vpnLocked" class="vpn-lock-msg"><Lock :size="11" /> VPN in use by another workspace</div>
     <div class="card-actions" @click.stop>
-      <!-- Primary: Connect (running) or Boot (stopped/error). -->
+      <!-- Primary: Connect (running), Boot (stopped/error), or a disabled
+           progress button while the workspace is transitioning (starting, etc.). -->
       <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
       <NeonButton
-        v-else
+        v-else-if="isStopped"
         variant="success"
         :loading="acting"
         :disabled="vpnLocked"
         :title="vpnLocked ? 'Another VPN workspace is active — only one VPN connection at a time. Stop it first.' : ''"
         @click="handleStart"
       ><component :is="vpnLocked ? Lock : Power" :size="14" /> BOOT</NeonButton>
+      <NeonButton v-else variant="secondary" disabled :loading="true">{{ transientLabel }}</NeonButton>
 
       <!-- Everything else lives in the Actions menu. -->
       <div ref="actionsDd" class="actions-dd" :class="{ open: actionsOpen }">
@@ -154,6 +156,16 @@ const showMigrate = ref(false)
 const showDiag = ref(false)
 
 const isStopped = computed(() => props.ws.status === 'stopped' || props.ws.status === 'error')
+
+// Label for the disabled progress button shown in transient states (no Boot then).
+const _transientLabels: Record<string, string> = {
+  creating: 'STARTING',
+  stopping: 'STOPPING',
+  migrating: 'MIGRATING',
+}
+const transientLabel = computed(
+  () => _transientLabels[props.ws.status] ?? props.ws.status.toUpperCase(),
+)
 
 // Actions dropdown: run the chosen action and close the menu.
 const actionsOpen = ref(false)
