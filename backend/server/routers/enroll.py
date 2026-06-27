@@ -11,7 +11,7 @@ import ipaddress
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import select, update
 
 from server import ca
@@ -68,6 +68,28 @@ def install_script(token: str, request: Request, db: DbSession):
         )
     script = _render_install_sh(cp_url=_cp_base(request), token=token, zone=zone)
     return PlainTextResponse(script)
+
+
+@router.get("/api/zones/agent-image")
+def agent_image(token: str, db: DbSession):
+    """Stream the configured agent image as a ``docker save`` tar, so a fresh
+    agent can ``docker load`` a locally-built image with no registry. Token-gated
+    (validated, not consumed) — the install script fetches this before enrolling.
+    """
+    zone = _find_zone_by_token(db, token)
+    if not _token_valid(zone):
+        raise HTTPException(status_code=403, detail="Invalid or expired enrollment token")
+
+    from server.docker_manager import get_docker_manager
+
+    ref = get_settings().zone_agent_image
+    try:
+        stream = get_docker_manager(0).save_image_stream(ref)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Control plane cannot export image '{ref}': {exc}"
+        )
+    return StreamingResponse(stream, media_type="application/x-tar")
 
 
 @router.post("/api/zones/enroll", response_model=ZoneEnrollResponse)
@@ -141,6 +163,7 @@ TOKEN="__TOKEN__"
 ZONE_HOST="__ZONE_HOST__"
 PORT="__PORT__"
 AGENT_IMAGE="__AGENT_IMAGE__"
+LOAD_IMAGE="__LOAD_IMAGE__"
 STORAGE_PATH="__STORAGE_PATH__"
 AGENT_DIR="/var/lib/cove-agent"
 CERT_DIR="$AGENT_DIR/certs"
@@ -151,6 +174,13 @@ if [ "$(id -u)" -ne 0 ]; then echo "Please run as root (sudo)." >&2; exit 1; fi
 if ! command -v docker >/dev/null 2>&1; then
   echo "Installing Docker..."
   curl -fsSL https://get.docker.com | sh
+fi
+
+# 1b. Fetch the Cove agent image from the control plane (locally-built images
+#     aren't in a registry). Skipped when AGENT_IMAGE is a registry ref.
+if [ -n "$LOAD_IMAGE" ]; then
+  echo "Loading the Cove agent image (${AGENT_IMAGE}) from the control plane..."
+  curl -fsSL "$CP_URL/api/zones/agent-image?token=$TOKEN" | docker load
 fi
 
 # 2. Generate the agent's server keypair + CSR locally (private key never leaves
@@ -318,6 +348,7 @@ def _render_install_sh(*, cp_url: str, token: str, zone: Zone) -> str:
         "__ZONE_HOST__": zone.endpoint_host or "",
         "__PORT__": str(zone.endpoint_port),
         "__AGENT_IMAGE__": settings.zone_agent_image,
+        "__LOAD_IMAGE__": "1" if settings.zone_agent_image_from_control_plane else "",
         "__STORAGE_PATH__": storage_path,
     }
     script = _INSTALL_TEMPLATE

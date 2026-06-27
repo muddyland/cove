@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # Container image a zone agent runs (same Cove image, started with
     # COVE_AGENT_MODE=1). Baked into the generated install script.
     zone_agent_image: str = "cove:local"
+    # When true (default), the installer fetches this image from the control
+    # plane (a `docker save` stream) and `docker load`s it — so a locally-built
+    # image with no registry still reaches the agent. Set false when
+    # zone_agent_image is a registry ref the agent can pull itself.
+    zone_agent_image_from_control_plane: bool = True
     # On a zone agent: the LOCAL docker-socket-proxy the Docker reverse-proxy
     # forwards to (the Docker daemon is never exposed on a network port).
     agent_docker_socket_url: str = "http://cove-agent-sockproxy:2375"

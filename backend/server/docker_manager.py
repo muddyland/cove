@@ -523,6 +523,11 @@ class DockerManager:
         """Liveness check for this zone's daemon. Raises if unreachable."""
         return self._client.ping()
 
+    def save_image_stream(self, ref: str):
+        """A ``docker save`` byte stream for an image, used to provision a zone
+        agent with a locally-built image that isn't in any registry."""
+        return self._client.api.get_image(ref)
+
     def _ensure_named_volume(self, volume_name: str) -> None:
         try:
             self._client.volumes.get(volume_name)

@@ -129,3 +129,23 @@ def test_enrolled_zone_accepts_workspaces(client):
     )
     assert resp.status_code == 201, resp.text
     assert resp.json()["zone_id"] == zid
+
+
+def test_agent_image_streams_with_valid_token(client, fake_docker_manager):
+    fake_docker_manager.save_image_stream.return_value = [b"TAR", b"DATA"]
+    setup_admin(client)
+    zid = _pending_zone_with_endpoint(client)
+    token = client.post(f"/api/admin/zones/{zid}/enroll-token").json()["token"]
+
+    resp = client.get(f"/api/zones/agent-image?token={token}")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "application/x-tar"
+    assert resp.content == b"TARDATA"
+    # The configured agent image (default cove:local) is what gets exported.
+    fake_docker_manager.save_image_stream.assert_called_once_with("cove:local")
+
+
+def test_agent_image_rejects_bad_token(client):
+    setup_admin(client)
+    resp = client.get("/api/zones/agent-image?token=nope")
+    assert resp.status_code == 403, resp.text

@@ -108,14 +108,25 @@ Run the one-liner as root on the new node. It is idempotent and does the followi
 ([`backend/server/routers/enroll.py`](../backend/server/routers/enroll.py) renders it):
 
 1. Installs Docker if absent.
-2. Generates the agent's **server keypair + CSR locally** in
+2. **Fetches the Cove agent image** from the control plane (`GET
+   /api/zones/agent-image`, a `docker save` stream) and `docker load`s it — so a
+   locally-built image with no registry still reaches the agent. Skipped when
+   `COVE_ZONE_AGENT_IMAGE_FROM_CONTROL_PLANE=false` (registry pull instead).
+3. Generates the agent's **server keypair + CSR locally** in
    `/var/lib/cove-agent/certs` (the private key never leaves the host) with the
    endpoint host in the SAN.
-3. `POST`s the CSR to `/api/zones/enroll?token=…`; receives the **CA cert**, the
-   **signed server cert**, the **stream-signing key**, and the **workspace
-   domain**.
-4. Writes the agent stack to `/var/lib/cove-agent` (`.env`, `docker-compose.yml`,
+4. `POST`s the CSR to `/api/zones/enroll?token=…`; receives the **CA cert**, the
+   **signed server cert**, the **stream-signing key**, the **workspace domain**,
+   and the **pinned client-cert CN**.
+5. Writes the agent stack to `/var/lib/cove-agent` (`.env`, `docker-compose.yml`,
    `traefik-dynamic.yml`) and runs `docker compose up -d`.
+
+> **Image options.** Set `COVE_ZONE_AGENT_IMAGE` to the image the agent should run
+> (default `cove:local`, matching the control plane's own image). By default the
+> installer pulls those bytes **from the control plane** — no registry needed. If
+> you publish Cove to a registry instead, set `COVE_ZONE_AGENT_IMAGE` to that ref
+> and `COVE_ZONE_AGENT_IMAGE_FROM_CONTROL_PLANE=false` so the agent pulls it
+> directly.
 
 When it finishes the zone flips to **enrolled** and can run workspaces.
 
@@ -223,7 +234,8 @@ Control-plane settings (env prefix `COVE_`):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COVE_ZONE_AGENT_IMAGE` | `cove:local` | Cove image the agent runs (must be pullable on the agent host). |
+| `COVE_ZONE_AGENT_IMAGE` | `cove:local` | The Cove image the agent runs. |
+| `COVE_ZONE_AGENT_IMAGE_FROM_CONTROL_PLANE` | `true` | Installer fetches the image from the control plane (`docker save`/`load`) so a locally-built image needs no registry. Set `false` to have the agent pull a registry ref. |
 | `COVE_ZONE_ENROLL_TOKEN_MINUTES` | `60` | Enrollment-token lifetime. |
 | `COVE_ZONE_CERTS_MOUNT` | `/zone-certs` | Path **inside the Traefik container** where per-zone client certs are mounted. |
 | `COVE_STREAM_SIGNING_KEY` | _(file)_ | Stream-token signing key. Generated as `data_dir/stream.key` on the control plane; **provided to agents** at enrollment. |
