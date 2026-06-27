@@ -1191,29 +1191,30 @@ class DockerManager:
         db = self._get_db()
         try:
             ws = db.get(Workspace, ws_id)
-            if not ws or not ws.container_id:
-                if ws:
-                    self._cleanup_tailscale_sidecar(ws.id)
-                    self._cleanup_gluetun_sidecar(ws.id)
-                    self._cleanup_ws_network(self._ws_network_name(ws.id))
-                    _remove_ssh_key(ws.id)
-                    ws.status = "stopped"
-                    ws.stopped_at = datetime.now(timezone.utc)
-                    db.commit()
+            if not ws:
                 return
-            try:
-                container = self._client.containers.get(ws.container_id)
-                container.stop(timeout=10)
-                container.remove()
-            except docker.errors.NotFound:
-                pass
-            except docker.errors.APIError as exc:
-                logger.warning("Error stopping container %s: %s", ws.container_id[:12], exc)
+            if ws.container_id:
+                try:
+                    container = self._client.containers.get(ws.container_id)
+                    container.stop(timeout=10)
+                    container.remove()
+                except docker.errors.NotFound:
+                    pass
+                except docker.errors.APIError as exc:
+                    logger.warning("Error stopping container %s: %s", ws.container_id[:12], exc)
+                except Exception as exc:
+                    logger.warning("Error stopping container for ws %s: %s", ws.id, exc)
 
-            self._cleanup_tailscale_sidecar(ws.id)
-            self._cleanup_gluetun_sidecar(ws.id)
-            self._cleanup_ws_network(self._ws_network_name(ws.id))
-            _remove_ssh_key(ws.id)
+            # Best-effort cleanup — must not block marking the workspace stopped
+            # (a workspace on an unreachable zone would otherwise stick in
+            # "stopping" forever).
+            try:
+                self._cleanup_tailscale_sidecar(ws.id)
+                self._cleanup_gluetun_sidecar(ws.id)
+                self._cleanup_ws_network(self._ws_network_name(ws.id))
+                _remove_ssh_key(ws.id)
+            except Exception as exc:
+                logger.warning("Stop cleanup failed for workspace %s: %s", ws.id, exc)
 
             ws.status = "stopped"
             ws.stopped_at = datetime.now(timezone.utc)
@@ -1232,19 +1233,32 @@ class DockerManager:
             ws = db.get(Workspace, ws_id)
             if not ws:
                 return
-            if ws.container_id:
-                try:
-                    container = self._client.containers.get(ws.container_id)
-                    container.stop(timeout=5)
-                    container.remove()
-                except (docker.errors.NotFound, docker.errors.APIError):
-                    pass
-            self._cleanup_tailscale_sidecar(ws.id)
-            self._cleanup_gluetun_sidecar(ws.id)
-            self._cleanup_ws_network(self._ws_network_name(ws.id))
-            _remove_ssh_key(ws.id)
+            # Best-effort teardown — it must NEVER block deleting the DB record.
+            # Otherwise a workspace on an unreachable zone (connection errors are
+            # not docker.errors.APIError) can't be purged: the cleanup raises
+            # before db.delete and the row reappears on the next poll.
+            try:
+                if ws.container_id:
+                    try:
+                        container = self._client.containers.get(ws.container_id)
+                        container.stop(timeout=5)
+                        container.remove()
+                    except (docker.errors.NotFound, docker.errors.APIError):
+                        pass
+                self._cleanup_tailscale_sidecar(ws.id)
+                self._cleanup_gluetun_sidecar(ws.id)
+                self._cleanup_ws_network(self._ws_network_name(ws.id))
+                _remove_ssh_key(ws.id)
+            except Exception as exc:
+                logger.warning(
+                    "Best-effort teardown failed for workspace %s (deleting record anyway): %s",
+                    ws_id, exc,
+                )
             if purge_storage:
-                delete_workspace_storage(ws)
+                try:
+                    delete_workspace_storage(ws)
+                except Exception as exc:
+                    logger.warning("Storage purge failed for workspace %s: %s", ws_id, exc)
             db.delete(ws)
             db.commit()
         finally:

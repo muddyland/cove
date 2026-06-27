@@ -74,3 +74,22 @@ def test_remote_zone_unreachable_fails_fast():
     status, msg = _status(ws_id)
     assert status == "error"
     assert "zone agent unreachable" in (msg or "")
+
+
+def test_remove_deletes_record_when_zone_unreachable():
+    """Purging a workspace whose zone agent is unreachable must still delete the
+    DB record (otherwise it reappears on the next poll)."""
+    ws_id = _seed_ws(zone_id=0)
+    dm = DockerManager(0)
+    fake = MagicMock()
+    # The network cleanup talks to the daemon; simulate the agent being down.
+    fake.networks.get.side_effect = ConnectionError("agent unreachable")
+    dm._client = fake
+
+    dm.remove_workspace(ws_id)
+
+    db = SessionLocal()
+    try:
+        assert db.get(Workspace, ws_id) is None
+    finally:
+        db.close()
