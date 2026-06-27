@@ -23,26 +23,23 @@
           <RouterLink to="/app/files" class="nav-link" :class="{ active: $route.path === '/app/files' }">
             <FolderOpen class="nav-icon" :size="16" /> Files
           </RouterLink>
-          <template v-if="auth.isAdmin">
-            <RouterLink to="/app/admin/sessions" class="nav-link" :class="{ active: $route.path === '/app/admin/sessions' }">
-              <MonitorPlay class="nav-icon" :size="16" /> Sessions
-            </RouterLink>
-            <RouterLink to="/app/admin/users" class="nav-link" :class="{ active: $route.path === '/app/admin/users' }">
-              <Users class="nav-icon" :size="16" /> Users
-            </RouterLink>
-            <RouterLink to="/app/admin/images" class="nav-link" :class="{ active: $route.path === '/app/admin/images' }">
-              <Boxes class="nav-icon" :size="16" /> Images
-            </RouterLink>
-            <RouterLink to="/app/admin/zones" class="nav-link" :class="{ active: $route.path === '/app/admin/zones' }">
-              <Network class="nav-icon" :size="16" /> Zones
-            </RouterLink>
-            <RouterLink to="/app/admin/audit" class="nav-link" :class="{ active: $route.path === '/app/admin/audit' }">
-              <ScrollText class="nav-icon" :size="16" /> Audit
-            </RouterLink>
-            <RouterLink to="/app/admin/settings" class="nav-link" :class="{ active: $route.path === '/app/admin/settings' }">
-              <Settings class="nav-icon" :size="16" /> Settings
-            </RouterLink>
-          </template>
+          <div v-if="auth.isAdmin" ref="adminDropdown" class="admin-dropdown" :class="{ open: adminOpen }">
+            <button
+              type="button"
+              class="nav-link admin-trigger"
+              :class="{ active: isAdminRoute }"
+              :aria-expanded="adminOpen"
+              @click="adminOpen = !adminOpen"
+            >
+              <Shield class="nav-icon" :size="16" /> Admin
+              <ChevronDown class="chevron" :size="14" />
+            </button>
+            <div v-show="adminOpen" class="admin-menu">
+              <RouterLink v-for="item in adminItems" :key="item.to" :to="item.to" class="admin-item" :class="{ active: $route.path === item.to }">
+                <component :is="item.icon" class="nav-icon" :size="15" /> {{ item.label }}
+              </RouterLink>
+            </div>
+          </div>
         </nav>
 
         <div class="nav-right">
@@ -63,21 +60,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
-  ScrollText, Settings, UserRound, LogOut, Menu, X,
+  ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
+const adminItems = [
+  { to: '/app/admin/sessions', label: 'Sessions', icon: MonitorPlay },
+  { to: '/app/admin/users', label: 'Users', icon: Users },
+  { to: '/app/admin/images', label: 'Images', icon: Boxes },
+  { to: '/app/admin/zones', label: 'Zones', icon: Network },
+  { to: '/app/admin/audit', label: 'Audit', icon: ScrollText },
+  { to: '/app/admin/settings', label: 'Settings', icon: Settings },
+]
+
 const mobileOpen = ref(false)
-// Collapse the mobile drawer whenever navigation happens.
-watch(() => route.path, () => { mobileOpen.value = false })
+const adminOpen = ref(false)
+const adminDropdown = ref<HTMLElement | null>(null)
+const isAdminRoute = computed(() => route.path.startsWith('/app/admin'))
+
+// Collapse the mobile drawer + admin dropdown whenever navigation happens.
+watch(() => route.path, () => { mobileOpen.value = false; adminOpen.value = false })
+
+// Close the admin dropdown on an outside click (desktop floating menu).
+function onDocClick(e: MouseEvent) {
+  if (adminOpen.value && adminDropdown.value && !adminDropdown.value.contains(e.target as Node)) {
+    adminOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('click', onDocClick))
+onUnmounted(() => document.removeEventListener('click', onDocClick))
 
 async function handleLogout() {
   await auth.logout()
@@ -191,6 +210,52 @@ async function handleLogout() {
   text-shadow: var(--glow-sm);
 }
 
+/* ── Admin dropdown ─────────────────────────────────────────────────────────── */
+.admin-dropdown { position: relative; display: flex; align-items: stretch; }
+.admin-trigger {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.chevron { transition: transform 0.15s; opacity: 0.7; }
+.admin-dropdown.open .chevron { transform: rotate(180deg); }
+
+.admin-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--glow-sm), var(--shadow);
+  padding: 5px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.admin-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+}
+.admin-item:hover { color: var(--text); background: var(--accent-dim); }
+.admin-item.active { color: var(--accent); border-left-color: var(--accent); text-shadow: var(--glow-sm); }
+
 .nav-right {
   display: flex;
   align-items: center;
@@ -300,6 +365,21 @@ async function handleLogout() {
     padding: 0 20px;
   }
   .nav-link.active { border-bottom-color: transparent; border-left-color: var(--accent); }
+
+  /* Admin dropdown expands inline within the vertical drawer. */
+  .admin-dropdown { flex-direction: column; align-items: stretch; }
+  .admin-trigger { height: 44px; border-bottom: none; border-left: 2px solid transparent; }
+  .admin-trigger.active { border-left-color: var(--accent); }
+  .chevron { margin-left: auto; }
+  .admin-menu {
+    position: static;
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    background: var(--surface-2);
+    padding: 0;
+  }
+  .admin-item { height: 42px; padding-left: 40px; border-radius: 0; }
 
   .nav-right {
     margin-left: 0;
