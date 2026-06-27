@@ -44,19 +44,31 @@ def pinned_agent(monkeypatch):
     get_settings.cache_clear()
 
 
+# /agent/files is CN-checked (reached by the control plane over mTLS); /agent/health
+# is exempt, so the CN tests use /agent/files.
+_CHECKED = {"params": {"username": "alice", "path": ""}}
+
+
 def test_accepts_matching_cn(pinned_agent):
-    r = pinned_agent.get("/agent/health", headers={HEADER: 'Subject="CN=cove-cp-zone1"'})
-    assert r.status_code == 200, r.text
+    r = pinned_agent.get("/agent/files", headers={HEADER: 'Subject="CN=cove-cp-zone1"'}, **_CHECKED)
+    assert r.status_code != 403, r.text  # CN passed -> route runs
 
 
 def test_rejects_wrong_cn(pinned_agent):
-    r = pinned_agent.get("/agent/health", headers={HEADER: 'Subject="CN=cove-cp-other"'})
+    r = pinned_agent.get("/agent/files", headers={HEADER: 'Subject="CN=cove-cp-other"'}, **_CHECKED)
     assert r.status_code == 403
 
 
 def test_rejects_missing_header_when_pinned(pinned_agent):
     # Fail closed: enforcement on but no forwarded cert info -> reject.
-    assert pinned_agent.get("/agent/health").status_code == 403
+    assert pinned_agent.get("/agent/files", **_CHECKED).status_code == 403
+
+
+def test_internal_forward_auth_exempt_from_cn(pinned_agent):
+    # The agent's own ForwardAuth callback has no cert header (internal request)
+    # and must NOT be CN-blocked, or every workspace stream's auth would 403.
+    r = pinned_agent.get("/agent/auth/forward", headers={"X-Forwarded-Host": "x.ws.example.com"})
+    assert r.status_code != 403
 
 
 def test_no_enforcement_without_expected_cn(monkeypatch):
@@ -64,6 +76,6 @@ def test_no_enforcement_without_expected_cn(monkeypatch):
     get_settings.cache_clear()
     try:
         c = TestClient(main.create_app())
-        assert c.get("/agent/health").status_code == 200
+        assert c.get("/agent/files", params={"username": "alice"}).status_code != 403
     finally:
         get_settings.cache_clear()

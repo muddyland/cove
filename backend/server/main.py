@@ -294,15 +294,23 @@ def create_app() -> FastAPI:
         # Agent mode exposes only the mTLS agent API + Docker proxy on one port.
         # No SPA, login, or control-plane routers.
 
+        # Internal Traefik callbacks reach cove-agent over the cluster network
+        # (plain HTTP, no client cert), NOT through the mTLS entrypoint — so they
+        # carry no cert-info header. They expose nothing sensitive (the ForwardAuth
+        # validates a stream token; the error page is static), so they must bypass
+        # the CN pin or every workspace stream's ForwardAuth would 403.
+        _cn_exempt = ("/agent/auth/forward", "/__cove_error", "/api/health", "/agent/health")
+
         @app.middleware("http")
         async def verify_client_cn(request: Request, call_next):
             """Pin the agent to its control plane's client cert: reject any request
             whose forwarded client-cert CN isn't the expected cove-cp-<zone> CN.
-            Skipped when no expected CN is configured (dev/tests)."""
+            Skipped when no expected CN is configured (dev/tests) or for internal
+            Traefik callbacks (which have no client cert)."""
             from server.client_cert import CLIENT_CERT_INFO_HEADER, extract_client_cn
 
             expected = get_settings().agent_expected_client_cn
-            if expected:
+            if expected and not request.url.path.startswith(_cn_exempt):
                 raw = request.headers.get(CLIENT_CERT_INFO_HEADER)
                 cn = extract_client_cn(raw)
                 if cn != expected:
