@@ -182,3 +182,33 @@ describe('api client', () => {
     expect(init.headers['Content-Type']).toBe('application/json')
   })
 })
+
+describe('api client error formatting', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('renders a FastAPI 422 array detail as a readable string (not [object Object])', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(422, { detail: [{ type: 'missing', loc: ['body', 'x'], msg: 'Field required' }] }),
+    )
+    await expect(api.post('/things', {})).rejects.toMatchObject({
+      status: 422,
+      message: 'Field required',
+    })
+  })
+
+  it('passes a string detail through unchanged', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(409, { detail: 'Already on that zone' }))
+    await expect(api.post('/things', {})).rejects.toMatchObject({
+      status: 409,
+      message: 'Already on that zone',
+    })
+  })
+})

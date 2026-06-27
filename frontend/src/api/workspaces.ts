@@ -59,7 +59,7 @@ export const workspacesApi = {
   clone: (id: number, payload: { name: string; image_id?: number }) =>
     api.post<Workspace>(`/workspaces/${id}/clone`, payload),
   migrate: (id: number, payload: { zone_id: number }) =>
-    api.post<Workspace>(`/workspaces/${id}/migrate`, payload),
+    api.post<Workspace>(`/workspaces/${id}/migrate`, { target_zone_id: payload.zone_id }),
   tailscaleStatus: (id: number) =>
     api.get<TailscaleStatus>(`/workspaces/${id}/tailscale-status`),
   logs: (id: number, source: LogSource, tail = 200) =>

@@ -11,6 +11,19 @@ class ApiError extends Error {
   }
 }
 
+// FastAPI returns `detail` as a string OR, for validation (422) errors, an array
+// of `{ msg, loc, ... }` objects. Coerce either into a readable string so the UI
+// never renders "[object Object]".
+function formatDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail.map(d => (d && typeof d === 'object' && 'msg' in d ? String((d as any).msg) : String(d)))
+    return msgs.join('; ') || fallback
+  }
+  if (detail && typeof detail === 'object' && 'msg' in detail) return String((detail as any).msg)
+  return fallback
+}
+
 // A single shared in-flight refresh: when several requests 401 at once (the
 // dashboard polls multiple endpoints), they all await ONE /auth/refresh instead
 // of each firing their own — which previously hammered the endpoint and could
@@ -79,7 +92,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
     let detail = 'Unauthorized'
     try {
       const body = await resp.json()
-      detail = body.detail || detail
+      detail = formatDetail(body.detail, detail)
     } catch {}
     throw new ApiError(401, detail)
   }
@@ -88,7 +101,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
     let detail = `HTTP ${resp.status}`
     try {
       const body = await resp.json()
-      detail = body.detail || detail
+      detail = formatDetail(body.detail, detail)
     } catch {}
     throw new ApiError(resp.status, detail)
   }
