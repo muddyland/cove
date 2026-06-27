@@ -305,6 +305,12 @@ services:
       - traefik.http.routers.cove-agent.entrypoints=websecure
       - traefik.http.routers.cove-agent.service=cove-agent
       - traefik.http.routers.cove-agent.middlewares=cove-clientcert@file
+      # TLS + mTLS option live on the router (not the entrypoint): a host-less
+      # PathPrefix(`/`) router can't take the entrypoint's default TLS option
+      # (Traefik spawns a "conflicted" router without our middleware, so the
+      # client-cert CN is never forwarded and cove-agent 403s every request).
+      - traefik.http.routers.cove-agent.tls=true
+      - traefik.http.routers.cove-agent.tls.options=cove-mtls@file
       - traefik.http.services.cove-agent.loadbalancer.server.port=8080
     depends_on: [sockproxy]
   traefik:
@@ -318,8 +324,6 @@ services:
       - --providers.docker.network=cove-agent
       - --providers.file.filename=/etc/traefik/dynamic.yml
       - --entrypoints.websecure.address=:${PORT}
-      - --entrypoints.websecure.http.tls=true
-      - --entrypoints.websecure.http.tls.options=cove-mtls@file
       - --log.level=WARN
     environment:
       # Pin the Docker API version so Traefik's client doesn't fall back to 1.24,
