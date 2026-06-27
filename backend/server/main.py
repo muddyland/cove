@@ -291,8 +291,26 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     if get_settings().agent_mode:
-        # Agent mode exposes only the mTLS agent API (the Docker daemon is reached
-        # over a separate mTLS Docker port). No SPA, login, or control-plane routers.
+        # Agent mode exposes only the mTLS agent API + Docker proxy on one port.
+        # No SPA, login, or control-plane routers.
+
+        @app.middleware("http")
+        async def verify_client_cn(request: Request, call_next):
+            """Pin the agent to its control plane's client cert: reject any request
+            whose forwarded client-cert CN isn't the expected cove-cp-<zone> CN.
+            Skipped when no expected CN is configured (dev/tests)."""
+            from server.client_cert import CLIENT_CERT_INFO_HEADER, extract_client_cn
+
+            expected = get_settings().agent_expected_client_cn
+            if expected:
+                cn = extract_client_cn(request.headers.get(CLIENT_CERT_INFO_HEADER))
+                if cn != expected:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "client certificate not authorized for this zone"},
+                    )
+            return await call_next(request)
+
         app.include_router(agent.router)
 
         @app.get("/api/health")

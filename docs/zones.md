@@ -49,9 +49,12 @@ Cove-shaped containers — it cannot trivially root the agent host.
 **Trust model:** the control plane is a private CA (`data_dir/ca/`). At enrollment
 it signs the agent's server certificate and issues itself a per-zone client
 certificate. The agent's Traefik **requires a client certificate signed by this
-CA** (`RequireAndVerifyClientCert`); the control plane verifies the agent's server
-cert against the same CA. The CA private key never leaves the control plane, and
-the agent's server private key never leaves the agent (only a CSR is sent).
+CA** (`RequireAndVerifyClientCert`) and, via `passTLSClientCert`, the agent
+additionally **pins the CN** to its own zone's client cert (`cove-cp-<id>`) — so a
+client cert issued for one zone cannot be replayed against another. The control
+plane verifies the agent's server cert against the same CA. The CA private key
+never leaves the control plane, and the agent's server private key never leaves
+the agent (only a CSR is sent).
 
 ---
 
@@ -237,6 +240,7 @@ Agent-only settings (set by the installer, normally not edited by hand):
 | `COVE_WORKSPACE_DOMAIN` | For resolving workspace public_id from the stream host. |
 | `COVE_STORAGE_PATH` | Must equal the control plane's. |
 | `COVE_AGENT_DOCKER_SOCKET_URL` | The local socket-proxy the Docker proxy forwards to (default `http://cove-agent-sockproxy:2375`). |
+| `COVE_AGENT_EXPECTED_CLIENT_CN` | The only client-cert CN the agent accepts (`cove-cp-<zone-id>`); pins the zone to its control plane. |
 
 ---
 
@@ -263,6 +267,7 @@ After enrollment, exercise the full path:
 | Workspace launches but **stream 502s** | Agent Traefik can't reach the container, or the central → agent mTLS route is misconfigured. Check agent `cove-traefik` logs and that `:8443` is open from the control plane. |
 | Stream returns **401** | Token/cookie not reaching the agent ForwardAuth, or a stream-signing-key mismatch (agent must run with the provisioned `COVE_STREAM_SIGNING_KEY`). |
 | Files/migration **409 "not enrolled for mTLS"** | The zone was manually registered (plain endpoint) but never enrolled — run the installer. |
+| **403 "client certificate not authorized for this zone"** | The presented client-cert CN doesn't match the agent's `COVE_AGENT_EXPECTED_CLIENT_CN` (e.g. after a control-plane re-issue with a different CN, or wrong zone). Re-enroll to re-provision. |
 | Bind mounts empty / wrong | `COVE_STORAGE_PATH` differs between control plane and agent (see [Storage parity](#5-storage-parity-important)). |
 
 Useful on the agent: `docker compose -p cove-agent ps`, `docker logs cove-agent`,

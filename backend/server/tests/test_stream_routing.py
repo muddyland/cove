@@ -70,6 +70,8 @@ def test_enroll_provisions_stream_key(client):
     # The agent receives the stream-signing key (so it can ForwardAuth locally).
     assert body["stream_signing_key"]
     assert body["stream_signing_key"] == get_settings().get_stream_signing_key()
+    # And the CN it should pin its control-plane client cert to.
+    assert body["expected_client_cn"].startswith("cove-cp-")
 
 
 # ── Traefik dynamic config ─────────────────────────────────────────────────

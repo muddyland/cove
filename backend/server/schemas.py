@@ -445,6 +445,9 @@ class ZoneEnrollResponse(BaseModel):
     # workspace public_id from its subdomain host.
     stream_signing_key: str
     workspace_domain: Optional[str] = None
+    # The only client-cert CN the agent should accept (this zone's control-plane
+    # cert) — pins the zone to its control plane.
+    expected_client_cn: str
 
 
 class ZoneOut(BaseModel):

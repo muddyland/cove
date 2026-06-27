@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # On a zone agent: the LOCAL docker-socket-proxy the Docker reverse-proxy
     # forwards to (the Docker daemon is never exposed on a network port).
     agent_docker_socket_url: str = "http://cove-agent-sockproxy:2375"
+    # On a zone agent: the only client-cert CN allowed to reach the agent API +
+    # Docker proxy (its control plane's per-zone cert, cove-cp-<public_id>).
+    # Enforced via Traefik's passTLSClientCert when set; unset disables the check.
+    # (empty -> None)
+    agent_expected_client_cn: Optional[str] = None
 
     # Token lifetimes
     access_token_minutes: int = 30
@@ -101,6 +106,7 @@ class Settings(BaseSettings):
         "app_origin",
         "forward_auth_host",
         "stream_signing_key",
+        "agent_expected_client_cn",
         mode="before",
     )
     @classmethod

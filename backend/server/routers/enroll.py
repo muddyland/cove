@@ -125,6 +125,7 @@ def enroll(body: ZoneEnrollRequest, token: str, db: DbSession):
         server_cert_pem=server_cert,
         stream_signing_key=settings.get_stream_signing_key(),
         workspace_domain=settings.workspace_domain,
+        expected_client_cn=f"cove-cp-{zone.public_id}",
     )
 
 
@@ -183,6 +184,7 @@ open(os.path.join(d, "ca.crt"), "w").write(r["ca_cert_pem"])
 open(os.path.join(d, "server.crt"), "w").write(r["server_cert_pem"])
 print("STREAM_SIGNING_KEY=" + shlex.quote(r["stream_signing_key"]))
 print("WORKSPACE_DOMAIN=" + shlex.quote(r.get("workspace_domain") or ""))
+print("EXPECTED_CLIENT_CN=" + shlex.quote(r["expected_client_cn"]))
 PY
 )"
 echo "Enrolled. Writing the agent stack..."
@@ -197,6 +199,7 @@ AGENT_IMAGE=${AGENT_IMAGE}
 STORAGE_PATH=${STORAGE_PATH}
 STREAM_SIGNING_KEY=${STREAM_SIGNING_KEY}
 WORKSPACE_DOMAIN=${WORKSPACE_DOMAIN}
+EXPECTED_CLIENT_CN=${EXPECTED_CLIENT_CN}
 ENV
 
 cat > "$AGENT_DIR/traefik-dynamic.yml" <<'DYN'
@@ -212,6 +215,15 @@ tls:
         clientAuthType: RequireAndVerifyClientCert
         caFiles:
           - /certs/ca.crt
+http:
+  middlewares:
+    # Forward the verified client cert's CN to cove-agent, which pins it to this
+    # zone's control-plane cert (cove-cp-<id>).
+    cove-clientcert:
+      passTLSClientCert:
+        info:
+          subject:
+            commonName: true
 DYN
 
 cat > "$AGENT_DIR/docker-compose.yml" <<'COMPOSE'
@@ -240,6 +252,7 @@ services:
       - COVE_WORKSPACE_DOMAIN=${WORKSPACE_DOMAIN}
       - COVE_STORAGE_PATH=${STORAGE_PATH}
       - COVE_AGENT_DOCKER_SOCKET_URL=http://cove-agent-sockproxy:2375
+      - COVE_AGENT_EXPECTED_CLIENT_CN=${EXPECTED_CLIENT_CN}
     volumes:
       - "${STORAGE_PATH}:${STORAGE_PATH}"
       - cove-agent-data:/app/data
@@ -260,6 +273,7 @@ services:
       - traefik.http.routers.cove-agent.priority=1
       - traefik.http.routers.cove-agent.entrypoints=websecure
       - traefik.http.routers.cove-agent.service=cove-agent
+      - traefik.http.routers.cove-agent.middlewares=cove-clientcert@file
       - traefik.http.services.cove-agent.loadbalancer.server.port=8080
     depends_on: [sockproxy]
   traefik:
