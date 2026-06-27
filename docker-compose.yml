@@ -45,7 +45,7 @@ services:
       - cove-net
 
   traefik:
-    image: traefik:v3.2
+    image: traefik:v3.7
     container_name: cove-traefik
     restart: unless-stopped
     command:

@@ -181,7 +181,7 @@ The installer brings up these containers (compose project in
 | `cove-agent-sockproxy` | `tecnativa/docker-socket-proxy` | The **local** (internal-only) Docker API the cove-agent proxy forwards to. Never published. |
 | `cove-agent-sockproxy-ro` | `tecnativa/docker-socket-proxy` | Read-only API for the agent's Traefik to discover workspace containers. |
 | `cove-agent` | `${COVE_ZONE_AGENT_IMAGE}` (the Cove image) | Agent-mode API: `/agent/auth/forward`, `/agent/files*`, `/agent/migrate/*`, and the **policy-filtered Docker proxy** (catch-all → local socket-proxy). Also defines the `cove-auth`/`cove-errors` middlewares the workspace routers reference. |
-| `cove-traefik` | `traefik:v3.2` | The single mTLS entrypoint on `:8443` (`RequireAndVerifyClientCert`). Workspace streams route locally; everything else (agent API + Docker API) → `cove-agent`. |
+| `cove-traefik` | `traefik:v3.7` | The single mTLS entrypoint on `:8443` (`RequireAndVerifyClientCert`). Workspace streams route locally; everything else (agent API + Docker API) → `cove-agent`. |
 
 There is no separately-exposed Docker port and no `ghostunnel`: the Docker API is
 just another path on the one mTLS port, behind the create-policy filter.

@@ -308,7 +308,7 @@ services:
       - traefik.http.services.cove-agent.loadbalancer.server.port=8080
     depends_on: [sockproxy]
   traefik:
-    image: traefik:v3.2
+    image: traefik:v3.7
     container_name: cove-traefik
     restart: unless-stopped
     command:

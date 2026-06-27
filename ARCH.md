@@ -20,7 +20,7 @@ container on a per-workspace isolated network.
                               │                                                │
    browser ──HTTP/S──▶ ┌──────┴─────┐                                          │
                        │  Traefik   │  :80/:443, label-based routing, ACME TLS  │
-                       │  (v3.2)    │                                          │
+                       │  (v3.7)    │                                          │
                        └──┬───┬───┬─┘                                          │
         ForwardAuth ◀─────┘   │   └──────────────▶ workspace containers        │
         /api/auth/forward     │                    (webtop / browser)          │
