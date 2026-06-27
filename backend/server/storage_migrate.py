@@ -6,9 +6,12 @@ under a user's storage base — matching the clone boundary in
 re-staged per launch on the destination, so they are never part of the payload.
 """
 
+import logging
 import tarfile
 from pathlib import Path
 from typing import BinaryIO, Iterator
+
+logger = logging.getLogger(__name__)
 
 
 def workspace_dirname(ws_name: str) -> str:
@@ -46,11 +49,27 @@ def export_tar_stream(src_dir: Path) -> Iterator[bytes]:
         yield from sink.drain()
 
 
+def _tolerant_data_filter(member: tarfile.TarInfo, dest_path: str):
+    """Apply the secure ``data`` filter, but SKIP (don't abort on) members it
+    rejects. Workspace homes accumulate runtime junk the strict filter refuses —
+    e.g. Chromium's ``SingletonSocket``, a symlink to an absolute path. Those
+    artifacts are disposable, so dropping them lets the real files through while
+    keeping the filter's guarantee that nothing is written outside ``dest_path``
+    (a rejected member is never extracted)."""
+    try:
+        return tarfile.data_filter(member, dest_path)
+    except tarfile.FilterError as e:
+        logger.warning("migration import: skipping unsafe tar member %r (%s)", member.name, e)
+        return None
+
+
 def import_tar(dst_dir: Path, fileobj: BinaryIO) -> None:
     """Extract a tar.gz stream into ``dst_dir`` (created if absent).
 
-    Uses the ``data`` extraction filter so a crafted archive cannot write outside
-    ``dst_dir`` (absolute paths / ``..`` are rejected)."""
+    Uses a tolerant wrapper around the ``data`` extraction filter: a crafted or
+    junk archive still cannot write outside ``dst_dir`` (absolute paths / ``..`` /
+    absolute symlinks are rejected), but rejected members are skipped rather than
+    failing the whole migration."""
     dst_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=fileobj, mode="r|gz") as tar:
-        tar.extractall(dst_dir, filter="data")
+        tar.extractall(dst_dir, filter=_tolerant_data_filter)

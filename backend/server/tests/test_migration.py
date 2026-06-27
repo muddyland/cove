@@ -30,6 +30,23 @@ def test_tar_roundtrip_preserves_tree_and_symlinks(tmp_path):
     assert (dst / "link").is_symlink()
 
 
+def test_import_skips_absolute_symlink_junk(tmp_path):
+    # Chromium leaves a SingletonSocket symlink pointing at an absolute path; the
+    # strict 'data' tar filter rejects it. Migration must skip that junk, not fail
+    # the whole import — while still extracting the real files.
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "real.txt").write_text("keep me")
+    (src / "SingletonSocket").symlink_to("/run/abs/socket")
+
+    data = b"".join(storage_migrate.export_tar_stream(src))
+    dst = tmp_path / "dst"
+    storage_migrate.import_tar(dst, io.BytesIO(data))  # must not raise
+
+    assert (dst / "real.txt").read_text() == "keep me"
+    assert not (dst / "SingletonSocket").is_symlink()  # unsafe member skipped
+
+
 # ── agent export/import endpoints ──────────────────────────────────────────
 
 def _agent_root():
