@@ -509,7 +509,10 @@ class DockerManager:
         finally:
             db.close()
         scheme = "https" if tls else "tcp"
-        kwargs: dict = {"base_url": f"{scheme}://{host}:{port}"}
+        # Bounded timeout so an unreachable/misconfigured agent fails in ~30s with
+        # a clear error instead of hanging on docker-py's 60s default. Streaming
+        # pulls are unaffected (the timeout is per-read; progress keeps it alive).
+        kwargs: dict = {"base_url": f"{scheme}://{host}:{port}", "timeout": 30}
         if tls is not None:
             kwargs["tls"] = tls
         if api_version:
@@ -810,6 +813,15 @@ class DockerManager:
             container_name = f"cove-ws-{ws.id}"
             net_name = self._ws_network_name(ws.id)
 
+            # Remote zone: confirm the agent is reachable up front so a bad
+            # endpoint/cert/firewall fails fast with a clear message instead of
+            # hanging partway through launch.
+            if self.zone_id != 0:
+                try:
+                    self._client.ping()
+                except Exception as exc:
+                    raise RuntimeError(f"zone agent unreachable: {exc}") from exc
+
             self._ensure_ws_network(net_name)
 
             # Ephemeral workspaces get NO persistent bind mount: /config lives in
@@ -1014,6 +1026,18 @@ class DockerManager:
                 ws = db.get(Workspace, ws_id)
                 ws.status = "error"
                 ws.error_message = str(exc)
+                db.commit()
+        except Exception as exc:
+            # Anything not caught above — most importantly connection/timeout
+            # errors reaching a remote zone's agent (these are requests/urllib3
+            # exceptions, NOT docker.errors.APIError). Without this the launch
+            # task would die silently and the workspace would sit in "creating"
+            # forever. Surface it as a readable error instead.
+            logger.exception("Failed to launch workspace %s", ws_id)
+            ws = db.get(Workspace, ws_id)
+            if ws:
+                ws.status = "error"
+                ws.error_message = str(exc) or exc.__class__.__name__
                 db.commit()
         finally:
             db.close()
