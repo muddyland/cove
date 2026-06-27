@@ -64,6 +64,53 @@ def test_export_excludes_proot_apps(tmp_path):
     assert not (dst / "proot-apps").exists()  # regeneratable, excluded
 
 
+def test_iterator_reader_stream_extract(tmp_path):
+    # The CP relays a sync byte iterator straight into extraction (no temp file).
+    src = tmp_path / "src"
+    (src / "d").mkdir(parents=True)
+    (src / "a.txt").write_text("hello")
+    (src / "d" / "b.txt").write_text("world")
+    chunks = list(storage_migrate.export_tar_stream(src))
+    dst = tmp_path / "dst"
+    storage_migrate.import_tar(dst, storage_migrate.IteratorReader(iter(chunks)))
+    assert (dst / "a.txt").read_text() == "hello"
+    assert (dst / "d" / "b.txt").read_text() == "world"
+
+
+def test_queue_reader_threaded_extract(tmp_path):
+    # The agent feeds the body from one thread while another extracts; small chunks
+    # + a tiny queue exercise the backpressure path. Must not deadlock or corrupt.
+    import threading
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "big.txt").write_text("x" * 20000)
+    data = b"".join(storage_migrate.export_tar_stream(src))
+
+    reader = storage_migrate.QueueReader(maxsize=2)
+    dst = tmp_path / "dst"
+    err: dict = {}
+
+    def _extract():
+        try:
+            storage_migrate.import_tar(dst, reader)
+        except Exception as exc:  # noqa: BLE001
+            err["e"] = exc
+        finally:
+            reader.abort()
+
+    t = threading.Thread(target=_extract)
+    t.start()
+    for i in range(0, len(data), 256):
+        reader.push(data[i : i + 256])
+    reader.push(None)
+    t.join(timeout=15)
+
+    assert not t.is_alive(), "extractor deadlocked"
+    assert not err, err
+    assert (dst / "big.txt").read_text() == "x" * 20000
+
+
 # ── agent export/import endpoints ──────────────────────────────────────────
 
 def _agent_root():

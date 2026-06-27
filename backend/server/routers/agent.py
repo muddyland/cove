@@ -7,11 +7,12 @@ covers what the Docker API cannot — file browsing (Phase 5) and workspace
 migration (Phase 6). For now it carries a health probe.
 """
 
-import tempfile
 from pathlib import Path
 
+import anyio
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from server import storage_local, storage_migrate
 from server.config import get_settings
@@ -130,8 +131,23 @@ def agent_migrate_export(username: str, ws_name: str):
 async def agent_migrate_import(request: Request, username: str, ws_name: str):
     base = _agent_user_base(username)
     dst = base / storage_migrate.workspace_dirname(ws_name)
-    with tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024) as tmp:
-        async for chunk in request.stream():
-            tmp.write(chunk)
-        tmp.seek(0)
-        storage_migrate.import_tar(dst, tmp)
+    # Stream the body straight into extraction: a worker thread runs the sync
+    # tarfile extraction, reading from a queue this coroutine feeds. No multi-GB
+    # temp file (the agent's /tmp is a small tmpfs that a large home overflows),
+    # the connection stays active throughout, and the bounded queue backpressures
+    # a fast uploader. abort() in finally guarantees neither side deadlocks.
+    reader = storage_migrate.QueueReader()
+
+    async def _extract():
+        try:
+            await run_in_threadpool(storage_migrate.import_tar, dst, reader)
+        finally:
+            reader.abort()
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(_extract)
+        try:
+            async for chunk in request.stream():
+                await anyio.to_thread.run_sync(reader.push, chunk)
+        finally:
+            await anyio.to_thread.run_sync(reader.push, None)

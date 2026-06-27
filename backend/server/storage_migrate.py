@@ -7,10 +7,11 @@ re-staged per launch on the destination, so they are never part of the payload.
 """
 
 import logging
-import os
+import queue
 import tarfile
+import threading
 from pathlib import Path
-from typing import BinaryIO, Iterator
+from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -63,55 +64,115 @@ def export_tar_stream(src_dir: Path) -> Iterator[bytes]:
         yield from sink.drain()
 
 
-def _tolerant_data_filter(member: tarfile.TarInfo, dest_path: str):
-    """Apply the secure ``data`` filter, but SKIP (don't abort on) members it
-    rejects. Workspace homes accumulate runtime junk the strict filter refuses —
-    e.g. Chromium's ``SingletonSocket``, a symlink to an absolute path. Those
-    artifacts are disposable, so dropping them lets the real files through while
-    keeping the filter's guarantee that nothing is written outside ``dest_path``
-    (a rejected member is never extracted)."""
-    try:
-        return tarfile.data_filter(member, dest_path)
-    except tarfile.FilterError as e:
-        logger.warning("migration import: skipping unsafe tar member %r (%s)", member.name, e)
-        return None
+def import_tar(dst_dir: Path, fileobj) -> None:
+    """Stream-extract a tar.gz from ``fileobj`` into ``dst_dir`` (created if absent).
 
+    ``fileobj`` only needs a blocking ``read(n)`` — extraction is sequential, so a
+    multi-GB home streams straight in without buffering to a temp file (the agent's
+    ``/tmp`` is a small RAM-backed tmpfs that a 7GB tar overflows). Two safeguards
+    run per member:
 
-def import_tar(dst_dir: Path, fileobj: BinaryIO) -> None:
-    """Extract a tar.gz stream into ``dst_dir`` (created if absent).
-
-    Uses a tolerant wrapper around the ``data`` extraction filter: a crafted or
-    junk archive still cannot write outside ``dst_dir`` (absolute paths / ``..`` /
-    absolute symlinks are rejected), but rejected members are skipped rather than
-    failing the whole migration."""
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(fileobj=fileobj, mode="r|gz") as tar:
-        tar.extractall(dst_dir, filter=_tolerant_data_filter)
-    _normalize_ownership(dst_dir)
-
-
-def _normalize_ownership(root: Path) -> None:
-    """Chown the imported tree to the workspace user (PUID/PGID).
-
-    The tar preserves the source's uids, which on a webtop home include
-    root-owned subdirectories (e.g. ``.config/pulse``, ``.cache``) created by
-    root-run processes. The destination webtop runs as PUID (1000), and those
-    root-owned dirs break it — pulseaudio's secure-dir check fails on a root-owned
-    ``.config/pulse``, so it never starts and the Selkies stream hangs. Normalising
-    to PUID:PGID makes a migrated home behave like a freshly-created one.
-    Best-effort: a no-op when not running as root (chown raises)."""
+    * the secure ``data`` filter (no writes outside ``dst_dir``: absolute paths,
+      ``..`` and absolute symlinks are rejected) — but a rejected member is SKIPPED,
+      not fatal, since webtop homes carry disposable junk like Chromium's
+      ``SingletonSocket`` (an absolute symlink);
+    * ownership is forced to the workspace user (PUID/PGID) during extraction, so a
+      migrated home behaves like a fresh one. The source tar preserves root-owned
+      dirs (e.g. ``.config/pulse``) that break the destination webtop running as
+      PUID — pulseaudio's secure-dir check fails on a root-owned ``.config/pulse``,
+      so it never starts and the Selkies stream hangs. Only takes effect when
+      extracting as root.
+    """
     from server.config import get_settings
 
     settings = get_settings()
     uid, gid = settings.workspace_puid, settings.workspace_pgid
-    try:
-        os.chown(root, uid, gid, follow_symlinks=False)
-    except OSError as exc:
-        logger.warning("import: could not chown %s (not root?): %s", root, exc)
-        return
-    for parent, dirs, files in os.walk(root):
-        for name in dirs + files:
+
+    def _filter(member: tarfile.TarInfo, dest_path: str):
+        try:
+            member = tarfile.data_filter(member, dest_path)
+        except tarfile.FilterError as exc:
+            logger.warning("migration import: skipping unsafe tar member %r (%s)", member.name, exc)
+            return None
+        if member is not None:
+            member.uid, member.gid = uid, gid
+            member.uname = member.gname = ""  # force numeric ownership
+        return member
+
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=fileobj, mode="r|gz") as tar:
+        tar.extractall(dst_dir, filter=_filter)
+
+
+class IteratorReader:
+    """A blocking ``read(n)`` file-object backed by an iterator of byte chunks, so
+    ``import_tar`` can stream-extract a sync byte stream (e.g. httpx ``iter_bytes``)
+    without buffering it to a temp file."""
+
+    def __init__(self, chunks: Iterator[bytes]) -> None:
+        self._it = iter(chunks)
+        self._buf = b""
+        self._eof = False
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            out = b"".join([self._buf, *self._it])
+            self._buf, self._eof = b"", True
+            return out
+        while len(self._buf) < size and not self._eof:
             try:
-                os.chown(os.path.join(parent, name), uid, gid, follow_symlinks=False)
-            except OSError:
-                pass
+                self._buf += next(self._it)
+            except StopIteration:
+                self._eof = True
+        out, self._buf = self._buf[:size], self._buf[size:]
+        return out
+
+
+class QueueReader:
+    """A blocking ``read(n)`` file-object fed chunk-by-chunk from another thread via
+    ``push`` — bridges an async request body into the sync (threaded) ``import_tar``
+    extraction. ``push(None)`` signals EOF. The bounded queue applies backpressure
+    so a fast uploader can't outrun the extractor. ``abort()`` (called when the
+    extractor exits, success or failure) drains the queue and makes ``push`` stop
+    blocking, so a producer parked on a full queue can't deadlock the request."""
+
+    def __init__(self, maxsize: int = 32) -> None:
+        self._q: queue.Queue = queue.Queue(maxsize=maxsize)
+        self._buf = b""
+        self._eof = False
+        self._aborted = threading.Event()
+
+    def push(self, data) -> None:  # producer (async side, via a worker thread)
+        while not self._aborted.is_set():
+            try:
+                self._q.put(data, timeout=0.25)
+                return
+            except queue.Full:
+                continue
+
+    def abort(self) -> None:  # extractor done: unblock a producer on a full queue
+        self._aborted.set()
+        try:
+            while True:
+                self._q.get_nowait()
+        except queue.Empty:
+            pass
+
+    def read(self, size: int = -1) -> bytes:  # consumer (extractor thread)
+        if size is None or size < 0:
+            while not self._eof:
+                item = self._q.get()
+                if item is None:
+                    self._eof = True
+                    break
+                self._buf += item
+            out, self._buf = self._buf, b""
+            return out
+        while len(self._buf) < size and not self._eof:
+            item = self._q.get()
+            if item is None:
+                self._eof = True
+                break
+            self._buf += item
+        out, self._buf = self._buf[:size], self._buf[size:]
+        return out

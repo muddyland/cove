@@ -9,7 +9,6 @@ works even when the two zones cannot reach each other.
 """
 
 import logging
-import tempfile
 from pathlib import Path
 
 import httpx
@@ -58,11 +57,9 @@ def _push_to_remote(db, zone_id: int, username: str, ws_name: str, byte_iter) ->
 
 def _import_local(username: str, ws_name: str, byte_iter) -> None:
     dst = _local_ws_dir(username, ws_name)
-    with tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024) as tmp:
-        for chunk in byte_iter:
-            tmp.write(chunk)
-        tmp.seek(0)
-        storage_migrate.import_tar(dst, tmp)
+    # Stream-extract the relay straight from the byte iterator — no temp file (a
+    # large home would overflow the control plane's /tmp tmpfs too).
+    storage_migrate.import_tar(dst, storage_migrate.IteratorReader(byte_iter))
 
 
 def _relay(db, src_zone: int, dst_zone: int, username: str, ws_name: str) -> None:
