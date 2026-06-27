@@ -54,7 +54,7 @@ def build_dynamic_config(db) -> dict:
 
         services[name] = {
             "loadBalancer": {
-                "servers": [{"url": f"https://{zone.endpoint_host}:{zone.stream_port}"}],
+                "servers": [{"url": f"https://{zone.endpoint_host}:{zone.endpoint_port}"}],
                 "serversTransport": transport,
             }
         }

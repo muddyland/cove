@@ -35,7 +35,7 @@ def test_create_and_delete_zone(client):
     setup_admin(client)
     resp = client.post(
         "/api/admin/zones",
-        json={"name": "LAN", "endpoint_host": "10.0.0.5", "endpoint_port": 2376},
+        json={"name": "LAN", "endpoint_host": "10.0.0.5"},
     )
     assert resp.status_code == 201, resp.text
     zone = resp.json()

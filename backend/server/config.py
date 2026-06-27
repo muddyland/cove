@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Container image a zone agent runs (same Cove image, started with
     # COVE_AGENT_MODE=1). Baked into the generated install script.
     zone_agent_image: str = "cove:local"
+    # On a zone agent: the LOCAL docker-socket-proxy the Docker reverse-proxy
+    # forwards to (the Docker daemon is never exposed on a network port).
+    agent_docker_socket_url: str = "http://cove-agent-sockproxy:2375"
 
     # Token lifetimes
     access_token_minutes: int = 30

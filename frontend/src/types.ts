@@ -164,7 +164,6 @@ export interface Zone {
   status: string
   endpoint_host: string | null
   endpoint_port: number
-  stream_port: number
   enrolled_at: string | null
   last_seen_at: string | null
   created_at: string

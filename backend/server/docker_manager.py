@@ -451,8 +451,8 @@ def stage_zone_certs(zone) -> tuple[str, str, str]:
 
 def zone_agent_base_url(zone) -> str:
     """The base URL of a zone agent's mTLS API (served by the agent's Traefik on
-    its stream port, alongside the workspace streams)."""
-    return f"https://{zone.endpoint_host}:{zone.stream_port}"
+    its single port, alongside the workspace streams and Docker proxy)."""
+    return f"https://{zone.endpoint_host}:{zone.endpoint_port}"
 
 
 def zone_agent_client(zone, **kwargs):

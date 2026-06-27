@@ -55,10 +55,7 @@
           <input v-model="form.endpoint_host" placeholder="10.0.0.5 or agent.lan" />
           <small>The address the control plane will dial. Leave blank to set later.</small>
         </label>
-        <div class="row">
-          <label>Docker port<input v-model.number="form.endpoint_port" type="number" /></label>
-          <label>Stream port<input v-model.number="form.stream_port" type="number" /></label>
-        </div>
+        <label>mTLS port<input v-model.number="form.endpoint_port" type="number" /><small>The single port the control plane dials (streams, agent API, and Docker).</small></label>
         <NeonButton variant="primary" type="submit">Create</NeonButton>
       </form>
     </BaseModal>
@@ -103,7 +100,7 @@ const showConfirm = ref(false)
 const enrollCmd = ref('')
 const deleteTarget = ref<Zone | null>(null)
 const deleting = ref(false)
-const form = ref({ name: '', endpoint_host: '', endpoint_port: 2376, stream_port: 8443 })
+const form = ref({ name: '', endpoint_host: '', endpoint_port: 8443 })
 
 onMounted(load)
 async function load() { zones.value = await zonesApi.list() }
@@ -115,10 +112,9 @@ async function handleCreate() {
       name: form.value.name,
       endpoint_host: form.value.endpoint_host || undefined,
       endpoint_port: form.value.endpoint_port,
-      stream_port: form.value.stream_port,
     })
     showCreate.value = false
-    form.value = { name: '', endpoint_host: '', endpoint_port: 2376, stream_port: 8443 }
+    form.value = { name: '', endpoint_host: '', endpoint_port: 8443 }
     await load()
     ui.toast('Zone created', 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }

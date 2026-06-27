@@ -405,19 +405,16 @@ class FileListing(BaseModel):
 
 class ZoneCreate(BaseModel):
     name: str
-    # Phase 1 manual registration: provide the agent's Docker endpoint directly
-    # (a zone with an endpoint is marked enrolled so workspaces can launch on it).
-    # Phase 3 replaces this with the token enrollment flow.
+    # Manual registration: provide the agent's single mTLS port directly. The
+    # token enrollment flow sets it from the agent's report instead.
     endpoint_host: Optional[str] = None
-    endpoint_port: int = 2376
-    stream_port: int = 8443
+    endpoint_port: int = 8443
 
 
 class ZoneUpdate(BaseModel):
     name: Optional[str] = None
     endpoint_host: Optional[str] = None
     endpoint_port: Optional[int] = None
-    stream_port: Optional[int] = None
     status: Optional[str] = None
 
 
@@ -435,8 +432,7 @@ class ZoneEnrollRequest(BaseModel):
     # control plane should dial.
     csr_pem: str
     endpoint_host: str
-    endpoint_port: int = 2376
-    stream_port: int = 8443
+    endpoint_port: int = 8443
 
 
 class ZoneEnrollResponse(BaseModel):
@@ -458,7 +454,6 @@ class ZoneOut(BaseModel):
     status: str
     endpoint_host: Optional[str]
     endpoint_port: int
-    stream_port: int
     enrolled_at: Optional[datetime]
     last_seen_at: Optional[datetime]
     created_at: datetime

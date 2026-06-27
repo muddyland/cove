@@ -68,13 +68,11 @@ class Zone(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     # Lifecycle: pending -> enrolling -> enrolled -> offline / error.
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
-    # Where the control plane DIALS the agent's mTLS Docker endpoint.
+    # The agent's single mTLS port that the control plane DIALS — it fronts
+    # everything (workspace streams, the agent API, and the policy-filtered
+    # Docker proxy). There is no separately-exposed Docker port.
     endpoint_host: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     endpoint_port: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=2376, server_default=text("2376")
-    )
-    # Port the agent serves workspace HTTP (its own Traefik) on, for stream routing.
-    stream_port: Mapped[int] = mapped_column(
         Integer, nullable=False, default=8443, server_default=text("8443")
     )
     # Enrollment (Phase 3): sha256 of the one-time token + single-use bookkeeping.

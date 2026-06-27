@@ -5,7 +5,6 @@ export interface ZoneCreatePayload {
   name: string
   endpoint_host?: string
   endpoint_port?: number
-  stream_port?: number
 }
 
 export const zonesApi = {

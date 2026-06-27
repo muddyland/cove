@@ -105,7 +105,6 @@ def enroll(body: ZoneEnrollRequest, token: str, db: DbSession):
 
     zone.endpoint_host = body.endpoint_host
     zone.endpoint_port = body.endpoint_port
-    zone.stream_port = body.stream_port
     zone.ca_cert_pem = ca.ca_cert_pem()
     zone.server_cert_pem = server_cert
     zone.client_cert_pem = client_cert
@@ -129,23 +128,17 @@ def enroll(body: ZoneEnrollRequest, token: str, db: DbSession):
     )
 
 
-# The control plane's client cert CN, which the agent's mTLS front allow-lists.
-def _cp_client_cn(zone: Zone) -> str:
-    return f"cove-cp-{zone.public_id}"
-
-
 _INSTALL_TEMPLATE = r"""#!/usr/bin/env bash
 set -euo pipefail
 
 # Cove zone agent installer for zone "__ZONE_NAME__".
-# Enrolls this host with the control plane and exposes its Docker daemon to the
-# control plane over mutual TLS (only the Cove CA's client cert is accepted).
+# Enrolls this host with the control plane. The agent exposes a SINGLE mutual-TLS
+# port; the Docker daemon is reached *through* the cove-agent app (policy-filtered)
+# and is never published on its own port.
 CP_URL="__CP_URL__"
 TOKEN="__TOKEN__"
 ZONE_HOST="__ZONE_HOST__"
-DOCKER_PORT="__DOCKER_PORT__"
-STREAM_PORT="__STREAM_PORT__"
-CP_CLIENT_CN="__CP_CLIENT_CN__"
+PORT="__PORT__"
 AGENT_IMAGE="__AGENT_IMAGE__"
 STORAGE_PATH="__STORAGE_PATH__"
 AGENT_DIR="/var/lib/cove-agent"
@@ -172,13 +165,12 @@ fi
 
 # 3. Enroll: POST the CSR, receive the CA + signed server cert + provisioned
 #    stream-signing key and workspace domain (so the agent can ForwardAuth).
-DATA=$(CSR="$CERT_DIR/server.csr" ZH="$ZONE_HOST" DP="$DOCKER_PORT" SP="$STREAM_PORT" python3 - <<'PY'
+DATA=$(CSR="$CERT_DIR/server.csr" ZH="$ZONE_HOST" PORT="$PORT" python3 - <<'PY'
 import json, os
 print(json.dumps({
     "csr_pem": open(os.environ["CSR"]).read(),
     "endpoint_host": os.environ["ZH"],
-    "endpoint_port": int(os.environ["DP"]),
-    "stream_port": int(os.environ["SP"]),
+    "endpoint_port": int(os.environ["PORT"]),
 }))
 PY
 )
@@ -198,9 +190,7 @@ echo "Enrolled. Writing the agent stack..."
 # 4. Write the agent stack (.env + compose + Traefik dynamic config) and start it.
 mkdir -p "$AGENT_DIR"
 cat > "$AGENT_DIR/.env" <<ENV
-DOCKER_PORT=${DOCKER_PORT}
-STREAM_PORT=${STREAM_PORT}
-CP_CLIENT_CN=${CP_CLIENT_CN}
+PORT=${PORT}
 CERT_DIR=${CERT_DIR}
 AGENT_DIR=${AGENT_DIR}
 AGENT_IMAGE=${AGENT_IMAGE}
@@ -230,7 +220,7 @@ services:
     image: tecnativa/docker-socket-proxy
     container_name: cove-agent-sockproxy
     restart: unless-stopped
-    environment: [POST=1, CONTAINERS=1, IMAGES=1, NETWORKS=1, VOLUMES=1, EXEC=1]
+    environment: [POST=1, CONTAINERS=1, IMAGES=1, NETWORKS=1, VOLUMES=1, EXEC=1, PING=1, VERSION=1]
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
     networks: [cove-agent]
   sockproxy-ro:
@@ -240,22 +230,6 @@ services:
     environment: [CONTAINERS=1, NETWORKS=1]
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
     networks: [cove-agent]
-  docker-tls:
-    image: ghostunnel/ghostunnel:latest
-    container_name: cove-agent-docker-tls
-    restart: unless-stopped
-    command:
-      - server
-      - --listen=0.0.0.0:${DOCKER_PORT}
-      - --target=sockproxy:2375
-      - --cert=/certs/server.crt
-      - --key=/certs/server.key
-      - --cacert=/certs/ca.crt
-      - --allow-cn=${CP_CLIENT_CN}
-    ports: ["${DOCKER_PORT}:${DOCKER_PORT}"]
-    volumes: ["${CERT_DIR}:/certs:ro"]
-    networks: [cove-agent]
-    depends_on: [sockproxy]
   cove-agent:
     image: ${AGENT_IMAGE}
     container_name: cove-agent
@@ -265,7 +239,7 @@ services:
       - COVE_STREAM_SIGNING_KEY=${STREAM_SIGNING_KEY}
       - COVE_WORKSPACE_DOMAIN=${WORKSPACE_DOMAIN}
       - COVE_STORAGE_PATH=${STORAGE_PATH}
-      - DOCKER_HOST=tcp://sockproxy:2375
+      - COVE_AGENT_DOCKER_SOCKET_URL=http://cove-agent-sockproxy:2375
     volumes:
       - "${STORAGE_PATH}:${STORAGE_PATH}"
       - cove-agent-data:/app/data
@@ -279,14 +253,13 @@ services:
       - traefik.http.middlewares.cove-errors.errors.status=502-504
       - traefik.http.middlewares.cove-errors.errors.service=cove-agent
       - traefik.http.middlewares.cove-errors.errors.query=/__cove_error/{status}
-      - traefik.http.routers.cove-agent-err.rule=PathPrefix(`/__cove_error`)
-      - traefik.http.routers.cove-agent-err.entrypoints=websecure
-      - traefik.http.routers.cove-agent-err.service=cove-agent
-      # Agent API (file browser proxy + migration), reached by the control plane
-      # over mTLS — no ForwardAuth (the entrypoint's client-cert check gates it).
-      - traefik.http.routers.cove-agent-api.rule=PathPrefix(`/agent`)
-      - traefik.http.routers.cove-agent-api.entrypoints=websecure
-      - traefik.http.routers.cove-agent-api.service=cove-agent
+      # Catch-all (lowest priority): the agent API, the error page, AND the
+      # policy-filtered Docker proxy all live in cove-agent. Workspace stream
+      # routers (created by labels) match by host/longer path and win.
+      - traefik.http.routers.cove-agent.rule=PathPrefix(`/`)
+      - traefik.http.routers.cove-agent.priority=1
+      - traefik.http.routers.cove-agent.entrypoints=websecure
+      - traefik.http.routers.cove-agent.service=cove-agent
       - traefik.http.services.cove-agent.loadbalancer.server.port=8080
     depends_on: [sockproxy]
   traefik:
@@ -299,11 +272,11 @@ services:
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=cove-agent
       - --providers.file.filename=/etc/traefik/dynamic.yml
-      - --entrypoints.websecure.address=:${STREAM_PORT}
+      - --entrypoints.websecure.address=:${PORT}
       - --entrypoints.websecure.http.tls=true
       - --entrypoints.websecure.http.tls.options=cove-mtls@file
       - --log.level=WARN
-    ports: ["${STREAM_PORT}:${STREAM_PORT}"]
+    ports: ["${PORT}:${PORT}"]
     volumes:
       - "${CERT_DIR}:/certs:ro"
       - "${AGENT_DIR}/traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -317,7 +290,7 @@ volumes:
 COMPOSE
 
 docker compose --project-directory "$AGENT_DIR" --env-file "$AGENT_DIR/.env" up -d
-echo "Zone agent ready: Docker mTLS on ${ZONE_HOST}:${DOCKER_PORT}, streams on :${STREAM_PORT}."
+echo "Zone agent ready on ${ZONE_HOST}:${PORT} (single mTLS port — streams, agent API, and Docker)."
 """
 
 
@@ -329,9 +302,7 @@ def _render_install_sh(*, cp_url: str, token: str, zone: Zone) -> str:
         "__TOKEN__": token,
         "__ZONE_NAME__": zone.name,
         "__ZONE_HOST__": zone.endpoint_host or "",
-        "__DOCKER_PORT__": str(zone.endpoint_port),
-        "__STREAM_PORT__": str(zone.stream_port),
-        "__CP_CLIENT_CN__": _cp_client_cn(zone),
+        "__PORT__": str(zone.endpoint_port),
         "__AGENT_IMAGE__": settings.zone_agent_image,
         "__STORAGE_PATH__": storage_path,
     }

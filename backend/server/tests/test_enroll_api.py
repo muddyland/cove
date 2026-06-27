@@ -69,7 +69,7 @@ def test_enroll_signs_csr_and_marks_enrolled(client):
 
     resp = client.post(
         f"/api/zones/enroll?token={token}",
-        json={"csr_pem": _make_csr(), "endpoint_host": "10.0.0.5", "endpoint_port": 2376},
+        json={"csr_pem": _make_csr(), "endpoint_host": "10.0.0.5"},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()

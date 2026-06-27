@@ -306,6 +306,11 @@ def create_app() -> FastAPI:
             code = status if status.isdigit() else "Error"
             return HTMLResponse(_STREAM_ERROR_PAGE.replace("{{CODE}}", code))
 
+        # Registered LAST: a catch-all that proxies the Docker API to the local
+        # socket-proxy (policy-filtered). Specific routes above take precedence.
+        from server.routers.docker_proxy import register_docker_proxy
+
+        register_docker_proxy(app)
         return app
 
     app.include_router(auth.router)

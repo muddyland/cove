@@ -45,7 +45,6 @@ def create_zone(body: ZoneCreate, admin: AdminUser, db: DbSession, request: Requ
         name=name,
         endpoint_host=(body.endpoint_host or "").strip() or None,
         endpoint_port=body.endpoint_port,
-        stream_port=body.stream_port,
         # A manually-registered endpoint is immediately usable; without one the
         # zone waits for enrollment (Phase 3).
         status="enrolled" if (body.endpoint_host or "").strip() else "pending",

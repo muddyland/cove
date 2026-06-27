@@ -45,7 +45,7 @@ def _enroll_zone(client, host="10.0.0.5"):
     token = client.post(f"/api/admin/zones/{zid}/enroll-token").json()["token"]
     resp = client.post(
         f"/api/zones/enroll?token={token}",
-        json={"csr_pem": _make_csr(), "endpoint_host": host, "stream_port": 8443},
+        json={"csr_pem": _make_csr(), "endpoint_host": host},
     )
     assert resp.status_code == 200, resp.text
     return zid, resp.json()

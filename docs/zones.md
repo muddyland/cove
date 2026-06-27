@@ -24,26 +24,32 @@ always present.
         │  cove (FastAPI + SPA)   ── private CA, zone registry, enrollment, file/migrate │
         │  traefik                ── public ingress + ForwardAuth + HTTP dynamic provider │
         └───────────────┬───────────────────────────────────────────────────────────────┘
-                        │  outbound mTLS (control plane dials the agent)
-                        │    • Docker Remote API   → agent :2376
-                        │    • stream + agent API  → agent :8443
+                        │  outbound mTLS to a SINGLE agent port (control plane dials)
+                        │    • workspace streams · agent API · Docker API  → agent :8443
                         ▼
         ┌─────────────────────────── zone agent (e.g. LAN) ─────────────────────────────┐
-        │  ghostunnel (:2376)  ── mTLS → docker-socket-proxy → Docker daemon             │
-        │  cove (agent mode)   ── ForwardAuth + file/migration API                       │
-        │  traefik (:8443)     ── mTLS entrypoint → workspace streams (local routing)    │
+        │  traefik (:8443)     ── one mTLS entrypoint; streams route locally, everything │
+        │                          else → cove-agent                                     │
+        │  cove (agent mode)   ── ForwardAuth · file/migration API · Docker proxy        │
+        │      └─ Docker proxy ── create-policy filter → local docker-socket-proxy       │
         │  workspace containers ── the actual webtops, on per-workspace networks         │
         └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The agent runs the **same Cove image** with `COVE_AGENT_MODE=1`. In agent mode it
-serves only the mTLS agent API (ForwardAuth, file browser, migration); the Docker
-daemon is reached over a **separate** mTLS port fronted by `ghostunnel`.
+The agent runs the **same Cove image** with `COVE_AGENT_MODE=1` and exposes a
+**single mutual-TLS port**. Everything the control plane needs — workspace streams,
+the file/migration API, *and* the Docker API — rides that one port. The Docker
+daemon is **never published on a network port**: the control plane's Docker client
+talks to the `cove-agent` app, which **policy-filters** each `containers/create`
+(rejecting `--privileged`, host namespaces, host-path bind mounts, the docker
+socket, and disallowed caps/devices) before forwarding to the agent's *local*
+`docker-socket-proxy`. So even the control plane's own credential can only create
+Cove-shaped containers — it cannot trivially root the agent host.
 
 **Trust model:** the control plane is a private CA (`data_dir/ca/`). At enrollment
 it signs the agent's server certificate and issues itself a per-zone client
-certificate. The agent accepts **only** the control plane's client cert (matched
-by CN `cove-cp-<zone-public-id>`); the control plane verifies the agent's server
+certificate. The agent's Traefik **requires a client certificate signed by this
+CA** (`RequireAndVerifyClientCert`); the control plane verifies the agent's server
 cert against the same CA. The CA private key never leaves the control plane, and
 the agent's server private key never leaves the agent (only a CSR is sent).
 
@@ -56,8 +62,8 @@ the agent's server private key never leaves the agent (only a CSR is sent).
 - `openssl`, `curl`, and `python3` (present on essentially all modern distros).
 - **Outbound** reachability to the control plane's URL (to fetch the installer and
   enroll).
-- **One inbound port** reachable from the control plane (default `2376` for the
-  Docker API; `8443` for streams — see [Networking](#4-networking--firewall)).
+- **One inbound port** (default `8443`) reachable from the control plane — see
+  [Networking](#4-networking--firewall).
 - Disk for desktop images (webtops are large; pulled on first launch **on the
   agent**).
 - The agent's storage path must match the control plane's — see
@@ -76,7 +82,7 @@ In the Cove SPA: **Admin → Zones → Add Zone**.
   agent (the agent host's IP or DNS name, e.g. `10.0.0.5` or `agent.lan`). This is
   baked into the agent's server-cert SAN, so set it to the exact address the
   control plane uses.
-- **Docker port** (default `2376`) and **Stream port** (default `8443`).
+- **mTLS port** (default `8443`) — the single port the control plane dials.
 
 > Or via API: `POST /api/admin/zones` `{"name":"lan","endpoint_host":"10.0.0.5"}`.
 
@@ -115,18 +121,18 @@ When it finishes the zone flips to **enrolled** and can run workspaces.
 ## 4. Networking & firewall
 
 The control plane **initiates** all connections; the agent only needs **outbound**
-access to the control plane plus **two inbound** ports open **from the control
+access to the control plane plus **one inbound** port open **from the control
 plane's address only**:
 
 | Port | Direction | Purpose |
 |---|---|---|
-| `2376` (`endpoint_port`) | control plane → agent | Docker Remote API over mTLS (`ghostunnel`). |
-| `8443` (`stream_port`)   | control plane → agent | Workspace streams + agent file/migration API over mTLS (agent Traefik). |
+| `8443` (`endpoint_port`) | control plane → agent | Everything over one mTLS port: workspace streams, the agent file/migration API, and the Docker API (via the cove-agent proxy). |
 | control plane URL (443)  | agent → control plane | Fetch installer, enroll, and (only for streams) the central ForwardAuth. |
 
 For the **DMZ-cannot-reach-LAN** pattern, open a single tightly-scoped pinhole from
-the DMZ control-plane host to the LAN agent's `2376`/`8443`. These ports require a
-client certificate signed by the Cove CA, so the pinhole is not a broad exposure.
+the DMZ control-plane host to the LAN agent's `8443`. The port requires a client
+certificate signed by the Cove CA, and the Docker API behind it is policy-filtered
+(no privileged/host-mount escapes), so the pinhole is not a broad exposure.
 
 > The control plane reaches workspace streams by routing the workspace's
 > subdomain/path to the agent's `8443` over mTLS via Traefik's HTTP dynamic
@@ -158,11 +164,13 @@ The installer brings up these containers (compose project in
 
 | Service | Image | Role |
 |---|---|---|
-| `cove-agent-sockproxy` | `tecnativa/docker-socket-proxy` | Filtered **write** Docker API for the control plane's per-zone client. |
+| `cove-agent-sockproxy` | `tecnativa/docker-socket-proxy` | The **local** (internal-only) Docker API the cove-agent proxy forwards to. Never published. |
 | `cove-agent-sockproxy-ro` | `tecnativa/docker-socket-proxy` | Read-only API for the agent's Traefik to discover workspace containers. |
-| `cove-agent-docker-tls` | `ghostunnel/ghostunnel` | Terminates mTLS on `:2376`, forwards to the socket-proxy, accepts only CN `cove-cp-<id>`. |
-| `cove-agent` | `${COVE_ZONE_AGENT_IMAGE}` (the Cove image) | Agent-mode API: `/agent/auth/forward`, `/agent/files*`, `/agent/migrate/*`. Also defines the `cove-auth`/`cove-errors` middlewares the workspace routers reference. |
-| `cove-traefik` | `traefik:v3.2` | mTLS entrypoint on `:8443` (`RequireAndVerifyClientCert`), routes workspace streams + `/agent` locally. |
+| `cove-agent` | `${COVE_ZONE_AGENT_IMAGE}` (the Cove image) | Agent-mode API: `/agent/auth/forward`, `/agent/files*`, `/agent/migrate/*`, and the **policy-filtered Docker proxy** (catch-all → local socket-proxy). Also defines the `cove-auth`/`cove-errors` middlewares the workspace routers reference. |
+| `cove-traefik` | `traefik:v3.2` | The single mTLS entrypoint on `:8443` (`RequireAndVerifyClientCert`). Workspace streams route locally; everything else (agent API + Docker API) → `cove-agent`. |
+
+There is no separately-exposed Docker port and no `ghostunnel`: the Docker API is
+just another path on the one mTLS port, behind the create-policy filter.
 
 The agent's Traefik **re-runs ForwardAuth** (`/agent/auth/forward`) as
 defense-in-depth: even behind the mTLS port, a request must carry a valid Cove
@@ -224,10 +232,11 @@ Agent-only settings (set by the installer, normally not edited by hand):
 
 | Variable | Purpose |
 |---|---|
-| `COVE_AGENT_MODE=1` | Run as a zone agent (disables SPA/login/admin). |
+| `COVE_AGENT_MODE=1` | Run as a zone agent (disables SPA/login/admin; enables the Docker proxy). |
 | `COVE_STREAM_SIGNING_KEY` | The provisioned key, for local ForwardAuth. |
 | `COVE_WORKSPACE_DOMAIN` | For resolving workspace public_id from the stream host. |
 | `COVE_STORAGE_PATH` | Must equal the control plane's. |
+| `COVE_AGENT_DOCKER_SOCKET_URL` | The local socket-proxy the Docker proxy forwards to (default `http://cove-agent-sockproxy:2375`). |
 
 ---
 
@@ -250,11 +259,11 @@ After enrollment, exercise the full path:
 | Symptom | Likely cause |
 |---|---|
 | Zone stuck **enrolling** | Installer didn't reach `POST /api/zones/enroll` (token expired, control-plane URL unreachable from the agent, or the inbound port isn't open). Re-mint the token and re-run. |
-| Zone flips **offline** | Control plane can't reach `:2376` (firewall/pinhole, agent down, or cert mismatch). Check `docker logs cove-agent-docker-tls` on the agent. |
+| Zone flips **offline** | Control plane can't reach `:8443` (firewall/pinhole, agent down, or cert mismatch). Check `docker logs cove-traefik` and `docker logs cove-agent` on the agent. |
 | Workspace launches but **stream 502s** | Agent Traefik can't reach the container, or the central → agent mTLS route is misconfigured. Check agent `cove-traefik` logs and that `:8443` is open from the control plane. |
 | Stream returns **401** | Token/cookie not reaching the agent ForwardAuth, or a stream-signing-key mismatch (agent must run with the provisioned `COVE_STREAM_SIGNING_KEY`). |
 | Files/migration **409 "not enrolled for mTLS"** | The zone was manually registered (plain endpoint) but never enrolled — run the installer. |
 | Bind mounts empty / wrong | `COVE_STORAGE_PATH` differs between control plane and agent (see [Storage parity](#5-storage-parity-important)). |
 
 Useful on the agent: `docker compose -p cove-agent ps`, `docker logs cove-agent`,
-`docker logs cove-agent-docker-tls`, `docker logs cove-traefik`.
+`docker logs cove-traefik`.
