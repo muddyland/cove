@@ -128,6 +128,92 @@ def test_user_zones_requires_auth(client):
     assert resp.status_code == 401
 
 
+def _give_mtls(zone_id: int) -> None:
+    """Populate a zone's cert columns so ``_zone_has_mtls`` passes (enough for the
+    update-agent precondition; the values aren't dialed in these tests)."""
+    from server.db import SessionLocal
+    from server.models import Zone
+
+    db = SessionLocal()
+    try:
+        z = db.get(Zone, zone_id)
+        z.ca_cert_pem = "ca"
+        z.client_cert_pem = "crt"
+        z.client_key_enc = "enc:v1:x"
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_update_agent_rejects_local_zone(client):
+    setup_admin(client)
+    assert client.post("/api/admin/zones/0/update-agent").status_code == 400
+
+
+def test_update_agent_rejects_unknown_zone(client):
+    setup_admin(client)
+    assert client.post("/api/admin/zones/999/update-agent").status_code == 404
+
+
+def test_update_agent_requires_mtls(client):
+    setup_admin(client)
+    # Registered by endpoint (status "enrolled") but with no cert material yet.
+    zid = client.post(
+        "/api/admin/zones", json={"name": "LAN", "endpoint_host": "10.0.0.5"}
+    ).json()["id"]
+    assert client.post(f"/api/admin/zones/{zid}/update-agent").status_code == 409
+
+
+def test_update_agent_unreachable_is_502(client, monkeypatch):
+    setup_admin(client)
+    zid = client.post(
+        "/api/admin/zones", json={"name": "LAN", "endpoint_host": "10.0.0.5"}
+    ).json()["id"]
+    _give_mtls(zid)
+    from server import agent_update
+
+    def _boom(zone_id):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(agent_update, "updater_present", _boom)
+    resp = client.post(f"/api/admin/zones/{zid}/update-agent")
+    assert resp.status_code == 502, resp.text
+    assert "unreachable" in resp.json()["detail"]
+
+
+def test_update_agent_without_sidecar_is_409(client, monkeypatch):
+    setup_admin(client)
+    zid = client.post(
+        "/api/admin/zones", json={"name": "LAN", "endpoint_host": "10.0.0.5"}
+    ).json()["id"]
+    _give_mtls(zid)
+    from server import agent_update
+
+    monkeypatch.setattr(agent_update, "updater_present", lambda zone_id: False)
+    resp = client.post(f"/api/admin/zones/{zid}/update-agent")
+    assert resp.status_code == 409, resp.text
+    assert "predates" in resp.json()["detail"]
+
+
+def test_update_agent_schedules(client, monkeypatch):
+    setup_admin(client)
+    zid = client.post(
+        "/api/admin/zones", json={"name": "LAN", "endpoint_host": "10.0.0.5"}
+    ).json()["id"]
+    _give_mtls(zid)
+    from server import agent_update
+
+    calls = {}
+    monkeypatch.setattr(agent_update, "updater_present", lambda zone_id: True)
+    monkeypatch.setattr(
+        agent_update, "run_agent_update", lambda zone_id: calls.setdefault("ran", zone_id)
+    )
+    resp = client.post(f"/api/admin/zones/{zid}/update-agent")
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["status"] == "updating"
+    assert calls.get("ran") == zid  # background task dispatched
+
+
 def test_workspace_out_includes_zone_name(client):
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")

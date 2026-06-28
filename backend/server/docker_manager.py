@@ -538,6 +538,26 @@ class DockerManager:
         agent with a locally-built image that isn't in any registry."""
         return self._client.api.get_image(ref)
 
+    def load_image(self, data) -> None:
+        """``docker load`` a ``docker save`` byte stream into this zone's daemon —
+        the receiving side of ``save_image_stream``, used to push an updated agent
+        image to a zone over the per-zone Docker channel (no registry involved)."""
+        self._client.images.load(data)
+
+    def container_exists(self, name: str) -> bool:
+        try:
+            self._client.containers.get(name)
+            return True
+        except docker.errors.NotFound:
+            return False
+
+    def exec_detached(self, container_name: str, cmd: list[str]) -> None:
+        """Fire-and-forget a command inside an existing container. Used to trigger
+        an agent self-recreate from a sidecar that outlives the agent container, so
+        the work continues after the proxy this call rode through is torn down."""
+        container = self._client.containers.get(container_name)
+        container.exec_run(cmd, detach=True)
+
     def _ensure_named_volume(self, volume_name: str) -> None:
         try:
             self._client.volumes.get(volume_name)

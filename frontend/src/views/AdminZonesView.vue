@@ -34,6 +34,12 @@
                 <KeyRound :size="13" /> Enroll
               </NeonButton>
               <NeonButton
+                v-if="z.id !== 0 && z.status === 'enrolled'"
+                variant="ghost"
+                :loading="updatingId === z.id"
+                @click="confirmUpdate(z)"
+              ><ArrowUpCircle :size="13" /> Update</NeonButton>
+              <NeonButton
                 v-if="z.id !== 0"
                 variant="danger"
                 :disabled="z.workspace_count > 0"
@@ -78,6 +84,15 @@
       :loading="deleting"
       @confirm="handleDelete"
     />
+
+    <ConfirmModal
+      v-model="showUpdate"
+      title="Update Agent"
+      :message="`Push the control plane's current agent image to '${updateTarget?.name}' and restart its agent? Make sure the control plane is already on the version you want to roll out. The agent will be briefly unavailable.`"
+      confirm-label="Update"
+      :loading="updatingId !== null"
+      @confirm="handleUpdate"
+    />
   </AppShell>
 </template>
 
@@ -87,7 +102,7 @@ import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Plus, Trash2, KeyRound, Copy } from 'lucide-vue-next'
+import { Plus, Trash2, KeyRound, Copy, ArrowUpCircle } from 'lucide-vue-next'
 import { zonesApi } from '@/api/zones'
 import { useUiStore } from '@/stores/ui'
 import type { Zone } from '@/types'
@@ -100,6 +115,9 @@ const showConfirm = ref(false)
 const enrollCmd = ref('')
 const deleteTarget = ref<Zone | null>(null)
 const deleting = ref(false)
+const showUpdate = ref(false)
+const updateTarget = ref<Zone | null>(null)
+const updatingId = ref<number | null>(null)
 const form = ref({ name: '', endpoint_host: '', endpoint_port: 8443 })
 
 onMounted(load)
@@ -132,6 +150,22 @@ async function enroll(z: Zone) {
 function copyCmd() {
   navigator.clipboard?.writeText(enrollCmd.value)
   ui.toast('Copied', 'success')
+}
+
+function confirmUpdate(z: Zone) { updateTarget.value = z; showUpdate.value = true }
+async function handleUpdate() {
+  if (!updateTarget.value) return
+  const z = updateTarget.value
+  updatingId.value = z.id
+  showUpdate.value = false
+  try {
+    const res = await zonesApi.updateAgent(z.id)
+    ui.toast(res.detail || `Updating ${z.name}…`, 'info')
+  } catch (e: any) {
+    ui.toast(e.message, 'error')
+  } finally {
+    updatingId.value = null
+  }
 }
 
 function confirmDelete(z: Zone) { deleteTarget.value = z; showConfirm.value = true }

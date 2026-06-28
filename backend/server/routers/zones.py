@@ -2,7 +2,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 
 from server.config import get_settings
@@ -130,6 +130,50 @@ def rotate_client_cert(zone_id: int, admin: AdminUser, db: DbSession, request: R
     reset_docker_manager(zone_id)
     _audit(db, "admin.zone.rotate_cert", detail=zone.public_id, user=admin, request=request)
     return _zone_out(db, zone)
+
+
+@router.post("/{zone_id}/update-agent", status_code=status.HTTP_202_ACCEPTED)
+def update_agent(
+    zone_id: int, admin: AdminUser, db: DbSession, request: Request, background: BackgroundTasks
+):
+    """Update a zone's Cove agent in place to the control plane's current image.
+
+    Pushes the CP's agent image to the zone over the per-zone Docker channel, then
+    recreates the ``cove-agent`` container on it (via the agent's updater sidecar,
+    which survives the restart). Build/redeploy the control plane first so its local
+    agent image is the version you want to roll out. The agent briefly restarts.
+    """
+    from server import agent_update
+    from server.docker_manager import _zone_has_mtls
+
+    if zone_id == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="The local zone runs the control plane image; redeploy the control plane to update it.",
+        )
+    zone = db.get(Zone, zone_id)
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    if not _zone_has_mtls(zone):
+        raise HTTPException(status_code=409, detail="Zone is not enrolled for mTLS")
+
+    # Pre-flight before scheduling so the admin gets an immediate, specific error:
+    # an unreachable agent vs. one too old to carry the updater sidecar (those need
+    # one manual redeploy/re-enroll to gain it).
+    try:
+        has_updater = agent_update.updater_present(zone_id)
+    except Exception as exc:  # noqa: BLE001 — surface any daemon/transport failure
+        raise HTTPException(status_code=502, detail=f"Zone agent unreachable: {exc}")
+    if not has_updater:
+        raise HTTPException(
+            status_code=409,
+            detail="This agent predates in-place updates. Re-enroll or redeploy it once "
+            "to install the updater sidecar.",
+        )
+
+    background.add_task(agent_update.run_agent_update, zone_id)
+    _audit(db, "admin.zone.update_agent", detail=zone.public_id, user=admin, request=request)
+    return {"status": "updating", "detail": "Agent update started; the agent will briefly restart."}
 
 
 @router.get("/{zone_id}", response_model=ZoneOut)

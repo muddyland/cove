@@ -17,4 +17,8 @@ export const zonesApi = {
   remove: (id: number) => api.delete(`/admin/zones/${id}`),
   enrollToken: (id: number) => api.post<ZoneEnrollToken>(`/admin/zones/${id}/enroll-token`, {}),
   rotateClientCert: (id: number) => api.post<Zone>(`/admin/zones/${id}/rotate-client-cert`, {}),
+  // Push the control plane's current agent image to the zone and recreate its
+  // agent on it. The agent briefly restarts.
+  updateAgent: (id: number) =>
+    api.post<{ status: string; detail: string }>(`/admin/zones/${id}/update-agent`, {}),
 }

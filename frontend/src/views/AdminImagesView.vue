@@ -3,6 +3,9 @@
     <div class="page-header">
       <h2>// IMAGE REGISTRY</h2>
       <div class="header-actions">
+        <select v-if="zones.hasRemote" v-model.number="zoneId" class="zone-select" @change="onZoneChange">
+          <option v-for="z in zones.items" :key="z.id" :value="z.id">{{ z.name }}</option>
+        </select>
         <NeonButton variant="secondary" :loading="syncing" @click="handleSync"><RefreshCw :size="14" /> Sync LinuxServer</NeonButton>
         <NeonButton variant="primary" @click="showForm = true"><Plus :size="14" /> Add Image</NeonButton>
       </div>
@@ -151,12 +154,17 @@ import {
 } from 'lucide-vue-next'
 import { imagesApi, type ImagePullStatus } from '@/api/images'
 import { useUiStore } from '@/stores/ui'
+import { useZonesStore } from '@/stores/zones'
 import type { WorkspaceImage } from '@/types'
 
 const images = ref<WorkspaceImage[]>([])
 const pullStatus = ref<Record<number, ImagePullStatus>>({})
 let pullTimer: ReturnType<typeof setInterval> | null = null
 const ui = useUiStore()
+const zones = useZonesStore()
+// The catalog is global; download state and pull/remove actions target this zone
+// (0 = local control plane). The selector shows only when remote zones exist.
+const zoneId = ref(0)
 const showForm = ref(false)
 const showConfirm = ref(false)
 const deleteTarget = ref<WorkspaceImage | null>(null)
@@ -175,11 +183,18 @@ async function load() { images.value = await imagesApi.list() }
 
 async function loadPullStatus() {
   try {
-    pullStatus.value = await imagesApi.pullStatus()
+    pullStatus.value = await imagesApi.pullStatus(zoneId.value)
   } catch {
     // Best-effort; the daemon may be briefly unreachable.
   }
   schedulePullPoll()
+}
+
+// Re-query download state against the newly selected zone.
+async function onZoneChange() {
+  if (pullTimer) { clearInterval(pullTimer); pullTimer = null }
+  pullStatus.value = {}
+  await loadPullStatus()
 }
 
 // Poll only while something is actively downloading.
@@ -194,6 +209,7 @@ function schedulePullPoll() {
 }
 
 onMounted(async () => {
+  await zones.fetch()
   await load()
   await loadPullStatus()
 })
@@ -215,7 +231,7 @@ function pullLabel(id: number): string {
 
 async function handlePull(img: WorkspaceImage) {
   try {
-    await imagesApi.pull(img.id)
+    await imagesApi.pull(img.id, zoneId.value)
     pullStatus.value = { ...pullStatus.value, [img.id]: 'pulling' }
     ui.toast(`Pulling ${img.name}…`, 'info')
     schedulePullPoll()
@@ -269,7 +285,7 @@ async function handleDeleteImageOnly() {
   const id = deleteTarget.value.id
   deleting.value = 'image'
   try {
-    await imagesApi.removeImageOnly(id)
+    await imagesApi.removeImageOnly(id, zoneId.value)
     pullStatus.value = { ...pullStatus.value, [id]: 'absent' }
     showConfirm.value = false
     ui.toast('Downloaded image deleted', 'success')
@@ -283,7 +299,7 @@ async function handleRemoveEntry() {
   const id = deleteTarget.value.id
   deleting.value = 'entry'
   try {
-    await imagesApi.remove(id, true)
+    await imagesApi.remove(id, true, zoneId.value)
     images.value = images.value.filter(i => i.id !== id)
     showConfirm.value = false
     ui.toast('Image entry removed', 'success')
@@ -294,7 +310,11 @@ async function handleRemoveEntry() {
 
 <style scoped>
 @import '@/styles/tables.css';
-.header-actions { display: flex; gap: 8px; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.zone-select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 6px 8px;
+}
 .name-cell { display: inline-flex; align-items: center; gap: 8px; }
 .img-logo { width: 20px; height: 20px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
 .status-dot { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; }

@@ -309,6 +309,20 @@ services:
       - traefik.http.routers.cove-agent.tls=true
       - traefik.http.services.cove-agent.loadbalancer.server.port=8080
     depends_on: [sockproxy]
+  cove-agent-updater:
+    # Idle sidecar the control plane execs into to recreate cove-agent on a freshly
+    # pushed image. cove-agent can't recreate itself (that kills the proxy the
+    # control plane's request rides through), so the recreate runs here instead and
+    # outlives the restart. Has the real Docker socket + the compose project so
+    # `docker compose up` works; never touched by routing (no Traefik labels).
+    image: docker:cli
+    container_name: cove-agent-updater
+    restart: unless-stopped
+    entrypoint: ["sleep", "infinity"]
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "${AGENT_DIR}:/agent:ro"
+    networks: [cove-agent]
   traefik:
     image: traefik:v3.7
     container_name: cove-traefik

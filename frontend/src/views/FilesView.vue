@@ -3,6 +3,9 @@
     <div class="page-header">
       <h2>// FILE STORAGE</h2>
       <div class="header-actions">
+        <select v-if="zones.hasRemote" v-model.number="zoneId" class="zone-select" @change="onZoneChange">
+          <option v-for="z in zones.items" :key="z.id" :value="z.id">{{ z.name }}</option>
+        </select>
         <input ref="fileInput" type="file" class="hidden-input" @change="handleUpload" />
         <NeonButton variant="primary" :loading="uploading" @click="triggerUpload"><Upload :size="14" /> Upload</NeonButton>
       </div>
@@ -66,10 +69,15 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import { Upload, House, Folder, File, Download, Trash2 } from 'lucide-vue-next'
 import { filesApi } from '@/api/files'
 import { useUiStore } from '@/stores/ui'
+import { useZonesStore } from '@/stores/zones'
 import type { FileEntry } from '@/types'
 
 const ui = useUiStore()
+const zones = useZonesStore()
 
+// Which zone's storage we're browsing. 0 = local control plane; the selector
+// (shown only when remote zones exist) switches the whole view to that zone.
+const zoneId = ref(0)
 const path = ref('')
 const entries = ref<FileEntry[]>([])
 const loading = ref(false)
@@ -90,7 +98,7 @@ function join(name: string) {
 async function load() {
   loading.value = true
   try {
-    const listing = await filesApi.list(path.value)
+    const listing = await filesApi.list(path.value, zoneId.value)
     path.value = listing.path
     entries.value = listing.entries
   } catch (e: any) {
@@ -105,7 +113,16 @@ function navigate(p: string) {
   load()
 }
 
-onMounted(load)
+// Switching zones resets to that zone's root — paths don't carry across nodes.
+function onZoneChange() {
+  path.value = ''
+  load()
+}
+
+onMounted(async () => {
+  await zones.fetch()
+  await load()
+})
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString()
@@ -125,7 +142,7 @@ function humanSize(bytes: number): string {
 
 async function download(name: string) {
   try {
-    await filesApi.download(join(name))
+    await filesApi.download(join(name), zoneId.value)
   } catch (e: any) {
     ui.toast(e.message, 'error')
   }
@@ -141,7 +158,7 @@ async function handleUpload(e: Event) {
   if (!file) return
   uploading.value = true
   try {
-    await filesApi.upload(path.value, file)
+    await filesApi.upload(path.value, file, zoneId.value)
     ui.toast(`Uploaded ${file.name}`, 'success')
     await load()
   } catch (err: any) {
@@ -161,7 +178,7 @@ async function handleDelete() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await filesApi.remove(join(deleteTarget.value.name))
+    await filesApi.remove(join(deleteTarget.value.name), zoneId.value)
     showConfirm.value = false
     ui.toast('Deleted', 'success')
     await load()
@@ -176,8 +193,12 @@ async function handleDelete() {
 <style scoped>
 @import '@/styles/tables.css';
 
-.header-actions { display: flex; gap: 8px; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
 .hidden-input { display: none; }
+.zone-select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 6px 8px;
+}
 
 .breadcrumb {
   display: flex; align-items: center; flex-wrap: wrap; gap: 4px;

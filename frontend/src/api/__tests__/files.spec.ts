@@ -27,16 +27,25 @@ describe('filesApi', () => {
     vi.restoreAllMocks()
   })
 
-  it('list() requests /files with an encoded path query', async () => {
+  it('list() requests /files with an encoded path query (default zone 0)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { path: 'a/b', entries: [] }))
     const res = await filesApi.list('a/b')
     expect(res).toEqual({ path: 'a/b', entries: [] })
     const [url] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/files?path=a%2Fb')
+    expect(url).toBe('/api/files?path=a%2Fb&zone_id=0')
+  })
+
+  it('list() targets a remote zone when given a zone id', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { path: '', entries: [] }))
+    await filesApi.list('', 3)
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files?path=&zone_id=3')
   })
 
   it('downloadUrl() builds the download endpoint URL', () => {
-    expect(filesApi.downloadUrl('docs/file.txt')).toBe('/api/files/download?path=docs%2Ffile.txt')
+    expect(filesApi.downloadUrl('docs/file.txt')).toBe(
+      '/api/files/download?path=docs%2Ffile.txt&zone_id=0',
+    )
   })
 
   it('upload() posts multipart with the Bearer header and no JSON content-type', async () => {
@@ -48,7 +57,7 @@ describe('filesApi', () => {
     await filesApi.upload('sub', file)
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/files/upload')
+    expect(url).toBe('/api/files/upload?zone_id=0')
     expect(init.method).toBe('POST')
     expect(init.credentials).toBe('include')
     expect(init.headers.Authorization).toBe('Bearer tok-1')
@@ -61,7 +70,7 @@ describe('filesApi', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(204))
     await filesApi.remove('x/y.txt')
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/files?path=x%2Fy.txt')
+    expect(url).toBe('/api/files?path=x%2Fy.txt&zone_id=0')
     expect(init.method).toBe('DELETE')
   })
 
@@ -79,7 +88,7 @@ describe('filesApi', () => {
     await filesApi.download('dir/file.txt')
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/files/download?path=dir%2Ffile.txt')
+    expect(url).toBe('/api/files/download?path=dir%2Ffile.txt&zone_id=0')
     expect(init.headers.Authorization).toBe('Bearer tok-2')
     expect(createObjectURL).toHaveBeenCalled()
     expect(clickSpy).toHaveBeenCalled()
