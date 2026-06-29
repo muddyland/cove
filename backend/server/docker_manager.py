@@ -871,6 +871,11 @@ class DockerManager:
             elif ws.workspace_type == "link" and ws.target_url:
                 # Legacy webtop-based link workspaces use a custom init script.
                 env["LAUNCH_URL"] = ws.target_url
+            # Pixelflux/Selkies images stream over Wayland by default; only set
+            # the override when the user opts into the X11 fallback (harmless on
+            # images that don't read it).
+            if not ws.pixelflux_wayland:
+                env["PIXELFLUX_WAYLAND"] = "false"
 
             volumes = {}
             if mount_source:

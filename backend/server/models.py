@@ -177,6 +177,12 @@ class Workspace(Base):
     inject_ssh_key: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("1")
     )
+    # Use Wayland for the pixelflux/Selkies stream (on by default). Disable to
+    # force the X11 fallback (PIXELFLUX_WAYLAND=false) when an app has Wayland
+    # compatibility issues.
+    pixelflux_wayland: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("1")
+    )
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

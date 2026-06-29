@@ -245,6 +245,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         appimages=body.appimages or None,
         allow_sudo=body.allow_sudo,
         inject_ssh_key=body.inject_ssh_key,
+        pixelflux_wayland=body.pixelflux_wayland,
         status="creating",
     )
     db.add(ws)
@@ -369,6 +370,7 @@ def clone_workspace(
         appimages=src.appimages,
         allow_sudo=src.allow_sudo,
         inject_ssh_key=src.inject_ssh_key,
+        pixelflux_wayland=src.pixelflux_wayland,
         status="creating",
     )
     db.add(clone)

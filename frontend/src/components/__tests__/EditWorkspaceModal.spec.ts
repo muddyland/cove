@@ -71,6 +71,7 @@ const desktopWs: Workspace = {
   appimages: null,
   allow_sudo: true,
   inject_ssh_key: true,
+  pixelflux_wayland: true,
 }
 
 describe('EditWorkspaceModal', () => {

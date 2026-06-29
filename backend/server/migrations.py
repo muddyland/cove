@@ -143,6 +143,12 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0028_workspace_zone_id",
         "ALTER TABLE workspace ADD COLUMN zone_id INTEGER NOT NULL DEFAULT 0",
     ),
+    # Use Wayland for the pixelflux/Selkies stream (on by default); off forces
+    # the X11 fallback via PIXELFLUX_WAYLAND=false.
+    (
+        "0030_workspace_pixelflux_wayland",
+        "ALTER TABLE workspace ADD COLUMN pixelflux_wayland BOOLEAN NOT NULL DEFAULT 1",
+    ),
 ]
 
 

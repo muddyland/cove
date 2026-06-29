@@ -118,6 +118,8 @@ class WorkspaceCreate(BaseModel):
     allow_sudo: bool = False
     # Inject the owner's account SSH key into ~/.ssh (on by default).
     inject_ssh_key: bool = True
+    # Stream over Wayland (on by default); off forces the X11 fallback.
+    pixelflux_wayland: bool = True
 
 
 class WorkspaceUpdate(BaseModel):
@@ -140,6 +142,7 @@ class WorkspaceUpdate(BaseModel):
     appimages: Optional[str] = None
     allow_sudo: Optional[bool] = None
     inject_ssh_key: Optional[bool] = None
+    pixelflux_wayland: Optional[bool] = None
 
 
 class LanPolicyOut(BaseModel):
@@ -212,6 +215,7 @@ class WorkspaceOut(BaseModel):
     appimages: Optional[str]
     allow_sudo: bool
     inject_ssh_key: bool
+    pixelflux_wayland: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -264,6 +268,7 @@ class WorkspaceOut(BaseModel):
             appimages=ws.appimages,
             allow_sudo=ws.allow_sudo,
             inject_ssh_key=ws.inject_ssh_key,
+            pixelflux_wayland=ws.pixelflux_wayland,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,

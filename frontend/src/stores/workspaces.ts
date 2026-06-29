@@ -60,7 +60,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
-  async function launch(payload: { name: string; image_id: number; workspace_type: string; zone_id?: number; target_url?: string; kiosk?: boolean; kiosk_dark?: boolean; kiosk_menu?: boolean; use_tailscale?: boolean; use_gluetun?: boolean; ephemeral?: boolean; lan_access?: boolean; ts_exit_node?: string; ts_accept_routes?: boolean; ts_accept_dns?: boolean; custom_dns?: boolean; dns_servers?: string; install_packages?: string; proot_apps?: string; appimages?: string; allow_sudo?: boolean; inject_ssh_key?: boolean }) {
+  async function launch(payload: { name: string; image_id: number; workspace_type: string; zone_id?: number; target_url?: string; kiosk?: boolean; kiosk_dark?: boolean; kiosk_menu?: boolean; use_tailscale?: boolean; use_gluetun?: boolean; ephemeral?: boolean; lan_access?: boolean; ts_exit_node?: string; ts_accept_routes?: boolean; ts_accept_dns?: boolean; custom_dns?: boolean; dns_servers?: string; install_packages?: string; proot_apps?: string; appimages?: string; allow_sudo?: boolean; inject_ssh_key?: boolean; pixelflux_wayland?: boolean }) {
     const ws = await workspacesApi.create(payload)
     items.value.unshift(ws)
     schedulePoll()
@@ -89,6 +89,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
       appimages?: string
       allow_sudo?: boolean
       inject_ssh_key?: boolean
+      pixelflux_wayland?: boolean
     },
   ) {
     const ws = await workspacesApi.update(id, payload)

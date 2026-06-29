@@ -95,6 +95,15 @@
         (set it in Preferences → SSH key). Turn off to keep this workspace key-free.
       </p>
 
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="form.pixelflux_wayland" />
+        <span>Wayland streaming</span>
+      </label>
+      <p class="hint">
+        Stream the desktop over Wayland (default). Turn off to force the X11 fallback
+        (<code>PIXELFLUX_WAYLAND=false</code>) if an app has Wayland compatibility issues.
+      </p>
+
       <div class="form-group">
         <label>Install packages</label>
         <input v-model="form.install_packages" type="text" placeholder="git vim htop" />
@@ -143,6 +152,7 @@ export interface WorkspaceOptionsForm {
   dns_servers: string
   allow_sudo: boolean
   inject_ssh_key: boolean
+  pixelflux_wayland: boolean
   install_packages: string
   proot_apps: string[]
   appimages: string

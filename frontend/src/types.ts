@@ -87,6 +87,7 @@ export interface Workspace {
   appimages: string | null
   allow_sudo: boolean
   inject_ssh_key: boolean
+  pixelflux_wayland: boolean
 }
 
 export interface LanPolicy {

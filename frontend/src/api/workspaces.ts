@@ -31,6 +31,7 @@ export const workspacesApi = {
     appimages?: string
     allow_sudo?: boolean
     inject_ssh_key?: boolean
+    pixelflux_wayland?: boolean
   }) => api.post<Workspace>('/workspaces', payload),
   update: (
     id: number,
@@ -54,6 +55,7 @@ export const workspacesApi = {
       appimages?: string
       allow_sudo?: boolean
       inject_ssh_key?: boolean
+      pixelflux_wayland?: boolean
     },
   ) => api.patch<Workspace>(`/workspaces/${id}`, payload),
   clone: (id: number, payload: { name: string; image_id?: number }) =>
