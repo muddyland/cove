@@ -120,6 +120,8 @@ class WorkspaceCreate(BaseModel):
     inject_ssh_key: bool = True
     # Stream over Wayland (on by default); off forces the X11 fallback.
     pixelflux_wayland: bool = True
+    # Clear a stale browser single-instance lock before launch (opt-in, off).
+    clear_browser_lock: bool = False
 
 
 class WorkspaceUpdate(BaseModel):
@@ -143,6 +145,7 @@ class WorkspaceUpdate(BaseModel):
     allow_sudo: Optional[bool] = None
     inject_ssh_key: Optional[bool] = None
     pixelflux_wayland: Optional[bool] = None
+    clear_browser_lock: Optional[bool] = None
 
 
 class LanPolicyOut(BaseModel):
@@ -171,6 +174,14 @@ class StreamAuthOut(BaseModel):
     # carries a one-time ``?__cove_t`` token that bootstraps the per-workspace
     # stream cookie; in subpath mode it is the plain same-origin stream path.
     url: str
+
+
+class StreamReadyOut(BaseModel):
+    # True once Traefik actually has a router for this workspace's stream, so the
+    # iframe URL won't 404. False during the brief window after a workspace flips
+    # to "running" but before Traefik picks up its route (instant for local
+    # workspaces, up to one HTTP-provider poll for remote-zone ones).
+    ready: bool
 
 
 class WorkspaceStats(BaseModel):
@@ -216,6 +227,7 @@ class WorkspaceOut(BaseModel):
     allow_sudo: bool
     inject_ssh_key: bool
     pixelflux_wayland: bool
+    clear_browser_lock: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -269,6 +281,7 @@ class WorkspaceOut(BaseModel):
             allow_sudo=ws.allow_sudo,
             inject_ssh_key=ws.inject_ssh_key,
             pixelflux_wayland=ws.pixelflux_wayland,
+            clear_browser_lock=ws.clear_browser_lock,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,

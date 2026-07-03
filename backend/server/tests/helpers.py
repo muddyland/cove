@@ -33,6 +33,23 @@ def create_user_via_admin(client, admin_token, username, password="password123",
     return resp.json()
 
 
+def set_workspace_status(ws_id, status):
+    """Force a workspace's status directly in the DB.
+
+    The tests' fake DockerManager is a no-op MagicMock, so it never transitions a
+    workspace out of "creating"/"stopping". Tests that need a resting workspace
+    (e.g. to edit or migrate it) set the precondition here."""
+    from server.models import Workspace
+
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, ws_id)
+        ws.status = status
+        db.commit()
+    finally:
+        db.close()
+
+
 def add_image(name="Ubuntu Desktop", docker_image="lscr.io/linuxserver/webtop:latest",
               image_type="desktop", url_env=None, internal_port=3000, logo_url=None):
     """Insert a WorkspaceImage directly into the DB and return its id.

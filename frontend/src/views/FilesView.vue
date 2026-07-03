@@ -6,8 +6,8 @@
         <select v-if="zones.hasRemote" v-model.number="zoneId" class="zone-select" @change="onZoneChange">
           <option v-for="z in zones.items" :key="z.id" :value="z.id">{{ z.name }}</option>
         </select>
-        <input ref="fileInput" type="file" class="hidden-input" @change="handleUpload" />
-        <NeonButton variant="primary" :loading="uploading" @click="triggerUpload"><Upload :size="14" /> Upload</NeonButton>
+        <input ref="fileInput" type="file" multiple class="hidden-input" @change="handleUpload" />
+        <NeonButton variant="primary" :loading="uploading" @click="triggerUpload"><Upload :size="14" /> {{ uploadLabel }}</NeonButton>
       </div>
     </div>
 
@@ -53,7 +53,7 @@
     <ConfirmModal
       v-model="showConfirm"
       title="Delete"
-      :message="`Delete '${deleteTarget?.name}'?`"
+      :message="deleteMessage"
       confirm-label="Delete"
       :loading="deleting"
       @confirm="handleDelete"
@@ -84,12 +84,31 @@ const loading = ref(false)
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
+const uploadPct = ref(0)       // 0-100 for the current file
+const uploadIndex = ref(0)     // 1-based index of the file being sent
+const uploadTotal = ref(0)     // total files in this batch
 
 const showConfirm = ref(false)
 const deleteTarget = ref<FileEntry | null>(null)
 const deleting = ref(false)
 
 const segments = computed(() => path.value.split('/').filter(Boolean))
+
+const uploadLabel = computed(() => {
+  if (!uploading.value) return 'Upload'
+  const batch = uploadTotal.value > 1 ? ` (${uploadIndex.value}/${uploadTotal.value})` : ''
+  return `${uploadPct.value}%${batch}`
+})
+
+// Folder deletes are recursive — spell that out so a user doesn't wipe a tree
+// thinking it's a single item.
+const deleteMessage = computed(() => {
+  const t = deleteTarget.value
+  if (!t) return ''
+  return t.type === 'dir'
+    ? `Delete folder “${t.name}” and everything inside it? This permanently removes all of its contents and can't be undone.`
+    : `Delete “${t.name}”? This can't be undone.`
+})
 
 function join(name: string) {
   return path.value ? `${path.value}/${name}` : name
@@ -154,17 +173,30 @@ function triggerUpload() {
 
 async function handleUpload(e: Event) {
   const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+  const files = Array.from(input.files ?? [])
+  if (!files.length) return
   uploading.value = true
+  uploadTotal.value = files.length
+  let done = 0
   try {
-    await filesApi.upload(path.value, file, zoneId.value)
-    ui.toast(`Uploaded ${file.name}`, 'success')
+    for (let i = 0; i < files.length; i++) {
+      uploadIndex.value = i + 1
+      uploadPct.value = 0
+      await filesApi.upload(path.value, files[i], zoneId.value, (frac) => {
+        uploadPct.value = Math.round(frac * 100)
+      })
+      done++
+    }
+    ui.toast(files.length === 1 ? `Uploaded ${files[0].name}` : `Uploaded ${done} files`, 'success')
     await load()
   } catch (err: any) {
     ui.toast(err.message, 'error')
+    if (done > 0) await load()  // some files landed before the failure
   } finally {
     uploading.value = false
+    uploadPct.value = 0
+    uploadIndex.value = 0
+    uploadTotal.value = 0
     input.value = ''
   }
 }

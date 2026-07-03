@@ -42,6 +42,7 @@ _HELPER_SCRIPTS = (
     "install-ssh-key.sh",
     "install-username.sh",
     "install-cove-theme.sh",
+    "clear-browser-lock.sh",
 )
 
 
@@ -215,19 +216,36 @@ def build_ts_extra_args(
     return extra_args
 
 
-def _resolve_mount(username: str, ws_name: str, user_id: int) -> tuple[str, bool]:
-    """Return (mount_source, is_bind_mount).
+def _resolve_mount(ws) -> tuple[str, bool]:
+    """Return (mount_source, is_bind_mount) for a workspace's persistent /config.
 
     If COVE_STORAGE_PATH is set, creates {path}/{username}/workspace-{name}/ on
     the host and returns it as a bind mount source (same absolute path inside the
     container — the user must mount it at the same path in docker-compose.yml).
+    If unset, falls back to a path inside /app/data (already mounted) so no extra
+    volume entry is needed.
 
-    If unset, falls back to a path inside /app/data (already mounted) so no
-    extra volume entry is needed.
+    Once a workspace has a recorded ``volume_name`` we reuse it verbatim instead
+    of re-deriving from the (mutable) name — otherwise a rename would point the
+    next launch at a fresh empty dir and strand the existing home under the old
+    name. Only a volume_name that stays within the storage base is honored, as
+    defense-in-depth against a tampered value.
     """
     settings = get_settings()
     base = settings.storage_path or (settings.data_dir / "workspaces")
-    host_path = base / username / f"workspace-{_sanitize(ws_name)}"
+    base_r = base.resolve()
+
+    if ws.volume_name:
+        pinned = Path(ws.volume_name)
+        try:
+            pinned_r = pinned.resolve()
+        except OSError:
+            pinned_r = None
+        if pinned_r is not None and pinned_r != base_r and base_r in pinned_r.parents:
+            pinned.mkdir(parents=True, exist_ok=True)
+            return str(pinned), True
+
+    host_path = base / ws.user.username / f"workspace-{_sanitize(ws.name)}"
     host_path.mkdir(parents=True, exist_ok=True)
     return str(host_path), True
 
@@ -277,6 +295,10 @@ def copy_workspace_storage(src_ws, dst_ws) -> None:
     base = (settings.storage_path or (settings.data_dir / "workspaces")).resolve()
 
     def _path(ws):
+        # Prefer the pinned dir (the source may have been renamed since launch);
+        # a never-launched clone has no volume_name and gets its name-based dir.
+        if ws.volume_name:
+            return Path(ws.volume_name)
         if not (ws.user and ws.user.username):
             return None
         return base / ws.user.username / f"workspace-{_sanitize(ws.name)}"
@@ -855,7 +877,7 @@ class DockerManager:
             # the container's writable layer and is discarded when the container is
             # removed (which happens on halt), so nothing is saved between sessions.
             mount_source = (
-                None if ws.ephemeral else _resolve_mount(ws.user.username, ws.name, ws.user_id)[0]
+                None if ws.ephemeral else _resolve_mount(ws)[0]
             )
 
             env = {
@@ -893,6 +915,7 @@ class DockerManager:
             self._apply_appimages(env, volumes, ws.appimages)
             self._apply_ssh_key(ws, volumes)
             self._apply_cove_theme(volumes)
+            self._apply_browser_lock_cleanup(ws, volumes)
 
             labels = self._build_traefik_labels(ws, image, net_name)
 
@@ -1037,6 +1060,13 @@ class DockerManager:
 
                 started = self._wait_for_ready(container)
                 ws = db.get(Workspace, ws_id)  # re-fetch after wait
+                # A Halt is allowed while "creating" and runs concurrently with
+                # this launch. If it moved the workspace out of "creating" while we
+                # waited, don't clobber that with running/error — the stop task now
+                # owns the final state (and will remove this container).
+                if not ws or ws.status != "creating":
+                    logger.info("Workspace %s left 'creating' during launch — not overriding", ws_id)
+                    return
                 if not started:
                     ws.status = "error"
                     ws.error_message = "Container did not start"
@@ -1301,6 +1331,12 @@ class DockerManager:
     # ghcr rate-limiting) run before the GUI starts. Even if exceeded, an "error"
     # workspace is auto-recovered once its GUI finally answers (see sync below).
     _PROVISION_DEADLINE_SECONDS = 3600
+    # A normal Halt clears "stopping" in seconds; a row still stopping past this
+    # means the stop task died (e.g. a control-plane restart), so re-drive it.
+    _STOPPING_DEADLINE_SECONDS = 120
+    # A migration can legitimately take a while (multi-GB /config over mTLS), so
+    # only a row stuck this long is treated as a dead task and failed back.
+    _MIGRATING_DEADLINE_SECONDS = 1800
 
     def sync_workspace_statuses(self, zone_id: int | None = None) -> None:
         """Reconcile workspace status with reality, for one zone's workspaces.
@@ -1309,6 +1345,8 @@ class DockerManager:
         - creating workspaces whose GUI now answers -> running (self-healing
           promotion, so slow installs that outlast the launch-time probe still
           come up); expired ones -> error.
+        - workspaces wedged in stopping/migrating past their deadline (their owning
+          background task died) -> re-driven to stopped / failed to error.
 
         Only workspaces pinned to this manager's zone are reconciled — querying a
         remote workspace's container against the local daemon would wrongly mark
@@ -1358,9 +1396,28 @@ class DockerManager:
                 )
             ).all()
             now = datetime.now(timezone.utc)
+
+            def _age(w) -> float:
+                """Seconds since the workspace last changed status (falls back to
+                created_at for pre-upgrade rows with no status_changed_at)."""
+                anchor = w.status_changed_at or w.created_at
+                if anchor is None:
+                    return 0.0
+                if anchor.tzinfo is None:
+                    anchor = anchor.replace(tzinfo=timezone.utc)
+                return (now - anchor).total_seconds()
+
             for ws in pending:
                 if not ws.container_id:
-                    continue  # launch task hasn't started the container yet
+                    # No container recorded. Usually just a launch in flight — but
+                    # if the launch task died before starting one, the row would
+                    # sit in "creating" forever, so fail it once past the deadline.
+                    if ws.status == "creating" and _age(ws) > self._PROVISION_DEADLINE_SECONDS:
+                        ws.status = "error"
+                        ws.error_message = "Launch did not start in time"
+                        ws.status_changed_at = now
+                        db.commit()
+                    continue  # otherwise: launch still in flight, leave as-is
                 try:
                     container = self._client.containers.get(ws.container_id)
                 except docker.errors.NotFound:
@@ -1391,12 +1448,43 @@ class DockerManager:
                     continue
                 # Still starting: only fail a "creating" one past the (generous)
                 # deadline. An "error" one stays error until its GUI answers.
-                if ws.status == "creating":
-                    created = ws.created_at.replace(tzinfo=timezone.utc) if ws.created_at else now
-                    if (now - created).total_seconds() > self._PROVISION_DEADLINE_SECONDS:
-                        ws.status = "error"
-                        ws.error_message = "Workspace did not become ready in time"
-                        db.commit()
+                if ws.status == "creating" and _age(ws) > self._PROVISION_DEADLINE_SECONDS:
+                    ws.status = "error"
+                    ws.error_message = "Workspace did not become ready in time"
+                    ws.status_changed_at = now
+                    db.commit()
+
+            # Recover workspaces wedged in a transition whose owning background
+            # task died (e.g. the control plane restarted mid-stop/mid-migrate).
+            # Anchored on status_changed_at so a normal in-flight stop/migrate is
+            # untouched — only rows stuck past a generous deadline are cleared.
+            stuck = db.scalars(
+                select(Workspace).where(
+                    Workspace.status.in_(("stopping", "migrating")),
+                    Workspace.zone_id == zone,
+                )
+            ).all()
+            for ws in stuck:
+                if ws.status == "stopping" and _age(ws) > self._STOPPING_DEADLINE_SECONDS:
+                    # Re-drive the stop to completion — it's idempotent (tears down
+                    # container/sidecars/network, then marks the row stopped).
+                    logger.warning(
+                        "Workspace %s wedged in 'stopping' for %ds — re-driving stop",
+                        ws.id, int(_age(ws)),
+                    )
+                    self.stop_workspace(ws.id)
+                elif ws.status == "migrating" and _age(ws) > self._MIGRATING_DEADLINE_SECONDS:
+                    # The migration task never finished. It's copy-then-delete, so
+                    # the source storage + zone pin are intact — fail back to error
+                    # (the user can retry the migration or boot it where it is).
+                    logger.warning(
+                        "Workspace %s wedged in 'migrating' for %ds — marking error",
+                        ws.id, int(_age(ws)),
+                    )
+                    ws.status = "error"
+                    ws.error_message = "Migration did not finish — please retry"
+                    ws.status_changed_at = now
+                    db.commit()
         except Exception as exc:
             logger.warning("sync_workspace_statuses error: %s", exc)
         finally:
@@ -1796,6 +1884,22 @@ class DockerManager:
         volumes[key_dir] = {"bind": "/cove/ssh-key", "mode": "ro"}
         volumes[_helper_script_path("install-ssh-key.sh")] = {
             "bind": "/custom-cont-init.d/96-install-ssh-key.sh",
+            "mode": "ro",
+        }
+
+    @staticmethod
+    def _apply_browser_lock_cleanup(ws, volumes: dict) -> None:
+        """Clear a stale browser single-instance lock before the browser starts.
+
+        Opt-in per workspace: mounts an init script that removes a leftover
+        SingletonLock (chromium family) / lock (Firefox) from the persistent
+        /config profile, which an unclean halt leaves behind and which otherwise
+        stops the browser from launching on the next boot. Mutates ``volumes``.
+        """
+        if not getattr(ws, "clear_browser_lock", False):
+            return
+        volumes[_helper_script_path("clear-browser-lock.sh")] = {
+            "bind": "/custom-cont-init.d/95-clear-browser-lock.sh",
             "mode": "ro",
         }
 

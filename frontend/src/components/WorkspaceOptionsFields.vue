@@ -104,6 +104,16 @@
         (<code>PIXELFLUX_WAYLAND=false</code>) if an app has Wayland compatibility issues.
       </p>
 
+      <label class="checkbox-row">
+        <input type="checkbox" v-model="form.clear_browser_lock" />
+        <span>Clear stale browser lock</span>
+      </label>
+      <p class="hint">
+        For browser workspaces: remove a leftover single-instance lock from the saved
+        profile at launch. Enable if the browser won't start after an unclean halt
+        (the desktop streams but the browser never appears).
+      </p>
+
       <div class="form-group">
         <label>Install packages</label>
         <input v-model="form.install_packages" type="text" placeholder="git vim htop" />
@@ -153,6 +163,7 @@ export interface WorkspaceOptionsForm {
   allow_sudo: boolean
   inject_ssh_key: boolean
   pixelflux_wayland: boolean
+  clear_browser_lock: boolean
   install_packages: string
   proot_apps: string[]
   appimages: string

@@ -11,10 +11,17 @@ export const useUiStore = defineStore('ui', () => {
   const toasts = ref<Toast[]>([])
   let _id = 0
 
-  function toast(message: string, type: Toast['type'] = 'info', duration = 4000) {
+  // Errors persist until dismissed (duration 0) so a glance away can't lose the
+  // only report that something failed; success/info auto-dismiss. An explicit
+  // duration always wins.
+  function toast(
+    message: string,
+    type: Toast['type'] = 'info',
+    duration = type === 'error' ? 0 : 4000,
+  ) {
     const id = ++_id
     toasts.value.push({ id, message, type })
-    setTimeout(() => dismiss(id), duration)
+    if (duration > 0) setTimeout(() => dismiss(id), duration)
   }
 
   function dismiss(id: number) {

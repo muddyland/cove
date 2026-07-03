@@ -174,6 +174,21 @@
         </div>
       </section>
     </div>
+
+    <ConfirmModal
+      v-model="showSshReplace"
+      title="Replace SSH Key"
+      message="Replace your current SSH key with a new one? Existing workspaces keep the old key until they next launch."
+      confirm-label="Replace"
+      @confirm="doGenerate"
+    />
+    <ConfirmModal
+      v-model="showSshRemove"
+      title="Remove SSH Key"
+      message="Remove your SSH key? New workspaces will launch without it."
+      confirm-label="Remove"
+      @confirm="doRemove"
+    />
   </AppShell>
 </template>
 
@@ -181,6 +196,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import { authApi } from '@/api/auth'
 import { usersApi, type GluetunUpdate } from '@/api/users'
 import type { SshKeyConfig } from '@/types'
@@ -346,6 +362,8 @@ const sshLoading = ref(true)
 const sshSaving = ref(false)
 const sshError = ref('')
 const uploadText = ref('')
+const showSshReplace = ref(false)
+const showSshRemove = ref(false)
 const ssh = ref<SshKeyConfig>({
   has_key: false,
   public_key: null,
@@ -388,8 +406,16 @@ async function upload() {
   }
 }
 
-async function generate() {
-  if (ssh.value.has_key && !confirm('Replace your current SSH key with a new one?')) return
+// Replacing an existing key is destructive, so route it through the themed
+// ConfirmModal (consistent with the rest of the app); a first-time generate with
+// no existing key needs no confirmation.
+function generate() {
+  if (ssh.value.has_key) { showSshReplace.value = true; return }
+  doGenerate()
+}
+
+async function doGenerate() {
+  showSshReplace.value = false
   sshError.value = ''
   sshSaving.value = true
   try {
@@ -403,8 +429,12 @@ async function generate() {
   }
 }
 
-async function removeKey() {
-  if (!confirm('Remove your SSH key? New workspaces will launch without it.')) return
+function removeKey() {
+  showSshRemove.value = true
+}
+
+async function doRemove() {
+  showSshRemove.value = false
   sshError.value = ''
   sshSaving.value = true
   try {

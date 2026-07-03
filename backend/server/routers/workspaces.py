@@ -3,6 +3,7 @@ import ipaddress
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -18,6 +19,7 @@ from server.schemas import (
     ContainerLogsOut,
     LanPolicyOut,
     StreamAuthOut,
+    StreamReadyOut,
     TailscaleStatusOut,
     WorkspaceClone,
     WorkspaceCreate,
@@ -180,6 +182,25 @@ def _check_gluetun_single_connection(db, user_id: int, exclude_ws_id: int | None
         )
 
 
+def _check_name_unique(db, user_id: int, name: str, *, exclude_ws_id: int | None = None) -> None:
+    """Reject a name that collides with another of the user's workspaces once
+    sanitized. The sanitized name is the on-disk storage key, so two workspaces
+    reducing to the same key (e.g. "Brave" and "brave!") would silently share the
+    same ``/config`` and corrupt each other."""
+    from server.docker_manager import _sanitize
+
+    key = _sanitize(name)
+    others = db.scalars(select(Workspace).where(Workspace.user_id == user_id)).all()
+    for other in others:
+        if other.id == exclude_ws_id:
+            continue
+        if _sanitize(other.name) == key:
+            raise HTTPException(
+                status_code=409,
+                detail=f"You already have a workspace named “{other.name}” — choose a distinct name.",
+            )
+
+
 def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
     ws = db.get(Workspace, ws_id)
     if not ws:
@@ -220,6 +241,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         _check_gluetun_single_connection(db, user.id)
 
     _validate_zone(db, body.zone_id)
+    _check_name_unique(db, user.id, body.name)
 
     ws = Workspace(
         user_id=user.id,
@@ -246,7 +268,9 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         allow_sudo=body.allow_sudo,
         inject_ssh_key=body.inject_ssh_key,
         pixelflux_wayland=body.pixelflux_wayland,
+        clear_browser_lock=body.clear_browser_lock,
         status="creating",
+        status_changed_at=datetime.now(timezone.utc),
     )
     db.add(ws)
     db.commit()
@@ -332,6 +356,7 @@ def clone_workspace(
     from server.docker_manager import _sanitize
     if _sanitize(name) == _sanitize(src.name):
         raise HTTPException(status_code=400, detail="Choose a name that differs from the source")
+    _check_name_unique(db, user.id, name)
 
     image = db.get(WorkspaceImage, body.image_id) if body.image_id else db.get(WorkspaceImage, src.image_id)
     if not image or not image.enabled:
@@ -371,7 +396,9 @@ def clone_workspace(
         allow_sudo=src.allow_sudo,
         inject_ssh_key=src.inject_ssh_key,
         pixelflux_wayland=src.pixelflux_wayland,
+        clear_browser_lock=src.clear_browser_lock,
         status="creating",
+        status_changed_at=datetime.now(timezone.utc),
     )
     db.add(clone)
     db.commit()
@@ -410,6 +437,7 @@ def migrate_workspace(
 
     src = ws.zone_id
     ws.status = "migrating"
+    ws.status_changed_at = datetime.now(timezone.utc)
     ws.error_message = None
     db.commit()
     db.refresh(ws)
@@ -606,12 +634,77 @@ def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
     return StreamAuthOut(url=f"//{host}/?__cove_t={token}")
 
 
+@router.get("/{ws_id}/stream-ready", response_model=StreamReadyOut)
+async def stream_ready(ws_id: int, user: CurrentUser, db: DbSession):
+    """Report whether Traefik can already route to this workspace's stream.
+
+    After a workspace flips to ``running`` there is a window before Traefik has a
+    router for it — effectively instant for local workspaces (Docker provider),
+    up to one HTTP-provider poll for remote-zone ones. During that window the
+    stream URL returns Traefik's bare 404 (nothing matched, so the ``cove-errors``
+    502-504 page can't apply). The SPA polls this so it only loads the iframe once
+    the route is live, instead of showing the user a raw 404.
+
+    We probe Traefik itself with the workspace's routing key. A **404** means no
+    router matches yet; anything else (401 from ForwardAuth, 200, 502, …) means the
+    workspace route exists. In subpath mode an un-published route doesn't 404 — it
+    falls through to the control-plane catch-all (``PathPrefix('/')``), whose
+    responses carry ``X-Cove``, so that header also counts as not-ready. The
+    container is confirmed answering before ``running``, so route propagation is
+    the only thing left to wait on.
+    """
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if ws.status != "running":
+        return StreamReadyOut(ready=False)
+
+    settings = get_settings()
+    traefik = settings.traefik_container
+    if settings.workspace_domain:
+        # Subdomain mode ships with an HTTP->HTTPS redirect on :80, which would
+        # answer every request (masking the 404), so probe the TLS entrypoint and
+        # route by Host header. The cert is Traefik's default here (SNI is the
+        # container name, not the workspace host) — verification is irrelevant to
+        # the routing check, so skip it.
+        url = f"https://{traefik}/"
+        headers = {"host": settings.workspace_host(ws.public_id)}
+        verify = False
+    else:
+        url = f"http://{traefik}/workspace/{ws.public_id}/"
+        headers = {}
+        verify = True
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=4.0, verify=verify, follow_redirects=False
+        ) as client:
+            r = await client.get(url, headers=headers)
+        ready = r.status_code != 404 and "x-cove" not in r.headers
+        return StreamReadyOut(ready=ready)
+    except httpx.HTTPError:
+        # Traefik unreachable / probe timed out — treat as not-ready; the SPA
+        # keeps polling.
+        return StreamReadyOut(ready=False)
+
+
 @router.patch("/{ws_id}", response_model=WorkspaceOut)
 def update_workspace(
     ws_id: int, body: WorkspaceUpdate, user: CurrentUser, db: DbSession, request: Request
 ):
     ws = _get_workspace_or_404(ws_id, user, db)
+    # Config changes only take effect on the next launch, and applying them to a
+    # live container leaves it inconsistent with its record — e.g. enabling
+    # Tailscale on a running node has no sidecar/network, so the status monitor
+    # then flags a missing sidecar and flips it to "error". Require the workspace
+    # to be at rest so the edit and the container can't diverge.
+    if ws.status not in ("stopped", "error"):
+        raise HTTPException(
+            status_code=409,
+            detail="Stop the workspace before editing — changes apply on the next start.",
+        )
     data = body.model_dump(exclude_unset=True)
+
+    if data.get("name") and data["name"].strip():
+        _check_name_unique(db, ws.user_id, data["name"], exclude_ws_id=ws.id)
 
     if data.get("target_url"):
         data["target_url"] = _normalize_target_urls(
@@ -649,6 +742,7 @@ def stop_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: BackgroundT
     if ws.status not in ("running", "creating"):
         raise HTTPException(status_code=400, detail=f"Cannot stop workspace in state: {ws.status}")
     ws.status = "stopping"
+    ws.status_changed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(ws)
     _audit(db, "workspace.stop", detail=ws.public_id, user=user, request=request)
@@ -667,6 +761,7 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
     if ws.use_gluetun:
         _check_gluetun_single_connection(db, user.id, exclude_ws_id=ws.id)
     ws.status = "creating"
+    ws.status_changed_at = datetime.now(timezone.utc)
     ws.error_message = None
     db.commit()
     db.refresh(ws)
@@ -686,6 +781,15 @@ def delete_workspace(
     purge_storage: bool = False,
 ):
     ws = _get_workspace_or_404(ws_id, user, db)
+    # A migration is actively streaming this workspace's home between zones and
+    # will commit back to this row when it finishes. Deleting now (and, with
+    # purge, rmtree-ing the source dir mid-copy) corrupts the destination and
+    # leaves the migration task writing to a deleted row. Make the user wait it
+    # out — a migrating workspace's storage is intact on both ends until it's done.
+    if ws.status == "migrating":
+        raise HTTPException(
+            status_code=409, detail="Workspace is migrating — wait for it to finish before purging."
+        )
     public_id = ws.public_id
     _audit(
         db,

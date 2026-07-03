@@ -10,7 +10,11 @@
         <NeonButton variant="primary" @click="showForm = true"><Plus :size="14" /> Add Image</NeonButton>
       </div>
     </div>
-    <div class="table-wrap">
+    <div v-if="loading" class="empty">LOADING…</div>
+    <div v-else-if="!images.length" class="empty">
+      No images yet — click “Sync LinuxServer” to import the catalog, or “Add Image”.
+    </div>
+    <div v-else class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -51,7 +55,12 @@
               >
                 <Download :size="13" /> {{ pullStatus[img.id] === 'present' ? 'Re-pull' : 'Pull' }}
               </NeonButton>
-              <NeonButton variant="ghost" @click="toggleEnabled(img)">
+              <NeonButton
+                variant="ghost"
+                :loading="togglingId === img.id"
+                :disabled="togglingId === img.id"
+                @click="toggleEnabled(img)"
+              >
                 <component :is="img.enabled ? ToggleRight : ToggleLeft" :size="15" />
                 {{ img.enabled ? 'Disable' : 'Enable' }}
               </NeonButton>
@@ -158,6 +167,9 @@ import { useZonesStore } from '@/stores/zones'
 import type { WorkspaceImage } from '@/types'
 
 const images = ref<WorkspaceImage[]>([])
+const loading = ref(true)
+// Id of the image whose enable/disable toggle is in flight (per-row spinner).
+const togglingId = ref<number | null>(null)
 const pullStatus = ref<Record<number, ImagePullStatus>>({})
 let pullTimer: ReturnType<typeof setInterval> | null = null
 const ui = useUiStore()
@@ -210,7 +222,11 @@ function schedulePullPoll() {
 
 onMounted(async () => {
   await zones.fetch()
-  await load()
+  try {
+    await load()
+  } finally {
+    loading.value = false
+  }
   await loadPullStatus()
 })
 onUnmounted(() => { if (pullTimer) clearInterval(pullTimer) })
@@ -270,11 +286,13 @@ async function handleAdd() {
 }
 
 async function toggleEnabled(img: WorkspaceImage) {
+  togglingId.value = img.id
   try {
     const updated = await imagesApi.update(img.id, { enabled: !img.enabled })
     const idx = images.value.findIndex(i => i.id === img.id)
     if (idx !== -1) images.value[idx] = updated
   } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { togglingId.value = null }
 }
 
 function confirmDelete(img: WorkspaceImage) { deleteTarget.value = img; showConfirm.value = true }

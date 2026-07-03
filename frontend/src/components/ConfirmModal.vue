@@ -1,11 +1,15 @@
 <template>
   <BaseModal :modelValue="modelValue" :title="title" @update:modelValue="$emit('update:modelValue', $event)" width="360px">
-    <p class="message">{{ message }}</p>
-    <slot />
-    <div class="actions">
-      <NeonButton variant="secondary" @click="$emit('update:modelValue', false)">Cancel</NeonButton>
-      <NeonButton variant="danger" :loading="loading" @click="$emit('confirm')">{{ confirmLabel }}</NeonButton>
-    </div>
+    <!-- A form so Enter confirms (the primary button is the submit + default
+         focus target); Cancel is a plain button so it never submits. -->
+    <form @submit.prevent="$emit('confirm')">
+      <p class="message">{{ message }}</p>
+      <slot />
+      <div class="actions">
+        <NeonButton type="button" variant="secondary" @click="$emit('update:modelValue', false)">Cancel</NeonButton>
+        <NeonButton type="submit" variant="danger" :loading="loading" data-autofocus>{{ confirmLabel }}</NeonButton>
+      </div>
+    </form>
   </BaseModal>
 </template>
 

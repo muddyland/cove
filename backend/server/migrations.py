@@ -149,6 +149,17 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0030_workspace_pixelflux_wayland",
         "ALTER TABLE workspace ADD COLUMN pixelflux_wayland BOOLEAN NOT NULL DEFAULT 1",
     ),
+    # Timestamp of the last status transition — anchors the reconciler's
+    # transient-state timeouts (creating/stopping/migrating).
+    (
+        "0031_workspace_status_changed_at",
+        "ALTER TABLE workspace ADD COLUMN status_changed_at DATETIME",
+    ),
+    # Opt-in: clear a stale browser single-instance lock before launch.
+    (
+        "0032_workspace_clear_browser_lock",
+        "ALTER TABLE workspace ADD COLUMN clear_browser_lock BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

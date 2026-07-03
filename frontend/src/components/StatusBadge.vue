@@ -12,6 +12,7 @@ const label = computed(() => ({
   creating: 'Starting',
   running: 'Online',
   stopping: 'Halting',
+  migrating: 'Migrating',
   stopped: 'Offline',
   error: 'Error',
 }[props.status] ?? props.status))
@@ -41,7 +42,7 @@ const label = computed(() => ({
 
 .running  { color: var(--green); box-shadow: 0 0 6px rgba(0,255,157,0.3); }
 .running::before { box-shadow: 0 0 4px var(--green); animation: pulse 1.5s infinite; }
-.creating, .stopping { color: var(--amber); animation: flicker 1s infinite; }
+.creating, .stopping, .migrating { color: var(--amber); animation: flicker 1s infinite; }
 .stopped  { color: var(--text-muted); border-color: var(--border); }
 .error    { color: var(--red); box-shadow: 0 0 6px rgba(255,32,85,0.3); }
 

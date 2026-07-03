@@ -40,30 +40,37 @@ export const filesApi = {
     URL.revokeObjectURL(url)
   },
 
-  // Multipart upload: must NOT set Content-Type so the browser sets the
-  // multipart boundary. Carry the Bearer header from the auth store plus the
-  // session cookie via credentials:'include'.
-  async upload(dir: string, file: File, zoneId = 0) {
+  // Multipart upload via XHR (not fetch) so we can report upload progress — a
+  // large migration-scale home would otherwise sit under an indefinite spinner
+  // that reads as "hung". Must NOT set Content-Type; XHR derives the multipart
+  // boundary from the FormData. onProgress receives a 0..1 fraction.
+  upload(dir: string, file: File, zoneId = 0, onProgress?: (fraction: number) => void) {
     const auth = useAuthStore()
-    const headers: Record<string, string> = {}
-    if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
     const fd = new FormData()
     fd.append('path', dir)
     fd.append('file', file)
-    const resp = await fetch(BASE + `/files/upload?zone_id=${zoneId}`, {
-      method: 'POST',
-      headers,
-      credentials: 'include',
-      body: fd,
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', BASE + `/files/upload?zone_id=${zoneId}`)
+      if (auth.token) xhr.setRequestHeader('Authorization', `Bearer ${auth.token}`)
+      xhr.withCredentials = true
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve()
+          return
+        }
+        let detail = `Upload failed (HTTP ${xhr.status})`
+        try {
+          detail = JSON.parse(xhr.responseText).detail || detail
+        } catch {}
+        reject(new Error(detail))
+      }
+      xhr.onerror = () => reject(new Error('Upload failed — network error'))
+      xhr.send(fd)
     })
-    if (!resp.ok) {
-      let detail = `Upload failed (HTTP ${resp.status})`
-      try {
-        const body = await resp.json()
-        detail = body.detail || detail
-      } catch {}
-      throw new Error(detail)
-    }
   },
 
   remove: (path: string, zoneId = 0) => api.delete('/files' + buildQuery(path, zoneId)),

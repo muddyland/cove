@@ -68,15 +68,27 @@
       <!-- Everything else lives in the Actions menu. -->
       <div ref="actionsDd" class="actions-dd" :class="{ open: actionsOpen }">
         <NeonButton variant="secondary" class="actions-trigger" @click="actionsOpen = !actionsOpen">
-          ACTIONS <ChevronDown :size="12" class="chev" />
+          <Settings2 :size="13" /> ACTIONS <ChevronDown :size="12" class="chev" />
         </NeonButton>
         <div v-show="actionsOpen" class="actions-menu">
-          <button type="button" class="action-item" @click="act(() => (showEdit = true))"><Pencil :size="14" /> Edit</button>
+          <button
+            type="button"
+            class="action-item"
+            :disabled="!isStopped"
+            :title="isStopped ? '' : 'Stop the workspace to edit — changes apply on the next start'"
+            @click="act(() => (showEdit = true))"
+          ><Pencil :size="14" /> Edit</button>
           <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(() => (showDiag = true))"><Activity :size="14" /> Logs</button>
           <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(handleStop)"><Square :size="14" /> Halt</button>
           <button v-if="isStopped" type="button" class="action-item" @click="act(() => (showClone = true))"><CopyPlus :size="14" /> Clone</button>
           <button v-if="isStopped && zonesStore.hasRemote" type="button" class="action-item" @click="act(() => (showMigrate = true))"><ArrowRightLeft :size="14" /> Migrate</button>
-          <button type="button" class="action-item danger" @click="act(openPurge)"><Trash2 :size="14" /> Purge</button>
+          <button
+            type="button"
+            class="action-item danger"
+            :disabled="ws.status === 'migrating'"
+            :title="ws.status === 'migrating' ? 'Wait for the migration to finish before purging' : ''"
+            @click="act(openPurge)"
+          ><Trash2 :size="14" /> Purge</button>
         </div>
       </div>
     </div>
@@ -84,12 +96,16 @@
   <ConfirmModal
     v-model="showConfirm"
     title="Purge Workspace"
-    :message="`Terminate '${ws.name}'? The container is destroyed.`"
+    :message="ws.ephemeral
+      ? `Terminate '${ws.name}'? It's ephemeral — the container and its data are destroyed.`
+      : `Terminate '${ws.name}'? The container is destroyed.`"
     confirm-label="PURGE"
     :loading="removing"
     @confirm="handleRemove"
   >
-    <label class="purge-storage">
+    <!-- Ephemeral workspaces have no persistent home, so there's nothing to
+         optionally keep — don't offer the "delete storage" choice. -->
+    <label v-if="!ws.ephemeral" class="purge-storage">
       <input type="checkbox" v-model="purgeStorage" />
       <span>
         Also delete persistent storage
@@ -116,7 +132,7 @@ import EditWorkspaceModal from './EditWorkspaceModal.vue'
 import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
-import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown } from 'lucide-vue-next'
+import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2 } from 'lucide-vue-next'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -436,6 +452,8 @@ async function handleRemove() {
   transition: all 0.15s;
 }
 .action-item:hover { color: var(--text); background: var(--accent-dim); }
+.action-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.action-item:disabled:hover { color: var(--text-muted); background: none; }
 .action-item svg { flex-shrink: 0; }
 .action-item.danger { color: var(--red); }
 .action-item.danger:hover { background: color-mix(in srgb, var(--red) 14%, transparent); }

@@ -60,29 +60,106 @@
           @click="handleInstall"
         ><Download :size="14" /><span class="bar-label"> APP</span></button>
         <button
+          v-if="ws"
+          class="bar-btn help-btn"
+          title="Workspace help"
+          aria-label="Workspace help"
+          @click="showHelp = true"
+        ><HelpCircle :size="16" /></button>
+        <!-- CRT / Fullscreen / Logs / Halt collapse into a single hamburger on the
+             right so the stream keeps as much of the bar as possible. -->
+        <div
           v-if="ws?.status === 'running'"
-          class="bar-btn crt-btn"
-          :class="{ active: ui.crt }"
-          :title="ui.crt ? 'CRT effect on' : 'CRT effect off'"
-          @click="ui.toggleCrt()"
-        ><ScanLine :size="14" /><span class="bar-label"> CRT</span></button>
-        <button
-          v-if="ws?.status === 'running'"
-          class="bar-btn fs-btn"
-          :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
-          @click="toggleFullscreen"
-        ><component :is="isFullscreen ? Minimize : Maximize" :size="14" /><span class="bar-label"> {{ isFullscreen ? 'WINDOW' : 'FULL' }}</span></button>
-        <button
-          v-if="ws?.status === 'running'"
-          class="bar-btn"
-          title="Diagnostics — Tailscale status &amp; container logs"
-          @click="showDiag = true"
-        ><Activity :size="14" /><span class="bar-label"> LOGS</span></button>
-        <NeonButton v-if="ws?.status === 'running'" variant="warn" :loading="stopping" @click="handleStop"><Square :size="14" /><span class="bar-label"> HALT</span></NeonButton>
+          class="actions-menu-dd"
+          :class="{ open: actionsMenuOpen }"
+        >
+          <button
+            class="bar-btn menu-trigger"
+            title="Actions"
+            aria-label="Workspace actions"
+            :aria-expanded="actionsMenuOpen"
+            @click.stop="actionsMenuOpen = !actionsMenuOpen"
+          ><Menu :size="16" /></button>
+          <div v-if="actionsMenuOpen" class="actions-menu" @click.stop>
+            <button class="menu-item" :class="{ active: ui.crt }" @click="runAction(ui.toggleCrt)">
+              <ScanLine :size="15" /> CRT effect <span class="menu-state">{{ ui.crt ? 'On' : 'Off' }}</span>
+            </button>
+            <button class="menu-item" @click="runAction(toggleFullscreen)">
+              <component :is="isFullscreen ? Minimize : Maximize" :size="15" />
+              {{ isFullscreen ? 'Exit fullscreen' : 'Fullscreen' }}
+            </button>
+            <button class="menu-item" @click="runAction(() => (showDiag = true))">
+              <Activity :size="15" /> Logs
+            </button>
+            <button class="menu-item danger" :disabled="stopping" @click="runAction(handleStop)">
+              <Square :size="15" /> {{ stopping ? 'Halting…' : 'Halt' }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
     <DiagnosticsModal v-if="ws" v-model="showDiag" :ws="ws" />
+
+    <BaseModal v-model="showHelp" title="Workspace Help" width="520px">
+      <p class="help-intro">Common actions for working with a workspace node.</p>
+
+      <h4 class="help-h">On this screen</h4>
+      <ul class="help-list">
+        <li>
+          <span class="help-ic"><PanelLeft :size="15" /></span>
+          <div><strong>Desktop menu</strong><p>The streamed desktop has its own controls behind the thin vertical bar on the <em>left edge</em> of the stream — click it to slide out the Selkies panel: video quality, clipboard sync, audio, gamepad, and fullscreen.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><MousePointer2 :size="15" /></span>
+          <div><strong>Give focus back</strong><p>The desktop captures your mouse &amp; keyboard while you work in it. If the buttons up here don't respond, press <kbd>Esc</kbd> (or click this bar) to release focus back to Cove.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><Square :size="15" /></span>
+          <div><strong>Halt</strong><p>Stop the running container. Your files persist (unless the node is ephemeral) — boot it again anytime.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><ScanLine :size="15" /></span>
+          <div><strong>CRT effect</strong><p>Toggle the retro scanline overlay on the stream. Purely visual; remembered per browser.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><Maximize :size="15" /></span>
+          <div><strong>Fullscreen</strong><p>Expand the stream to fill the screen. Press again — or Esc — to exit.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><Activity :size="15" /></span>
+          <div><strong>Logs</strong><p>Open diagnostics: container logs, plus connection status for VPN / Tailscale nodes.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><Download :size="15" /></span>
+          <div><strong>Install as app</strong><p>Add this node to your device as its own app (APP) that launches straight into it.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><ChevronDown :size="15" /></span>
+          <div><strong>Switch nodes</strong><p>Use the name dropdown at the top-left to jump between nodes — and boot a stopped one.</p></div>
+        </li>
+      </ul>
+
+      <h4 class="help-h">From the grid (←)</h4>
+      <ul class="help-list">
+        <li>
+          <span class="help-ic"><Pencil :size="15" /></span>
+          <div><strong>Edit</strong><p>Change a node's settings (packages, VPN, DNS…). Stop it first — changes apply on the next boot.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><CopyPlus :size="15" /></span>
+          <div><strong>Clone</strong><p>Duplicate a stopped node with a copy of its home — handy for trying a different distro.</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><ArrowRightLeft :size="15" /></span>
+          <div><strong>Migrate</strong><p>Move a stopped node's storage to another zone (remote host).</p></div>
+        </li>
+        <li>
+          <span class="help-ic"><Trash2 :size="15" /></span>
+          <div><strong>Purge</strong><p>Destroy the container, optionally deleting its saved home too. Can't be undone.</p></div>
+        </li>
+      </ul>
+    </BaseModal>
 
     <!-- Halted takeover for a per-workspace PWA: it's a single-purpose app, so on
          halt there's nowhere to go back to — just confirm it's safe to close. -->
@@ -116,6 +193,19 @@
       <div v-if="ui.crt" class="crt-overlay" aria-hidden="true" />
     </div>
 
+    <!-- Node is up but the route isn't live yet (or stream-auth failed): hold
+         here instead of dropping the user on a raw 404. -->
+    <div v-else-if="ws?.status === 'running' && streamError" class="overlay-state error">
+      <p class="error-text">⚠ {{ streamError }}</p>
+      <NeonButton variant="secondary" :loading="connecting" @click="retryStream">RETRY</NeonButton>
+    </div>
+
+    <div v-else-if="ws?.status === 'running'" class="overlay-state">
+      <img class="boot-icon" src="/favicon.svg" alt="" />
+      <p class="boot-text">CONNECTING<span class="ellipsis" /></p>
+      <p class="boot-sub">Linking up to the node — one moment…</p>
+    </div>
+
     <div v-else-if="ws?.status === 'error'" class="overlay-state error">
       <p class="error-text">⚠ {{ ws.error_message || 'Node failed to boot' }}</p>
       <NeonButton variant="secondary" @click="$router.push('/app')">← RETURN TO GRID</NeonButton>
@@ -132,8 +222,9 @@ import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
+import BaseModal from '@/components/BaseModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Menu, HelpCircle, Pencil, CopyPlus, ArrowRightLeft, Trash2, PanelLeft, MousePointer2 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -145,7 +236,12 @@ const ws = computed(() => store.items.find(w => w.id === wsId.value))
 const installing = computed(() => !!(ws.value?.install_packages || ws.value?.proot_apps))
 const stopping = ref(false)
 const showDiag = ref(false)
+const showHelp = ref(false)
 const streamUrl = ref<string | null>(null)
+// Set while we poll for Traefik to publish the node's route (see loadStreamUrl);
+// streamError holds a message if the route never came up or stream-auth failed.
+const connecting = ref(false)
+const streamError = ref<string | null>(null)
 const frameWrap = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -181,6 +277,19 @@ watch(menuOpen, (open) => {
   if (open) document.addEventListener('click', closeMenu)
   else document.removeEventListener('click', closeMenu)
 })
+
+// Top-bar actions hamburger (CRT / Fullscreen / Logs / Halt).
+const actionsMenuOpen = ref(false)
+function closeActionsMenu() { actionsMenuOpen.value = false }
+watch(actionsMenuOpen, (open) => {
+  if (open) document.addEventListener('click', closeActionsMenu)
+  else document.removeEventListener('click', closeActionsMenu)
+})
+// Close the menu, then run the chosen action.
+function runAction(fn: () => void) {
+  actionsMenuOpen.value = false
+  fn()
+}
 // The router reuses this component instance across /workspace/:id changes, so
 // onMounted doesn't re-run. Re-initialise for the new node: drop the previous
 // node's stream URL (forcing the iframe to reload), restart polling if it's
@@ -188,6 +297,8 @@ watch(menuOpen, (open) => {
 watch(wsId, async () => {
   menuOpen.value = false
   streamUrl.value = null
+  streamError.value = null
+  connecting.value = false
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (!ws.value) await store.fetch()
   startPollIfNeeded()
@@ -207,17 +318,63 @@ function onFullscreenChange() {
   isFullscreen.value = document.fullscreenElement === frameWrap.value
 }
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// A node reports "running" the instant its container answers, but Traefik still
+// has to publish the route — instant for local nodes, up to one HTTP-provider
+// poll (~10s) for remote-zone ones. Until then the stream URL 404s (nothing
+// matched, so the 502-504 error page can't apply either). Poll the readiness
+// probe so we only load the iframe once the route is actually live.
+async function waitForStreamReady(id: number): Promise<boolean> {
+  const deadline = Date.now() + 25000
+  while (Date.now() < deadline) {
+    if (id !== wsId.value) return false  // switched nodes mid-wait
+    if (ws.value?.status !== 'running') return false  // node left running (stopped/errored)
+    try {
+      const { ready } = await workspacesApi.streamReady(id)
+      if (ready) return true
+    } catch {
+      // Transient (e.g. a blip talking to the control plane) — keep polling.
+    }
+    await sleep(1500)
+  }
+  return false
+}
+
 async function loadStreamUrl() {
-  // Mint the authenticated iframe URL. In subdomain mode this carries a one-time
-  // token that bootstraps a per-workspace stream cookie; in subpath mode it is
-  // the plain same-origin path. Never reuse the SPA session cookie cross-origin.
-  if (ws.value?.status !== 'running' || streamUrl.value) return
+  // Gate on Traefik routing, then mint the authenticated iframe URL. In subdomain
+  // mode that URL carries a one-time token that bootstraps a per-workspace stream
+  // cookie; in subpath mode it is the plain same-origin path. Never reuse the SPA
+  // session cookie cross-origin.
+  if (ws.value?.status !== 'running' || streamUrl.value || connecting.value) return
+  const id = wsId.value
+  connecting.value = true
+  streamError.value = null
   try {
-    const { url } = await workspacesApi.streamAuth(wsId.value)
+    const ready = await waitForStreamReady(id)
+    if (id !== wsId.value) return
+    if (!ready) {
+      streamError.value = 'This node is taking longer than usual to come online.'
+      return
+    }
+    const { url } = await workspacesApi.streamAuth(id)
+    if (id !== wsId.value) return
     streamUrl.value = url
   } catch (e: any) {
-    ui.toast(e.message || 'Failed to open stream', 'error')
+    if (id === wsId.value) streamError.value = e.message || 'Failed to open the stream'
+  } finally {
+    if (id === wsId.value) connecting.value = false
   }
+}
+
+// Manual "RETRY" from the connection-error overlay: drop any stale URL and run
+// the readiness-gated load again from scratch.
+function retryStream() {
+  streamError.value = null
+  streamUrl.value = null
+  loadStreamUrl()
 }
 
 onMounted(async () => {
@@ -230,6 +387,7 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('click', closeMenu)
+  document.removeEventListener('click', closeActionsMenu)
   if (pollTimer) clearInterval(pollTimer)
 })
 
@@ -587,6 +745,78 @@ async function handleStop() {
   padding: 8px; text-align: center;
 }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* Actions hamburger + its right-aligned dropdown. */
+.actions-menu-dd { position: relative; }
+.menu-trigger { padding: 5px 8px; }
+.menu-trigger:hover, .actions-menu-dd.open .menu-trigger {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.actions-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--glow-sm), var(--shadow);
+  padding: 4px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+.menu-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none; background: none;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px; letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.menu-item:hover:not(:disabled) { color: var(--text); background: var(--accent-dim); }
+.menu-item:disabled { opacity: 0.5; cursor: default; }
+.menu-item svg { flex-shrink: 0; }
+.menu-item.active { color: var(--accent-2); }
+.menu-item.danger { color: var(--amber); }
+.menu-item.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 16%, transparent); }
+.menu-state { margin-left: auto; font-size: 10px; color: var(--text-muted); letter-spacing: 1px; }
+.menu-item.active .menu-state { color: var(--accent-2); }
+
+/* Help (?) button + modal content. */
+.help-btn { padding: 5px 8px; }
+.help-btn:hover { color: var(--accent); border-color: var(--accent); }
+.help-intro {
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+  color: var(--text-muted); margin: 0 0 16px;
+}
+.help-h {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--accent);
+  margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.help-h:first-of-type { margin-top: 0; }
+.help-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.help-list li { display: flex; align-items: flex-start; gap: 12px; }
+.help-ic {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: var(--accent-dim); color: var(--accent);
+}
+.help-list strong { display: block; font-size: 13px; color: var(--text); margin-bottom: 2px; }
+.help-list p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.help-list em { color: var(--accent); font-style: normal; }
+.help-list kbd {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 3px; padding: 1px 5px; margin: 0 1px;
+}
 
 .frame-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; }
 .workspace-frame { width: 100%; height: 100%; border: none; display: block; }

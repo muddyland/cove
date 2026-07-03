@@ -1,22 +1,25 @@
 <template>
-  <div class="toast-host">
+  <div class="toast-host" role="region" aria-label="Notifications" aria-live="polite">
     <TransitionGroup name="toast">
       <div
         v-for="t in ui.toasts"
         :key="t.id"
         class="toast"
         :class="t.type"
+        :role="t.type === 'error' ? 'alert' : 'status'"
+        :title="'Dismiss'"
         @click="ui.dismiss(t.id)"
       >
         <component :is="iconFor(t.type)" class="toast-icon" :size="16" />
         <span>{{ t.message }}</span>
+        <X v-if="t.type === 'error'" class="toast-close" :size="14" aria-hidden="true" />
       </div>
     </TransitionGroup>
   </div>
 </template>
 
 <script setup lang="ts">
-import { CheckCircle2, XCircle, Info } from 'lucide-vue-next'
+import { CheckCircle2, XCircle, Info, X } from 'lucide-vue-next'
 import { useUiStore } from '@/stores/ui'
 import type { Toast } from '@/stores/ui'
 const ui = useUiStore()
@@ -48,6 +51,9 @@ function iconFor(type: Toast['type']) {
   box-shadow: var(--shadow);
 }
 .toast-icon { flex-shrink: 0; }
+/* Persistent error toasts get an explicit dismiss affordance. */
+.toast-close { flex-shrink: 0; margin-left: 4px; opacity: 0.7; }
+.toast.error:hover .toast-close { opacity: 1; }
 .toast.success { background: var(--green); color: #0f1117; }
 .toast.error { background: var(--red); color: #0f1117; }
 .toast.info { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }

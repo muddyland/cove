@@ -183,10 +183,21 @@ class Workspace(Base):
     pixelflux_wayland: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("1")
     )
+    # Opt-in: clear a stale browser single-instance lock from the persistent
+    # profile before launch (browser workspaces that won't start after an unclean
+    # halt). Off by default. See scripts/clear-browser-lock.sh.
+    clear_browser_lock: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # When the row last entered its current status. Anchors the reconciler's
+    # transient-state timeouts (creating/stopping/migrating) so a control-plane
+    # restart can't false-time-out a long-running transition (unlike created_at,
+    # which is stale for a restarted workspace). Null on pre-upgrade rows.
+    status_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="workspaces")

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from server import ssh_keys
 from server.db import SessionLocal
 from server.models import User
-from server.tests.helpers import add_image, setup_admin
+from server.tests.helpers import add_image, set_workspace_status, setup_admin
 
 
 def _unencrypted_rsa_pem() -> str:
@@ -172,7 +172,8 @@ def test_workspace_inject_ssh_key_can_be_disabled(client):
     assert resp.status_code == 201, resp.text
     ws = resp.json()
     assert ws["inject_ssh_key"] is False
-    # And can be toggled back on via PATCH.
+    # And can be toggled back on via PATCH (requires a resting workspace).
+    set_workspace_status(ws["id"], "stopped")
     patched = client.patch(f"/api/workspaces/{ws['id']}", json={"inject_ssh_key": True})
     assert patched.status_code == 200, patched.text
     assert patched.json()["inject_ssh_key"] is True

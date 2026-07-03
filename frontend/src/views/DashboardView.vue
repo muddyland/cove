@@ -64,7 +64,7 @@ const showLaunch = ref(false)
 const showWebsite = ref(false)
 
 // Live/transitioning nodes float to the top (with stats); idle ones sit below.
-const ACTIVE = new Set(['running', 'creating', 'stopping'])
+const ACTIVE = new Set(['running', 'creating', 'stopping', 'migrating'])
 const active = computed(() => store.items.filter(ws => ACTIVE.has(ws.status)))
 const offline = computed(() => store.items.filter(ws => !ACTIVE.has(ws.status)))
 

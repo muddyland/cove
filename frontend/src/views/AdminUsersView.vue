@@ -38,7 +38,7 @@
       </table>
     </div>
 
-    <UserFormModal v-model="showForm" :editUser="editTarget" @submit="handleSubmit" />
+    <UserFormModal v-model="showForm" :editUser="editTarget" :on-submit="handleSubmit" />
     <ConfirmModal
       v-model="showConfirm"
       title="Delete User"
@@ -78,19 +78,19 @@ function openCreate() { editTarget.value = null; showForm.value = true }
 function openEdit(u: User) { editTarget.value = u; showForm.value = true }
 function confirmDelete(u: User) { deleteTarget.value = u; showConfirm.value = true }
 
+// Errors propagate to the modal (it stays open + shows them inline); we only
+// toast + mutate the list on success.
 async function handleSubmit(payload: { username: string; password?: string; is_admin: boolean }) {
-  try {
-    if (editTarget.value) {
-      const updated = await adminApi.users.update(editTarget.value.id, payload)
-      const idx = users.value.findIndex(u => u.id === editTarget.value!.id)
-      if (idx !== -1) users.value[idx] = updated
-      ui.toast('User updated', 'success')
-    } else {
-      const created = await adminApi.users.create({ ...payload, password: payload.password! })
-      users.value.push(created)
-      ui.toast('User created', 'success')
-    }
-  } catch (e: any) { ui.toast(e.message, 'error') }
+  if (editTarget.value) {
+    const updated = await adminApi.users.update(editTarget.value.id, payload)
+    const idx = users.value.findIndex(u => u.id === editTarget.value!.id)
+    if (idx !== -1) users.value[idx] = updated
+    ui.toast('User updated', 'success')
+  } else {
+    const created = await adminApi.users.create({ ...payload, password: payload.password! })
+    users.value.push(created)
+    ui.toast('User created', 'success')
+  }
 }
 
 async function handleDelete() {

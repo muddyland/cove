@@ -32,6 +32,7 @@ export const workspacesApi = {
     allow_sudo?: boolean
     inject_ssh_key?: boolean
     pixelflux_wayland?: boolean
+    clear_browser_lock?: boolean
   }) => api.post<Workspace>('/workspaces', payload),
   update: (
     id: number,
@@ -56,6 +57,7 @@ export const workspacesApi = {
       allow_sudo?: boolean
       inject_ssh_key?: boolean
       pixelflux_wayland?: boolean
+    clear_browser_lock?: boolean
     },
   ) => api.patch<Workspace>(`/workspaces/${id}`, payload),
   clone: (id: number, payload: { name: string; image_id?: number }) =>
@@ -67,6 +69,7 @@ export const workspacesApi = {
   logs: (id: number, source: LogSource, tail = 200) =>
     api.get<ContainerLogs>(`/workspaces/${id}/logs?source=${source}&tail=${tail}`),
   streamAuth: (id: number) => api.post<{ url: string }>(`/workspaces/${id}/stream-auth`),
+  streamReady: (id: number) => api.get<{ ready: boolean }>(`/workspaces/${id}/stream-ready`),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),
   start: (id: number) => api.post<Workspace>(`/workspaces/${id}/start`),
   remove: (id: number, purgeStorage = false) =>

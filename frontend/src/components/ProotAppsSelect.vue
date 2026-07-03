@@ -69,16 +69,25 @@ onMounted(async () => {
 .proot-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
+  gap: 10px;
+  padding: 6px 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
 }
 .proot-item:hover { background: var(--surface-2); }
-/* Reset the global `input { width: 100% }` so the checkbox doesn't stretch. */
-.proot-item input { width: auto; margin: 0; padding: 0; flex-shrink: 0; }
+/* Reset the global `input { width: 100% }` so the checkbox doesn't stretch, and
+   give it a larger, easier-to-hit box themed to the accent colour. */
+.proot-item input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
 .proot-note { font-size: 11px; color: var(--text-muted); margin: 4px 6px; }
 .proot-count {
   font-size: 11px;

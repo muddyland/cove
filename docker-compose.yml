@@ -57,7 +57,9 @@ services:
       # zones (the Docker provider only sees local containers). The control plane
       # serves this, pointing each service at the agent's Traefik over mTLS.
       - --providers.http.endpoint=http://cove:8080/api/internal/traefik-config
-      - --providers.http.pollInterval=10s
+      # Short poll so a just-started remote-zone workspace becomes routable
+      # quickly (this window is what the SPA's "CONNECTING" gate waits out).
+      - --providers.http.pollInterval=3s
       - --entrypoints.web.address=:80
       - --log.level=WARN
     ports:

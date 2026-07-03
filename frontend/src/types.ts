@@ -29,7 +29,7 @@ export interface WorkspaceImage {
   created_at: string
 }
 
-export type WorkspaceStatus = 'creating' | 'running' | 'stopping' | 'stopped' | 'error'
+export type WorkspaceStatus = 'creating' | 'running' | 'stopping' | 'migrating' | 'stopped' | 'error'
 
 export interface WorkspaceStats {
   cpu_pct: number
@@ -88,6 +88,7 @@ export interface Workspace {
   allow_sudo: boolean
   inject_ssh_key: boolean
   pixelflux_wayland: boolean
+  clear_browser_lock: boolean
 }
 
 export interface LanPolicy {

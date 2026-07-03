@@ -23,7 +23,7 @@
             <td>{{ ws.image_name }}</td>
             <td>{{ ws.started_at ? formatDate(ws.started_at) : '—' }}</td>
             <td class="actions">
-              <NeonButton variant="danger" @click="confirmKill(ws)"><Square :size="13" /> Kill</NeonButton>
+              <NeonButton variant="danger" @click="confirmKill(ws)"><Square :size="13" /> Halt</NeonButton>
             </td>
           </tr>
         </tbody>
@@ -31,9 +31,9 @@
     </div>
     <ConfirmModal
       v-model="showConfirm"
-      title="Kill Session"
-      :message="`Force-stop '${killTarget?.name}'?`"
-      confirm-label="Kill"
+      title="Halt Session"
+      :message="`Halt '${killTarget?.name}'? It will stop immediately.`"
+      confirm-label="Halt"
       :loading="killing"
       @confirm="handleKill"
     />
@@ -70,7 +70,7 @@ async function handleKill() {
     await adminApi.sessions.kill(killTarget.value.id)
     await load()
     showConfirm.value = false
-    ui.toast('Session killed', 'success')
+    ui.toast('Session halted', 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }
   finally { killing.value = false }
 }

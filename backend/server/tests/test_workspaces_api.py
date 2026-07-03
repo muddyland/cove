@@ -12,6 +12,7 @@ from server.tests.helpers import (
     auth_header,
     create_user_via_admin,
     login,
+    set_workspace_status,
     setup_admin,
 )
 
@@ -354,6 +355,7 @@ def test_update_workspace(client):
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")
     ws = client.post("/api/workspaces", json={"name": "orig", "image_id": image_id}).json()
+    set_workspace_status(ws["id"], "stopped")  # editing requires a resting workspace
     resp = client.patch(
         f"/api/workspaces/{ws['id']}",
         json={"name": "renamed", "install_packages": "git vim", "allow_sudo": False},

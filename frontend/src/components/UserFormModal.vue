@@ -30,8 +30,13 @@ import NeonButton from './NeonButton.vue'
 import type { User } from '@/types'
 
 const open = defineModel<boolean>({ default: false })
-const props = defineProps<{ editUser?: User | null }>()
-const emit = defineEmits<{ submit: [payload: { username: string; password?: string; is_admin: boolean }] }>()
+const props = defineProps<{
+  editUser?: User | null
+  // Async so the modal can await the real API call: it stays open and shows the
+  // inline error on failure (a taken username, weak password, …) instead of
+  // vanishing and dropping the user's input behind an ephemeral toast.
+  onSubmit: (payload: { username: string; password?: string; is_admin: boolean }) => Promise<void>
+}>()
 
 const loading = ref(false)
 const error = ref('')
@@ -42,6 +47,9 @@ watch(() => props.editUser, (u) => {
   else { form.username = ''; form.password = ''; form.is_admin = false }
 }, { immediate: true })
 
+// Clear any stale error each time the modal is (re)opened.
+watch(open, (o) => { if (o) error.value = '' })
+
 async function handleSubmit() {
   error.value = ''
   loading.value = true
@@ -51,10 +59,10 @@ async function handleSubmit() {
       is_admin: form.is_admin,
     }
     if (form.password) payload.password = form.password
-    emit('submit', payload)
+    await props.onSubmit(payload)
     open.value = false
   } catch (e: any) {
-    error.value = e.message
+    error.value = e.message || 'Something went wrong'
   } finally {
     loading.value = false
   }

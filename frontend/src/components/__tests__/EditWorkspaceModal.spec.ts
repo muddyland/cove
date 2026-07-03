@@ -72,6 +72,7 @@ const desktopWs: Workspace = {
   allow_sudo: true,
   inject_ssh_key: true,
   pixelflux_wayland: true,
+  clear_browser_lock: false,
 }
 
 describe('EditWorkspaceModal', () => {

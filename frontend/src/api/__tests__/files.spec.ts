@@ -48,22 +48,40 @@ describe('filesApi', () => {
     )
   })
 
-  it('upload() posts multipart with the Bearer header and no JSON content-type', async () => {
+  it('upload() posts multipart via XHR with the Bearer header + progress', async () => {
     const auth = useAuthStore()
     auth.setToken('tok-1')
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, {}))
+
+    const setRequestHeader = vi.fn()
+    let method = ''
+    let url = ''
+    let body: unknown = null
+    const fakeXhr: Record<string, any> = {
+      open: (m: string, u: string) => { method = m; url = u },
+      setRequestHeader,
+      upload: {},
+      withCredentials: false,
+      send(b: unknown) {
+        body = b
+        fakeXhr.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 })
+        fakeXhr.status = 200
+        fakeXhr.responseText = '{}'
+        fakeXhr.onload()
+      },
+    }
+    vi.stubGlobal('XMLHttpRequest', vi.fn(() => fakeXhr))
 
     const file = new File(['hi'], 'hi.txt', { type: 'text/plain' })
-    await filesApi.upload('sub', file)
+    const progress: number[] = []
+    await filesApi.upload('sub', file, 0, f => progress.push(f))
 
-    const [url, init] = fetchMock.mock.calls[0]
+    expect(method).toBe('POST')
     expect(url).toBe('/api/files/upload?zone_id=0')
-    expect(init.method).toBe('POST')
-    expect(init.credentials).toBe('include')
-    expect(init.headers.Authorization).toBe('Bearer tok-1')
-    expect(init.headers['Content-Type']).toBeUndefined()
-    expect(init.body).toBeInstanceOf(FormData)
-    expect((init.body as FormData).get('path')).toBe('sub')
+    expect(fakeXhr.withCredentials).toBe(true)
+    expect(setRequestHeader).toHaveBeenCalledWith('Authorization', 'Bearer tok-1')
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('path')).toBe('sub')
+    expect(progress).toEqual([0.5])
   })
 
   it('remove() issues a DELETE against /files with the path query', async () => {

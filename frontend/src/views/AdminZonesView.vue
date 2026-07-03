@@ -10,7 +10,8 @@
       <strong>Local</strong> is this control plane's own Docker daemon.
     </p>
 
-    <div class="table-wrap">
+    <div v-if="loading" class="empty">LOADING…</div>
+    <div v-else class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -30,7 +31,13 @@
             <td>{{ z.workspace_count }}</td>
             <td>{{ z.last_seen_at ? formatDate(z.last_seen_at) : '—' }}</td>
             <td class="actions">
-              <NeonButton v-if="z.id !== 0" variant="ghost" @click="enroll(z)">
+              <NeonButton
+                v-if="z.id !== 0"
+                variant="ghost"
+                :loading="enrollingId === z.id"
+                :disabled="enrollingId === z.id"
+                @click="enroll(z)"
+              >
                 <KeyRound :size="13" /> Enroll
               </NeonButton>
               <NeonButton
@@ -62,7 +69,7 @@
           <small>The address the control plane will dial. Leave blank to set later.</small>
         </label>
         <label>mTLS port<input v-model.number="form.endpoint_port" type="number" /><small>The single port the control plane dials (streams, agent API, and Docker).</small></label>
-        <NeonButton variant="primary" type="submit">Create</NeonButton>
+        <NeonButton variant="primary" type="submit" :loading="creating">Create</NeonButton>
       </form>
     </BaseModal>
 
@@ -109,6 +116,10 @@ import type { Zone } from '@/types'
 
 const zones = ref<Zone[]>([])
 const ui = useUiStore()
+const loading = ref(true)
+const creating = ref(false)
+// Id of the zone whose enrollment token is being minted (per-row spinner).
+const enrollingId = ref<number | null>(null)
 const showCreate = ref(false)
 const showEnroll = ref(false)
 const showConfirm = ref(false)
@@ -120,11 +131,15 @@ const updateTarget = ref<Zone | null>(null)
 const updatingId = ref<number | null>(null)
 const form = ref({ name: '', endpoint_host: '', endpoint_port: 8443 })
 
-onMounted(load)
+onMounted(async () => {
+  try { await load() } finally { loading.value = false }
+})
 async function load() { zones.value = await zonesApi.list() }
 function formatDate(d: string) { return new Date(d).toLocaleString() }
 
 async function handleCreate() {
+  if (creating.value) return
+  creating.value = true
   try {
     await zonesApi.create({
       name: form.value.name,
@@ -136,15 +151,19 @@ async function handleCreate() {
     await load()
     ui.toast('Zone created', 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { creating.value = false }
 }
 
 async function enroll(z: Zone) {
+  if (enrollingId.value !== null) return
+  enrollingId.value = z.id
   try {
     const res = await zonesApi.enrollToken(z.id)
     enrollCmd.value = res.install_command
     showEnroll.value = true
     await load()
   } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { enrollingId.value = null }
 }
 
 function copyCmd() {
