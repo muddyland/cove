@@ -555,6 +555,97 @@ class DockerManager:
         """Liveness check for this zone's daemon. Raises if unreachable."""
         return self._client.ping()
 
+    def disk_usage(self) -> dict:
+        """This zone's Docker disk usage, broken down like ``docker system df``.
+
+        Reclaimable is computed the same way the CLI does: images not referenced
+        by any container (minus shared layers), stopped containers' writable
+        layers, unreferenced volumes, and build-cache entries not in use. Volumes
+        are reported for visibility only — prune() never touches them.
+        """
+        d = self._client.df()
+        images = d.get("Images") or []
+        containers = d.get("Containers") or []
+        volumes = d.get("Volumes") or []
+        build = d.get("BuildCache") or []
+
+        def _vol_size(v) -> int:
+            return int((v.get("UsageData") or {}).get("Size") or 0)
+
+        def _vol_refs(v) -> int:
+            return int((v.get("UsageData") or {}).get("RefCount") or 0)
+
+        img_reclaim = sum(
+            (i.get("Size") or 0) - (i.get("SharedSize") or 0)
+            for i in images
+            if not (i.get("Containers") or 0) > 0
+        )
+        con_reclaim = sum(
+            c.get("SizeRw") or 0 for c in containers if c.get("State") != "running"
+        )
+        bc_reclaim = sum(b.get("Size") or 0 for b in build if not b.get("InUse"))
+
+        return {
+            "categories": [
+                {
+                    "key": "images",
+                    "label": "Images",
+                    "total": len(images),
+                    "active": sum(1 for i in images if (i.get("Containers") or 0) > 0),
+                    "size": d.get("LayersSize") or 0,
+                    "reclaimable": max(int(img_reclaim), 0),
+                },
+                {
+                    "key": "containers",
+                    "label": "Containers",
+                    "total": len(containers),
+                    "active": sum(1 for c in containers if c.get("State") == "running"),
+                    "size": sum(c.get("SizeRw") or 0 for c in containers),
+                    "reclaimable": int(con_reclaim),
+                },
+                {
+                    "key": "volumes",
+                    "label": "Local Volumes",
+                    "total": len(volumes),
+                    "active": sum(1 for v in volumes if _vol_refs(v) > 0),
+                    "size": sum(_vol_size(v) for v in volumes),
+                    "reclaimable": sum(_vol_size(v) for v in volumes if _vol_refs(v) <= 0),
+                },
+                {
+                    "key": "build_cache",
+                    "label": "Build Cache",
+                    "total": len(build),
+                    "active": sum(1 for b in build if b.get("InUse")),
+                    "size": sum(b.get("Size") or 0 for b in build),
+                    "reclaimable": int(bc_reclaim),
+                },
+            ],
+        }
+
+    def prune(self, deep: bool = False) -> dict:
+        """Reclaim disk on this zone's daemon. Never removes volumes.
+
+        Safe (default): dangling (untagged) images + build cache. Deep: also all
+        images not referenced by a container and every stopped container — this
+        forces slow re-pulls/rebuilds, so it is gated behind an explicit confirm.
+        """
+        reclaimed = 0
+        # Images: dangling-only by default, all-unused when deep.
+        img = self._client.images.prune(
+            filters={"dangling": False} if deep else {"dangling": True}
+        )
+        reclaimed += img.get("SpaceReclaimed") or 0
+        # Build cache (best-effort; older daemons may not support it).
+        try:
+            bc = self._client.api.prune_builds()
+            reclaimed += bc.get("SpaceReclaimed") or 0
+        except Exception:
+            pass
+        if deep:
+            con = self._client.containers.prune()
+            reclaimed += con.get("SpaceReclaimed") or 0
+        return {"space_reclaimed": int(reclaimed)}
+
     def save_image_stream(self, ref: str):
         """A ``docker save`` byte stream for an image, used to provision a zone
         agent with a locally-built image that isn't in any registry."""

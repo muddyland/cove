@@ -40,6 +40,20 @@ def agent_health():
     return {"status": "ok", "role": "agent"}
 
 
+@router.get("/host-disk")
+def agent_host_disk():
+    """This agent node's host filesystem usage, for the control plane's Storage
+    page. The Docker breakdown comes over the Docker channel; this covers what the
+    Docker API can't — true total/free bytes of the disk workspaces live on."""
+    import shutil
+
+    settings = get_settings()
+    root = settings.storage_path or (settings.data_dir / "workspaces")
+    path = root if root.exists() else settings.data_dir
+    total, used, free = shutil.disk_usage(str(path))
+    return {"total": total, "used": used, "free": free}
+
+
 def _public_id_from_host(host: str | None, settings) -> str | None:
     """Extract the workspace public_id from a ``{public_id}.{domain}`` host.
 

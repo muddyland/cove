@@ -184,3 +184,37 @@ export interface ZoneOption {
   id: number
   name: string
 }
+
+export interface StorageCategory {
+  key: string
+  label: string
+  total: number
+  active: number
+  size: number
+  reclaimable: number
+}
+
+export interface HostDisk {
+  total: number
+  used: number
+  free: number
+}
+
+export interface ZoneStorage {
+  zone_id: number
+  zone_name: string
+  online: boolean
+  error: string | null
+  host: HostDisk | null
+  categories: StorageCategory[]
+}
+
+export interface StorageInfo {
+  zones: ZoneStorage[]
+}
+
+export interface PruneResult {
+  zone_id: number
+  deep: boolean
+  space_reclaimed: number
+}

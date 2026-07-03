@@ -1,5 +1,13 @@
 import { api } from './client'
-import type { User, Workspace, AuditEntry, AppSettings, EnvSummary } from '@/types'
+import type {
+  User,
+  Workspace,
+  AuditEntry,
+  AppSettings,
+  EnvSummary,
+  StorageInfo,
+  PruneResult,
+} from '@/types'
 
 export const adminApi = {
   users: {
@@ -23,5 +31,10 @@ export const adminApi = {
   },
   env: {
     get: () => api.get<EnvSummary>('/admin/env'),
+  },
+  storage: {
+    get: () => api.get<StorageInfo>('/admin/storage'),
+    prune: (zone_id: number, deep: boolean) =>
+      api.post<PruneResult>('/admin/storage/prune', { zone_id, deep }),
   },
 }

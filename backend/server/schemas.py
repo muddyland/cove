@@ -326,6 +326,47 @@ class EnvSummaryOut(BaseModel):
     entries: list[EnvEntry]
 
 
+# ── Storage / disk management ───────────────────────────────────────────────
+
+class StorageCategory(BaseModel):
+    key: str
+    label: str
+    total: int
+    active: int
+    size: int
+    reclaimable: int
+
+
+class HostDisk(BaseModel):
+    total: int
+    used: int
+    free: int
+
+
+class ZoneStorageOut(BaseModel):
+    zone_id: int
+    zone_name: str
+    online: bool
+    error: Optional[str] = None
+    host: Optional[HostDisk] = None
+    categories: list[StorageCategory] = []
+
+
+class StorageOut(BaseModel):
+    zones: list[ZoneStorageOut]
+
+
+class PruneRequest(BaseModel):
+    zone_id: int = 0
+    deep: bool = False
+
+
+class PruneResultOut(BaseModel):
+    zone_id: int
+    deep: bool
+    space_reclaimed: int
+
+
 class AppSettingsUpdate(BaseModel):
     tailscale_image: Optional[str] = None
     gluetun_image: Optional[str] = None

@@ -89,7 +89,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
-  ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle,
+  ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle, HardDrive,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -101,6 +101,7 @@ const adminItems = [
   { to: '/app/admin/users', label: 'Users', icon: Users },
   { to: '/app/admin/images', label: 'Images', icon: Boxes },
   { to: '/app/admin/zones', label: 'Zones', icon: Network },
+  { to: '/app/admin/storage', label: 'Storage', icon: HardDrive },
   { to: '/app/admin/audit', label: 'Audit', icon: ScrollText },
   { to: '/app/admin/settings', label: 'Settings', icon: Settings },
 ]

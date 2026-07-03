@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from server import settings_store
 from server.config import get_settings
 from server.deps import AdminUser, DbSession
-from server.models import AuditLog, User, Workspace
+from server.models import AuditLog, User, Workspace, Zone
 from server.net import client_ip
 from server.schemas import (
     AdminUserCreate,
@@ -16,8 +16,14 @@ from server.schemas import (
     AuditOut,
     EnvEntry,
     EnvSummaryOut,
+    HostDisk,
+    PruneRequest,
+    PruneResultOut,
+    StorageCategory,
+    StorageOut,
     UserOut,
     WorkspaceOut,
+    ZoneStorageOut,
 )
 from server.security import hash_password, validate_username
 
@@ -192,6 +198,93 @@ def get_env_summary(admin: AdminUser):
         ),
     ]
     return EnvSummaryOut(entries=entries)
+
+
+def _host_disk_local() -> HostDisk | None:
+    """True free space on the control-plane host. The cove container's data dir
+    lives on the host root filesystem, so ``shutil.disk_usage`` there reports the
+    real host figures (the Docker API cannot)."""
+    import shutil
+
+    s = get_settings()
+    root = s.storage_path or (s.data_dir / "workspaces")
+    path = root if root.exists() else s.data_dir
+    try:
+        t, u, f = shutil.disk_usage(str(path))
+        return HostDisk(total=t, used=u, free=f)
+    except OSError:
+        return None
+
+
+def _host_disk_remote(zone) -> HostDisk | None:
+    """Host free space for a remote zone, fetched from its agent. Best-effort:
+    returns None if the agent is old (no endpoint) or unreachable."""
+    from server.docker_manager import _zone_has_mtls, zone_agent_client
+
+    if not _zone_has_mtls(zone):
+        return None
+    try:
+        with zone_agent_client(zone, timeout=10) as c:
+            r = c.get("/agent/host-disk")
+            if r.status_code == 200:
+                return HostDisk(**r.json())
+    except Exception:
+        pass
+    return None
+
+
+@router.get("/storage", response_model=StorageOut)
+def get_storage(admin: AdminUser, db: DbSession):
+    """Per-zone disk usage: host free-space plus a Docker breakdown (images,
+    containers, volumes, build cache) with reclaimable amounts."""
+    from server.docker_manager import get_docker_manager
+
+    targets = [(0, "Local", None)]
+    for z in db.scalars(
+        select(Zone).where(Zone.status == "enrolled").order_by(Zone.id)
+    ).all():
+        targets.append((z.id, z.name, z))
+
+    out: list[ZoneStorageOut] = []
+    for zone_id, zone_name, zone in targets:
+        entry = ZoneStorageOut(zone_id=zone_id, zone_name=zone_name, online=True)
+        try:
+            usage = get_docker_manager(zone_id).disk_usage()
+            entry.categories = [StorageCategory(**c) for c in usage["categories"]]
+        except Exception as e:  # noqa: BLE001 — surface any daemon error to the UI
+            entry.online = False
+            entry.error = str(e)[:200]
+        entry.host = _host_disk_local() if zone_id == 0 else _host_disk_remote(zone)
+        out.append(entry)
+    return StorageOut(zones=out)
+
+
+@router.post("/storage/prune", response_model=PruneResultOut)
+def prune_storage(
+    body: PruneRequest, admin: AdminUser, db: DbSession, request: Request
+):
+    """Reclaim Docker disk on a zone. Safe by default (dangling images + build
+    cache); ``deep`` also removes all unused images and stopped containers.
+    Volumes are never touched."""
+    from server.docker_manager import get_docker_manager
+
+    if body.zone_id != 0 and db.get(Zone, body.zone_id) is None:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    try:
+        result = get_docker_manager(body.zone_id).prune(deep=body.deep)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Prune failed: {e}")
+    _audit(
+        db,
+        "admin.storage.prune",
+        detail=f"zone={body.zone_id} deep={body.deep} "
+        f"reclaimed={result['space_reclaimed']}",
+        user=admin,
+        request=request,
+    )
+    return PruneResultOut(
+        zone_id=body.zone_id, deep=body.deep, space_reclaimed=result["space_reclaimed"]
+    )
 
 
 @router.get("/settings", response_model=AppSettingsOut)

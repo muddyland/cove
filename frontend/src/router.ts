@@ -19,6 +19,7 @@ const router = createRouter({
     { path: '/app/admin/sessions', component: () => import('@/views/AdminSessionsView.vue'), meta: { admin: true } },
     { path: '/app/admin/images', component: () => import('@/views/AdminImagesView.vue'), meta: { admin: true } },
     { path: '/app/admin/zones', component: () => import('@/views/AdminZonesView.vue'), meta: { admin: true } },
+    { path: '/app/admin/storage', component: () => import('@/views/AdminStorageView.vue'), meta: { admin: true } },
     { path: '/app/admin/audit', component: () => import('@/views/AdminAuditView.vue'), meta: { admin: true } },
     { path: '/app/admin/settings', component: () => import('@/views/AdminSettingsView.vue'), meta: { admin: true } },
 
