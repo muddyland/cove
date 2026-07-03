@@ -43,6 +43,7 @@ _HELPER_SCRIPTS = (
     "install-username.sh",
     "install-cove-theme.sh",
     "clear-browser-lock.sh",
+    "fix-mate-xsettings.sh",
 )
 
 
@@ -1006,6 +1007,7 @@ class DockerManager:
             self._apply_appimages(env, volumes, ws.appimages)
             self._apply_ssh_key(ws, volumes)
             self._apply_cove_theme(volumes)
+            self._apply_mate_theme_fix(volumes)
             self._apply_browser_lock_cleanup(ws, volumes)
 
             labels = self._build_traefik_labels(ws, image, net_name)
@@ -2005,6 +2007,23 @@ class DockerManager:
         """
         volumes[_helper_script_path("install-cove-theme.sh")] = {
             "bind": "/custom-cont-init.d/50-cove-theme.sh",
+            "mode": "ro",
+        }
+
+    @staticmethod
+    def _apply_mate_theme_fix(volumes: dict) -> None:
+        """Make GTK apps honor MATE's dark/light theme in MATE desktop workspaces.
+
+        The LinuxServer base runs its own xsettingsd (the only working XSETTINGS
+        manager on MATE) but never sets a theme name, so GTK app content ignores
+        MATE Appearance and renders light — "dark mode reverts to white". Mounts an
+        init script that installs a per-session agent syncing the chosen MATE theme
+        into xsettingsd. Mounted unconditionally: the script self-guards on MATE +
+        xsettingsd + X11, so it's a harmless no-op on any other image. Mutates
+        ``volumes`` in place.
+        """
+        volumes[_helper_script_path("fix-mate-xsettings.sh")] = {
+            "bind": "/custom-cont-init.d/51-mate-xsettings.sh",
             "mode": "ro",
         }
 
