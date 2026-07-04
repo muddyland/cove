@@ -54,11 +54,12 @@
       </RouterLink>
       <div class="top-actions">
         <button
-          v-if="ws && !standalone"
-          class="bar-btn install-btn"
-          title="Install this workspace as an app"
-          @click="handleInstall"
-        ><Download :size="14" /><span class="bar-label"> APP</span></button>
+          v-if="ws?.status === 'running'"
+          class="bar-btn fs-btn"
+          :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          :aria-label="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          @click="toggleFullscreen"
+        ><component :is="isFullscreen ? Minimize : Maximize" :size="16" /></button>
         <button
           v-if="ws"
           class="bar-btn help-btn"
@@ -66,8 +67,8 @@
           aria-label="Workspace help"
           @click="showHelp = true"
         ><HelpCircle :size="16" /></button>
-        <!-- CRT / Fullscreen / Logs / Halt collapse into a single hamburger on the
-             right so the stream keeps as much of the bar as possible. -->
+        <!-- CRT / Install as app / Logs / Halt collapse into a single hamburger on
+             the right so the stream keeps as much of the bar as possible. -->
         <div
           v-if="ws?.status === 'running'"
           class="actions-menu-dd"
@@ -84,9 +85,8 @@
             <button class="menu-item" :class="{ active: ui.crt }" @click="runAction(ui.toggleCrt)">
               <ScanLine :size="15" /> CRT effect <span class="menu-state">{{ ui.crt ? 'On' : 'Off' }}</span>
             </button>
-            <button class="menu-item" @click="runAction(toggleFullscreen)">
-              <component :is="isFullscreen ? Minimize : Maximize" :size="15" />
-              {{ isFullscreen ? 'Exit fullscreen' : 'Fullscreen' }}
+            <button v-if="!standalone" class="menu-item" @click="runAction(handleInstall)">
+              <Download :size="15" /> Install as app
             </button>
             <button class="menu-item" @click="runAction(() => (showDiag = true))">
               <Activity :size="15" /> Logs
@@ -898,17 +898,6 @@ async function handleStop() {
   box-shadow: 0 0 10px rgba(255, 0, 170, 0.6);
 }
 
-/* Install-as-app — cyan (matches the brand accent). */
-.install-btn {
-  color: var(--accent);
-  border-color: rgba(0, 245, 255, 0.45);
-}
-.install-btn:hover {
-  color: #fff;
-  border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(0, 245, 255, 0.5);
-}
-
 /* Fullscreen — green. */
 .fs-btn {
   color: var(--green);
@@ -956,7 +945,6 @@ async function handleStop() {
   .top-bar { gap: 8px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
   .back-link { padding: 4px 8px; }
   .back-link .bl-label { display: none; }      /* show just the ← arrow */
-  .bar-label { display: none; }                 /* CRT / FULL / HALT become icon-only */
   .bar-btn { padding: 6px 8px; }                /* keep a comfortable tap target */
   .top-actions { gap: 6px; }
   /* The ONLINE badge is redundant on the stream (you're connected) and is the
