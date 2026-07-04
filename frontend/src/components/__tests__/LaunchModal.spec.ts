@@ -16,7 +16,7 @@ vi.mock('@/api/users', () => ({
 }))
 
 vi.mock('@/api/workspaces', () => ({
-  workspacesApi: { lanPolicy: vi.fn() },
+  workspacesApi: { lanPolicy: vi.fn(), gpuPolicy: vi.fn() },
 }))
 
 const launchMock = vi.fn()
@@ -58,6 +58,7 @@ describe('LaunchModal', () => {
     vi.mocked(imagesApi.list).mockResolvedValue([desktopImage])
     vi.mocked(prootApi.list).mockResolvedValue({ apps: ['firefox', 'obs-studio', 'blender'] })
     vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
+    vi.mocked(workspacesApi.gpuPolicy).mockResolvedValue({ enabled: false })
     launchMock.mockResolvedValue({ id: 99 })
   })
 

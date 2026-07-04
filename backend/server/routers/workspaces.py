@@ -17,6 +17,7 @@ from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage,
 from server.net import client_ip
 from server.schemas import (
     ContainerLogsOut,
+    GpuPolicyOut,
     LanPolicyOut,
     StreamAuthOut,
     StreamReadyOut,
@@ -269,6 +270,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         inject_ssh_key=body.inject_ssh_key,
         pixelflux_wayland=body.pixelflux_wayland,
         clear_browser_lock=body.clear_browser_lock,
+        gpu_accel=body.gpu_accel,
         status="creating",
         status_changed_at=datetime.now(timezone.utc),
     )
@@ -397,6 +399,7 @@ def clone_workspace(
         inject_ssh_key=src.inject_ssh_key,
         pixelflux_wayland=src.pixelflux_wayland,
         clear_browser_lock=src.clear_browser_lock,
+        gpu_accel=src.gpu_accel,
         status="creating",
         status_changed_at=datetime.now(timezone.utc),
     )
@@ -466,6 +469,19 @@ def lan_policy(user: CurrentUser, db: DbSession):
         enabled=settings_store.get_workspace_lan_access(db),
         subnets=settings_store.get_workspace_lan_subnets(db),
     )
+
+
+@router.get("/gpu-policy", response_model=GpuPolicyOut)
+def gpu_policy(user: CurrentUser, db: DbSession):
+    """GPU acceleration policy for the workspace modals.
+
+    Lets the SPA show/hide the per-workspace "GPU acceleration" checkbox.
+    ``enabled`` is the admin master toggle; when off, opting a workspace in has
+    no effect (and a non-GPU host never gets a failing device mount).
+    """
+    from server import settings_store
+
+    return GpuPolicyOut(enabled=settings_store.get_workspace_gpu_accel(db))
 
 
 # In-memory cache of fetched project logos (url -> (bytes, content_type)). Logos

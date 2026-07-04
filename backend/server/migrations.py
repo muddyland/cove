@@ -160,6 +160,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0032_workspace_clear_browser_lock",
         "ALTER TABLE workspace ADD COLUMN clear_browser_lock BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Opt-in: GPU (VAAPI) hardware acceleration for the Selkies stream.
+    (
+        "0033_workspace_gpu_accel",
+        "ALTER TABLE workspace ADD COLUMN gpu_accel BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

@@ -114,6 +114,19 @@
         (the desktop streams but the browser never appears).
       </p>
 
+      <template v-if="gpuEnabled">
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.gpu_accel" />
+          <span>GPU acceleration</span>
+        </label>
+        <p class="hint">
+          Use the host GPU for hardware video encode (VAAPI), offloading the stream
+          from the CPU for smoother, lower-latency desktops. Best with Wayland
+          streaming on (hardware encode needs it). Requires a GPU on the workspace's
+          host.
+        </p>
+      </template>
+
       <div class="form-group">
         <label>Install packages</label>
         <input v-model="form.install_packages" type="text" placeholder="git vim htop" />
@@ -164,6 +177,7 @@ export interface WorkspaceOptionsForm {
   inject_ssh_key: boolean
   pixelflux_wayland: boolean
   clear_browser_lock: boolean
+  gpu_accel: boolean
   install_packages: string
   proot_apps: string[]
   appimages: string
@@ -174,6 +188,8 @@ const props = defineProps<{
   lanPolicy: LanPolicy
   // Only offer the Gluetun toggle when the user has a usable VPN profile.
   gluetunReady?: boolean
+  // Only offer the GPU toggle when an admin has enabled acceleration.
+  gpuEnabled?: boolean
 }>()
 
 const networkSummary = computed(() => {

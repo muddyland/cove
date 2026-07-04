@@ -33,7 +33,7 @@
         <span>Ephemeral (no saved data — wiped when halted)</span>
       </label>
 
-      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" :gluetun-ready="gluetunReady" />
+      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" :gluetun-ready="gluetunReady" :gpu-enabled="gpuPolicy.enabled" />
 
       <p class="apply-note">Changes apply the next time the workspace boots.</p>
 
@@ -55,7 +55,7 @@ import { workspacesApi } from '@/api/workspaces'
 import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
-import type { LanPolicy, Workspace } from '@/types'
+import type { GpuPolicy, LanPolicy, Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
 const open = defineModel<boolean>({ default: false })
@@ -63,6 +63,7 @@ const open = defineModel<boolean>({ default: false })
 const loading = ref(false)
 const error = ref('')
 const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
+const gpuPolicy = ref<GpuPolicy>({ enabled: false })
 const gluetunReady = ref(false)
 const store = useWorkspacesStore()
 const ui = useUiStore()
@@ -91,6 +92,7 @@ const form = reactive({
   inject_ssh_key: true,
   pixelflux_wayland: true,
   clear_browser_lock: false,
+  gpu_accel: false,
   install_packages: '',
   proot_apps: [] as string[],
   appimages: '',
@@ -120,6 +122,7 @@ function resetFromWs() {
   form.inject_ssh_key = props.ws.inject_ssh_key
   form.pixelflux_wayland = props.ws.pixelflux_wayland
   form.clear_browser_lock = props.ws.clear_browser_lock
+  form.gpu_accel = props.ws.gpu_accel
   form.install_packages = props.ws.install_packages ?? ''
   form.proot_apps = parseProotApps(props.ws.proot_apps)
   form.appimages = props.ws.appimages ?? ''
@@ -130,6 +133,11 @@ async function loadLanPolicy() {
     lanPolicy.value = await workspacesApi.lanPolicy()
   } catch {
     // Non-fatal: the LAN checkbox just stays hidden if the policy can't load.
+  }
+  try {
+    gpuPolicy.value = await workspacesApi.gpuPolicy()
+  } catch {
+    // Non-fatal: the GPU checkbox just stays hidden if the policy can't load.
   }
   try {
     const g = await usersApi.getGluetun()
@@ -182,6 +190,7 @@ async function handleSubmit() {
       inject_ssh_key: form.inject_ssh_key,
       pixelflux_wayland: form.pixelflux_wayland,
       clear_browser_lock: form.clear_browser_lock,
+      gpu_accel: form.gpu_accel,
       install_packages: form.install_packages.trim(),
       proot_apps: form.proot_apps.join(' '),
       appimages: form.appimages.trim(),

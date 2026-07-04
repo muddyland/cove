@@ -120,6 +120,35 @@
             such as Kali or webtop typically need <code>sudo</code>.
           </p>
 
+          <label class="checkbox-row">
+            <input type="checkbox" v-model="form.workspace_gpu_accel" />
+            <span>Enable GPU acceleration</span>
+          </label>
+          <p class="hint">
+            Master switch for hardware (VAAPI) video encode. When <strong>on</strong>, workspaces
+            can opt in to bind-mount the host's DRI render node so the stream is GPU-encoded
+            instead of on the CPU. Only enable on hosts that actually have a usable GPU — a wrong
+            device/GID makes opted-in workspaces fail to launch.
+          </p>
+
+          <div v-if="form.workspace_gpu_accel" class="form-group">
+            <label>Render node</label>
+            <input type="text" v-model="form.workspace_gpu_render_node" placeholder="/dev/dri/renderD128" />
+            <p class="hint">
+              Host path to the DRI render node bind-mounted into GPU workspaces (used for both
+              <code>DRINODE</code> and <code>DRI_NODE</code>, enabling zero-copy encode).
+            </p>
+          </div>
+          <div v-if="form.workspace_gpu_accel" class="form-group">
+            <label>Render group GID</label>
+            <input type="number" v-model.number="form.workspace_gpu_render_gid" placeholder="992" />
+            <p class="hint">
+              Numeric group id that owns the render node on the host (<code>stat -c %g</code> of the
+              device — often 992 on Debian, 44/993 elsewhere). Added to the container so its user can
+              open the device.
+            </p>
+          </div>
+
           <div v-if="error" class="form-error">⚠ {{ error }}</div>
           <div class="form-actions">
             <NeonButton type="submit" variant="primary" :loading="saving">Save Settings</NeonButton>
@@ -184,6 +213,9 @@ const form = reactive({
   workspace_max_runtime_hours: 24,
   workspace_cpu_limit: 0,
   workspace_memory_limit_mb: 0,
+  workspace_gpu_accel: false,
+  workspace_gpu_render_node: '/dev/dri/renderD128',
+  workspace_gpu_render_gid: 992,
 })
 
 onMounted(async () => {
@@ -197,6 +229,9 @@ onMounted(async () => {
     form.workspace_max_runtime_hours = settings.workspace_max_runtime_hours
     form.workspace_cpu_limit = settings.workspace_cpu_limit
     form.workspace_memory_limit_mb = settings.workspace_memory_limit_mb
+    form.workspace_gpu_accel = settings.workspace_gpu_accel
+    form.workspace_gpu_render_node = settings.workspace_gpu_render_node
+    form.workspace_gpu_render_gid = settings.workspace_gpu_render_gid
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -226,6 +261,9 @@ async function handleSave() {
       workspace_max_runtime_hours: form.workspace_max_runtime_hours,
       workspace_cpu_limit: form.workspace_cpu_limit,
       workspace_memory_limit_mb: form.workspace_memory_limit_mb,
+      workspace_gpu_accel: form.workspace_gpu_accel,
+      workspace_gpu_render_node: form.workspace_gpu_render_node,
+      workspace_gpu_render_gid: form.workspace_gpu_render_gid,
     })
     form.tailscale_image = updated.tailscale_image
     form.gluetun_image = updated.gluetun_image
@@ -235,6 +273,9 @@ async function handleSave() {
     form.workspace_max_runtime_hours = updated.workspace_max_runtime_hours
     form.workspace_cpu_limit = updated.workspace_cpu_limit
     form.workspace_memory_limit_mb = updated.workspace_memory_limit_mb
+    form.workspace_gpu_accel = updated.workspace_gpu_accel
+    form.workspace_gpu_render_node = updated.workspace_gpu_render_node
+    form.workspace_gpu_render_gid = updated.workspace_gpu_render_gid
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
     error.value = e.message

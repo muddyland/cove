@@ -22,6 +22,9 @@ def test_settings_defaults(client):
         "workspace_max_runtime_hours": 24,
         "workspace_cpu_limit": 0.0,
         "workspace_memory_limit_mb": 0,
+        "workspace_gpu_accel": False,
+        "workspace_gpu_render_node": "/dev/dri/renderD128",
+        "workspace_gpu_render_gid": 992,
     }
 
 
@@ -41,6 +44,9 @@ def test_settings_put_updates_both(client):
         "workspace_max_runtime_hours": 24,
         "workspace_cpu_limit": 0.0,
         "workspace_memory_limit_mb": 0,
+        "workspace_gpu_accel": False,
+        "workspace_gpu_render_node": "/dev/dri/renderD128",
+        "workspace_gpu_render_gid": 992,
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()
@@ -58,6 +64,26 @@ def test_settings_cpu_and_memory_limits(client):
     got = resp.json()
     assert got["workspace_cpu_limit"] == 2.5
     assert got["workspace_memory_limit_mb"] == 4096
+
+
+def test_settings_gpu_accel(client):
+    setup_admin(client)
+    resp = client.put(
+        "/api/admin/settings",
+        json={
+            "workspace_gpu_accel": True,
+            "workspace_gpu_render_node": "/dev/dri/renderD129",
+            "workspace_gpu_render_gid": 44,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    got = resp.json()
+    assert got["workspace_gpu_accel"] is True
+    assert got["workspace_gpu_render_node"] == "/dev/dri/renderD129"
+    assert got["workspace_gpu_render_gid"] == 44
+    # Blank render node falls back to the default rather than persisting empty.
+    resp = client.put("/api/admin/settings", json={"workspace_gpu_render_node": "  "})
+    assert resp.json()["workspace_gpu_render_node"] == "/dev/dri/renderD128"
     # Persisted + negatives are clamped to 0 (unlimited).
     client.put("/api/admin/settings", json={"workspace_cpu_limit": -3, "workspace_memory_limit_mb": -1})
     got = client.get("/api/admin/settings").json()

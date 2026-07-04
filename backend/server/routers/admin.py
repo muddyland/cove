@@ -342,5 +342,23 @@ def update_app_settings(
             settings_store.KEY_WORKSPACE_MEMORY_LIMIT_MB,
             str(max(0, body.workspace_memory_limit_mb)),
         )
+    if body.workspace_gpu_accel is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_GPU_ACCEL,
+            "true" if body.workspace_gpu_accel else "false",
+        )
+    if body.workspace_gpu_render_node is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_GPU_RENDER_NODE,
+            body.workspace_gpu_render_node.strip() or settings_store.DEFAULT_WORKSPACE_GPU_RENDER_NODE,
+        )
+    if body.workspace_gpu_render_gid is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_GPU_RENDER_GID,
+            str(max(0, body.workspace_gpu_render_gid)),
+        )
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

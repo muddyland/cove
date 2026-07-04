@@ -89,11 +89,16 @@ export interface Workspace {
   inject_ssh_key: boolean
   pixelflux_wayland: boolean
   clear_browser_lock: boolean
+  gpu_accel: boolean
 }
 
 export interface LanPolicy {
   enabled: boolean
   subnets: string[]
+}
+
+export interface GpuPolicy {
+  enabled: boolean
 }
 
 export interface TailscaleConfig {
@@ -140,6 +145,9 @@ export interface AppSettings {
   workspace_max_runtime_hours: number
   workspace_cpu_limit: number
   workspace_memory_limit_mb: number
+  workspace_gpu_accel: boolean
+  workspace_gpu_render_node: string
+  workspace_gpu_render_gid: number
 }
 
 export interface EnvEntry {

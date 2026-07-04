@@ -21,6 +21,12 @@ KEY_WORKSPACE_NO_NEW_PRIVILEGES = "workspace_no_new_privileges"
 KEY_WORKSPACE_MAX_RUNTIME_HOURS = "workspace_max_runtime_hours"
 KEY_WORKSPACE_CPU_LIMIT = "workspace_cpu_limit"
 KEY_WORKSPACE_MEMORY_LIMIT_MB = "workspace_memory_limit_mb"
+# GPU acceleration master toggle + the host's DRI render node and its group id.
+# Effective only where the host actually has that device; the render GID varies
+# per host (992 on Debian, often 44/993 elsewhere) so it is admin-configurable.
+KEY_WORKSPACE_GPU_ACCEL = "workspace_gpu_accel"
+KEY_WORKSPACE_GPU_RENDER_NODE = "workspace_gpu_render_node"
+KEY_WORKSPACE_GPU_RENDER_GID = "workspace_gpu_render_gid"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
@@ -39,6 +45,13 @@ DEFAULT_WORKSPACE_MAX_RUNTIME_HOURS = 24
 # historical behaviour), so containers are uncapped until an admin sets these.
 DEFAULT_WORKSPACE_CPU_LIMIT = 0.0
 DEFAULT_WORKSPACE_MEMORY_LIMIT_MB = 0
+# GPU acceleration off by default (most hosts have no usable render node, and a
+# bad device/GID would fail every launch). When an admin enables it, workspaces
+# that opt in get the render node bind-mounted with DRINODE/DRI_NODE set so the
+# Selkies stream can use VAAPI hardware encode (zero-copy) instead of CPU x264.
+DEFAULT_WORKSPACE_GPU_ACCEL = False
+DEFAULT_WORKSPACE_GPU_RENDER_NODE = "/dev/dri/renderD128"
+DEFAULT_WORKSPACE_GPU_RENDER_GID = 992
 
 
 def get_setting(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -135,6 +148,27 @@ def get_workspace_memory_limit_mb(db: Session) -> int:
         return DEFAULT_WORKSPACE_MEMORY_LIMIT_MB
 
 
+def get_workspace_gpu_accel(db: Session) -> bool:
+    return _to_bool(get_setting(db, KEY_WORKSPACE_GPU_ACCEL), DEFAULT_WORKSPACE_GPU_ACCEL)
+
+
+def get_workspace_gpu_render_node(db: Session) -> str:
+    return (
+        get_setting(db, KEY_WORKSPACE_GPU_RENDER_NODE, DEFAULT_WORKSPACE_GPU_RENDER_NODE)
+        or DEFAULT_WORKSPACE_GPU_RENDER_NODE
+    )
+
+
+def get_workspace_gpu_render_gid(db: Session) -> int:
+    raw = get_setting(db, KEY_WORKSPACE_GPU_RENDER_GID)
+    if raw is None:
+        return DEFAULT_WORKSPACE_GPU_RENDER_GID
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_WORKSPACE_GPU_RENDER_GID
+
+
 def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
@@ -145,4 +179,7 @@ def get_all(db: Session) -> dict:
         "workspace_max_runtime_hours": get_workspace_max_runtime_hours(db),
         "workspace_cpu_limit": get_workspace_cpu_limit(db),
         "workspace_memory_limit_mb": get_workspace_memory_limit_mb(db),
+        "workspace_gpu_accel": get_workspace_gpu_accel(db),
+        "workspace_gpu_render_node": get_workspace_gpu_render_node(db),
+        "workspace_gpu_render_gid": get_workspace_gpu_render_gid(db),
     }

@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { ContainerLogs, LanPolicy, TailscaleStatus, Workspace, WorkspaceStats } from '@/types'
+import type { ContainerLogs, GpuPolicy, LanPolicy, TailscaleStatus, Workspace, WorkspaceStats } from '@/types'
 
 export type LogSource = 'desktop' | 'tailscale' | 'gluetun'
 
@@ -7,6 +7,7 @@ export const workspacesApi = {
   list: () => api.get<Workspace[]>('/workspaces'),
   stats: () => api.get<Record<number, WorkspaceStats>>('/workspaces/stats'),
   lanPolicy: () => api.get<LanPolicy>('/workspaces/lan-policy'),
+  gpuPolicy: () => api.get<GpuPolicy>('/workspaces/gpu-policy'),
   get: (id: number) => api.get<Workspace>(`/workspaces/${id}`),
   create: (payload: {
     name: string
@@ -33,6 +34,7 @@ export const workspacesApi = {
     inject_ssh_key?: boolean
     pixelflux_wayland?: boolean
     clear_browser_lock?: boolean
+    gpu_accel?: boolean
   }) => api.post<Workspace>('/workspaces', payload),
   update: (
     id: number,
@@ -57,7 +59,8 @@ export const workspacesApi = {
       allow_sudo?: boolean
       inject_ssh_key?: boolean
       pixelflux_wayland?: boolean
-    clear_browser_lock?: boolean
+      clear_browser_lock?: boolean
+      gpu_accel?: boolean
     },
   ) => api.patch<Workspace>(`/workspaces/${id}`, payload),
   clone: (id: number, payload: { name: string; image_id?: number }) =>

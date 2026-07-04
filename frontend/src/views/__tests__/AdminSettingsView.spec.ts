@@ -32,6 +32,9 @@ const baseSettings: AppSettings = {
   workspace_max_runtime_hours: 24,
   workspace_cpu_limit: 0,
   workspace_memory_limit_mb: 0,
+  workspace_gpu_accel: false,
+  workspace_gpu_render_node: '/dev/dri/renderD128',
+  workspace_gpu_render_gid: 992,
 }
 
 describe('AdminSettingsView', () => {
@@ -65,6 +68,9 @@ describe('AdminSettingsView', () => {
       workspace_max_runtime_hours: 24,
       workspace_cpu_limit: 0,
       workspace_memory_limit_mb: 0,
+      workspace_gpu_accel: false,
+      workspace_gpu_render_node: '/dev/dri/renderD128',
+      workspace_gpu_render_gid: 992,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()

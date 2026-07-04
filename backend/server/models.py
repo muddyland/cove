@@ -189,6 +189,13 @@ class Workspace(Base):
     clear_browser_lock: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Opt-in: bind-mount the host DRI render node and set DRINODE/DRI_NODE so the
+    # Selkies stream uses VAAPI hardware encode. Off by default; only effective
+    # when the admin master toggle (workspace_gpu_accel) is on and the host has a
+    # usable GPU. Hardware *encode* also requires Wayland streaming.
+    gpu_accel: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

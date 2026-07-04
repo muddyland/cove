@@ -122,6 +122,9 @@ class WorkspaceCreate(BaseModel):
     pixelflux_wayland: bool = True
     # Clear a stale browser single-instance lock before launch (opt-in, off).
     clear_browser_lock: bool = False
+    # GPU (VAAPI) hardware acceleration for the stream (opt-in, off). Only
+    # effective when the admin master toggle is on and the host has a GPU.
+    gpu_accel: bool = False
 
 
 class WorkspaceUpdate(BaseModel):
@@ -146,6 +149,7 @@ class WorkspaceUpdate(BaseModel):
     inject_ssh_key: Optional[bool] = None
     pixelflux_wayland: Optional[bool] = None
     clear_browser_lock: Optional[bool] = None
+    gpu_accel: Optional[bool] = None
 
 
 class LanPolicyOut(BaseModel):
@@ -154,6 +158,13 @@ class LanPolicyOut(BaseModel):
     # launch/edit modals can show the per-workspace checkbox + its ranges.
     enabled: bool
     subnets: list[str]
+
+
+class GpuPolicyOut(BaseModel):
+    # Admin master toggle for GPU (VAAPI) hardware acceleration. Surfaced to
+    # non-admin users so the launch/edit modals only show the per-workspace GPU
+    # checkbox when an admin has enabled it (and configured a usable render node).
+    enabled: bool
 
 
 class WorkspaceClone(BaseModel):
@@ -228,6 +239,7 @@ class WorkspaceOut(BaseModel):
     inject_ssh_key: bool
     pixelflux_wayland: bool
     clear_browser_lock: bool
+    gpu_accel: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -282,6 +294,7 @@ class WorkspaceOut(BaseModel):
             inject_ssh_key=ws.inject_ssh_key,
             pixelflux_wayland=ws.pixelflux_wayland,
             clear_browser_lock=ws.clear_browser_lock,
+            gpu_accel=ws.gpu_accel,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,
@@ -315,6 +328,9 @@ class AppSettingsOut(BaseModel):
     workspace_max_runtime_hours: int
     workspace_cpu_limit: float
     workspace_memory_limit_mb: int
+    workspace_gpu_accel: bool
+    workspace_gpu_render_node: str
+    workspace_gpu_render_gid: int
 
 
 class EnvEntry(BaseModel):
@@ -376,6 +392,9 @@ class AppSettingsUpdate(BaseModel):
     workspace_max_runtime_hours: Optional[int] = None
     workspace_cpu_limit: Optional[float] = None
     workspace_memory_limit_mb: Optional[int] = None
+    workspace_gpu_accel: Optional[bool] = None
+    workspace_gpu_render_node: Optional[str] = None
+    workspace_gpu_render_gid: Optional[int] = None
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

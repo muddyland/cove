@@ -52,6 +52,20 @@ def _status(ws_id: int):
         db.close()
 
 
+def _workspace_run_kwargs(fake, ws_id: int) -> dict:
+    """The kwargs of the containers.run() that started the workspace itself.
+
+    Launch also runs short-lived helper containers (image pull probe, HTTP
+    readiness), so we can't just use the last call — pick the one named
+    ``cove-ws-<id>``.
+    """
+    name = f"cove-ws-{ws_id}"
+    for call in fake.containers.run.call_args_list:
+        if call.kwargs.get("name") == name:
+            return call.kwargs
+    raise AssertionError(f"no containers.run named {name}")
+
+
 def test_connection_error_marks_workspace_error():
     """A non-APIError (connection/timeout) reaching the daemon is caught and
     surfaced, instead of dying silently and leaving the workspace 'creating'."""
@@ -84,6 +98,68 @@ def test_remote_zone_unreachable_fails_fast():
     status, msg = _status(ws_id)
     assert status == "error"
     assert "zone agent unreachable" in (msg or "")
+
+
+def _ready_fake(monkeypatch) -> MagicMock:
+    """A docker client whose launched container reports 'running' immediately, so
+    the readiness wait returns fast instead of polling for the full timeout."""
+    monkeypatch.setattr("time.sleep", lambda *a, **k: None)
+    fake = MagicMock()
+    fake.containers.run.return_value.id = "deadbeefcafe"
+    fake.containers.run.return_value.attrs = {"State": {"Status": "running"}}
+    return fake
+
+
+def test_gpu_accel_passes_device_group_and_env(monkeypatch):
+    """When the admin master toggle is on and the workspace opts in, launch must
+    bind-mount the render node, add its group id, and set DRINODE/DRI_NODE."""
+    from server import settings_store
+
+    ws_id = _seed_ws(zone_id=0)
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, ws_id)
+        ws.gpu_accel = True
+        db.commit()
+        settings_store.set_setting(db, settings_store.KEY_WORKSPACE_GPU_ACCEL, "true")
+    finally:
+        db.close()
+
+    dm = DockerManager(0)
+    fake = _ready_fake(monkeypatch)
+    dm._client = fake
+
+    dm.launch_workspace(ws_id)
+
+    kwargs = _workspace_run_kwargs(fake, ws_id)
+    assert kwargs["devices"] == ["/dev/dri/renderD128:/dev/dri/renderD128"]
+    assert kwargs["group_add"] == ["992"]
+    assert kwargs["environment"]["DRINODE"] == "/dev/dri/renderD128"
+    assert kwargs["environment"]["DRI_NODE"] == "/dev/dri/renderD128"
+
+
+def test_gpu_accel_off_by_default_no_device(monkeypatch):
+    """Master toggle off (default) → no GPU device even if the workspace opts in,
+    so a non-GPU host never gets a failing device mount."""
+    ws_id = _seed_ws(zone_id=0)
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, ws_id)
+        ws.gpu_accel = True  # opted in, but master toggle is off
+        db.commit()
+    finally:
+        db.close()
+
+    dm = DockerManager(0)
+    fake = _ready_fake(monkeypatch)
+    dm._client = fake
+
+    dm.launch_workspace(ws_id)
+
+    kwargs = _workspace_run_kwargs(fake, ws_id)
+    assert "devices" not in kwargs
+    assert "group_add" not in kwargs
+    assert "DRINODE" not in kwargs["environment"]
 
 
 def test_remove_deletes_record_when_zone_unreachable():

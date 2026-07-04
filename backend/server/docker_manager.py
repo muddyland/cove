@@ -23,6 +23,9 @@ from server.settings_store import (
     get_gluetun_image,
     get_tailscale_image,
     get_workspace_cpu_limit,
+    get_workspace_gpu_accel,
+    get_workspace_gpu_render_gid,
+    get_workspace_gpu_render_node,
     get_workspace_lan_access,
     get_workspace_lan_subnets,
     get_workspace_max_runtime_hours,
@@ -991,6 +994,24 @@ class DockerManager:
             if not ws.pixelflux_wayland:
                 env["PIXELFLUX_WAYLAND"] = "false"
 
+            # GPU (VAAPI) hardware acceleration: only when the admin master toggle
+            # is on AND this workspace opted in. Bind-mount the host's DRI render
+            # node and point DRINODE (EGL render) + DRI_NODE (VAAPI encode) at the
+            # same node so Selkies does zero-copy hardware encode instead of CPU
+            # x264. The abc user needs the render group's gid to open the device
+            # (LSIO images don't reliably add it), so pass group_add. Hardware
+            # encode also needs the Wayland stream (the default); DRI3 rendering
+            # works in either mode.
+            gpu_kwargs: dict = {}
+            if ws.gpu_accel and get_workspace_gpu_accel(db):
+                render_node = get_workspace_gpu_render_node(db)
+                env["DRINODE"] = render_node
+                env["DRI_NODE"] = render_node
+                gpu_kwargs = {
+                    "devices": [f"{render_node}:{render_node}"],
+                    "group_add": [str(get_workspace_gpu_render_gid(db))],
+                }
+
             volumes = {}
             if mount_source:
                 volumes[mount_source] = {"bind": "/config", "mode": "rw"}
@@ -1083,6 +1104,7 @@ class DockerManager:
                         volumes=volumes,
                         network_mode=f"container:{self._ts_sidecar_name(ws.id)}",
                         shm_size="1g",
+                        **gpu_kwargs,
                         **limits,
                         **hardening,
                     )
@@ -1112,6 +1134,7 @@ class DockerManager:
                         volumes=volumes,
                         network_mode=f"container:{self._gluetun_sidecar_name(ws.id)}",
                         shm_size="1g",
+                        **gpu_kwargs,
                         **limits,
                         **hardening,
                     )
@@ -1126,6 +1149,7 @@ class DockerManager:
                         network=net_name,
                         shm_size="1g",
                         **({"dns": dns} if dns else {}),
+                        **gpu_kwargs,
                         **limits,
                         **hardening,
                     )
