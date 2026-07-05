@@ -17,7 +17,19 @@ def _create_engine():
     if key:
         # Encrypted SQLite via SQLCipher. Import the dbapi lazily so the default
         # (unencrypted) path works even when sqlcipher3 is not installed.
-        import sqlcipher3.dbapi2 as sqlcipher_dbapi  # noqa: F401
+        try:
+            import sqlcipher3.dbapi2 as sqlcipher_dbapi  # noqa: F401
+        except ImportError as exc:
+            # sqlcipher3-binary ships x86_64 wheels only; on other arches it is
+            # absent (see requirements.txt). Fail clearly instead of with a raw
+            # ImportError so the operator knows the key was set but the driver
+            # is unavailable on this platform.
+            raise RuntimeError(
+                "COVE_DB_ENCRYPTION_KEY is set but the sqlcipher3 driver is not "
+                "installed. It is only available as a prebuilt wheel on x86_64. "
+                "On this architecture, either unset COVE_DB_ENCRYPTION_KEY to run "
+                "with an unencrypted database, or build sqlcipher3 from source."
+            ) from exc
 
         engine = create_engine(
             settings.db_url,
