@@ -350,3 +350,27 @@ def test_can_demote_admin_when_another_exists(client):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["is_admin"] is False
+
+
+# ── Storage ─────────────────────────────────────────────────────────────────
+
+def test_storage_lists_local_zone_once(client, monkeypatch):
+    """Zone 0 is both seeded as an enrolled Zone row (migration 0029) AND added
+    explicitly by the storage endpoint. It must appear once, not twice."""
+    from unittest.mock import MagicMock
+
+    setup_admin(client)
+
+    mgr = MagicMock()
+    mgr.disk_usage.return_value = {"categories": []}
+    monkeypatch.setattr(
+        "server.docker_manager.get_docker_manager", lambda *a, **k: mgr
+    )
+    monkeypatch.setattr("server.routers.admin._host_disk_local", lambda: None)
+
+    resp = client.get("/api/admin/storage")
+    assert resp.status_code == 200, resp.text
+    zones = resp.json()["zones"]
+    local = [z for z in zones if z["zone_name"] == "Local"]
+    assert len(local) == 1, f"'Local' listed {len(local)}x: {zones}"
+    assert local[0]["zone_id"] == 0

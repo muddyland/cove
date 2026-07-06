@@ -239,9 +239,12 @@ def get_storage(admin: AdminUser, db: DbSession):
     containers, volumes, build cache) with reclaimable amounts."""
     from server.docker_manager import get_docker_manager
 
+    # The local control plane (zone 0) is added explicitly below. It is also
+    # seeded as an enrolled Zone row (migration 0029), so exclude id 0 from the
+    # remote-zone query — otherwise "Local" is listed twice.
     targets = [(0, "Local", None)]
     for z in db.scalars(
-        select(Zone).where(Zone.status == "enrolled").order_by(Zone.id)
+        select(Zone).where(Zone.status == "enrolled", Zone.id != 0).order_by(Zone.id)
     ).all():
         targets.append((z.id, z.name, z))
 
