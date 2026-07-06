@@ -17,6 +17,10 @@ services:
       - VERSION=1
       - PING=1
       - POST=1
+      # SYSTEM enables GET /system/df (disk usage) for the Storage tab. It is
+      # read-only and adds no reach beyond the full container control this write
+      # proxy already grants.
+      - SYSTEM=1
       # EXEC lets the backend run `tailscale ip -4` inside a workspace's
       # Tailscale sidecar to surface its tailnet address. The backend already
       # has full container create/destroy via this write proxy, so exec does
