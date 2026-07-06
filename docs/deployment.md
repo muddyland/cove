@@ -49,6 +49,50 @@ Credential variable names depend on your provider — Traefik reads them straigh
 from the environment. See the
 [Traefik DNS providers list](https://doc.traefik.io/traefik/https/acme/#providers).
 
+## LAN / self-signed HTTPS (no public domain)
+
+For a private network with no public domain or Let's Encrypt access. **HTTPS is
+not optional here** — LinuxServer/Selkies workspace streams require a browser
+["secure context"](https://developer.mozilla.org/docs/Web/Security/Secure_Contexts)
+and refuse to start over plain HTTP with *"This application requires a secure
+connection (HTTPS)."* Serving over HTTP gets you the control UI but every stream
+fails.
+
+Generate a self-signed certificate for the host's LAN address(es) — pass the IP
+and/or any hostnames you'll browse to; they become the certificate's SANs:
+
+```bash
+scripts/gen-lan-cert.sh 192.168.0.10 myhost.local
+```
+
+This writes `certs/cove.crt`, `certs/cove.key`, and `certs/dynamic.yml` (the
+Traefik default-cert config). Then set the origin you reach the box at:
+
+```ini
+# .env
+COVE_COOKIE_SECURE=true
+COVE_APP_ORIGIN=https://192.168.0.10
+```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.lan-tls.yml up -d
+```
+
+The override adds the `:443` entrypoint, an HTTP→HTTPS redirect, and serves the
+self-signed cert as the default certificate.
+
+**Keep `COVE_WORKSPACE_DOMAIN` unset** (the default subpath mode): every stream
+is then same-origin under `/workspace/<id>/`, so this **one** certificate covers
+the app *and* all streams. Subdomain isolation would instead need a *wildcard*
+cert, which self-signing per workspace can't practically provide.
+
+Browsers show a one-time "not trusted" warning for a self-signed cert — click
+through once. To silence it, import `certs/cove.crt` into the trust store of the
+devices you connect from (or generate the cert with a tool like
+[`mkcert`](https://github.com/FiloSottile/mkcert), whose local CA you install on
+each device). Because it's subpath mode, you only trust the one origin — the
+workspace stream inherits it.
+
 ## Per-workspace subdomain isolation
 
 By default, workspaces stream at a **subpath** (`/workspace/<id>/`) on the same

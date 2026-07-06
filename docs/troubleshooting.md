@@ -10,6 +10,7 @@ Common symptoms and fixes. For backend logs: `docker compose logs -f cove`.
 | **Login works but nothing happens / you stay logged out** | Serving plain HTTP with `COVE_COOKIE_SECURE=true`. Set `COVE_COOKIE_SECURE=false` for `http://localhost`, or serve HTTPS and keep it `true`. |
 | **Workspace stuck on "Booting / Provisioning"** | First pull of a large image, or a long package/proot/AppImage install (those run in the background and keep the workspace provisioning). Watch `docker compose logs -f cove`, `docker images`, and the in-container logs. |
 | **`502` on a workspace stream** | The container is still booting or unhealthy. Wait, or check `docker logs cove-ws-<id>`. |
+| **Stream shows "This application requires a secure connection (HTTPS)"** | The Selkies stream needs a browser secure context — you're serving Cove over plain HTTP. Serve HTTPS. No public domain? Use the [LAN self-signed setup](deployment.md#lan--self-signed-https-no-public-domain). |
 | **"Temporary failure in name resolution" in cove logs** | The cove container has no working DNS (Docker stripped a loopback resolver). Set `COVE_DNS_PRIMARY`/`COVE_DNS_SECONDARY` — to your LAN DNS if internal services only resolve there. |
 | **OIDC discovery fails** | Same DNS issue as above, or the issuer URL is wrong / unreachable from the container. Verify `COVE_OIDC_ISSUER` and DNS. |
 | **404 on everything + Traefik logs `client version 1.24 is too old`** | Newer Docker Engine rejects the API version Traefik probes with. See [below](#docker-daemon-client-version-124-is-too-old). |

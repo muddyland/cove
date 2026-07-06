@@ -103,6 +103,24 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compos
 
 Credential variable names depend on your provider — see the [Traefik DNS providers list](https://doc.traefik.io/traefik/https/acme/#providers). For a wildcard cert, set `COVE_DOMAIN=example.com` and uncomment the `tls.domains` labels in `docker-compose.dns.yml`.
 
+### LAN self-signed HTTPS (no public domain)
+
+No domain/Let's Encrypt? Serve HTTPS with a self-signed cert. This is **required** for streaming — Selkies refuses to run over plain HTTP (*"This application requires a secure connection (HTTPS)"*).
+
+```bash
+scripts/gen-lan-cert.sh 192.168.0.10 myhost.local   # your LAN IP / hostnames
+```
+```ini
+# .env
+COVE_COOKIE_SECURE=true
+COVE_APP_ORIGIN=https://192.168.0.10
+```
+```bash
+docker compose -f docker-compose.yml -f docker-compose.lan-tls.yml up -d
+```
+
+Keep `COVE_WORKSPACE_DOMAIN` unset so one cert covers the app and every stream (subpath mode). See [Deployment → LAN / self-signed HTTPS](docs/deployment.md#lan--self-signed-https-no-public-domain).
+
 ## 6. OIDC / Authentik SSO
 
 Set these in `.env` (then restart). When present, a "Sign in with …" button appears and is the primary login method; local login still works as a fallback.

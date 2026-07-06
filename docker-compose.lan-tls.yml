@@ -1,0 +1,63 @@
+# =============================================================================
+# Cove — LAN self-signed HTTPS override
+# =============================================================================
+# Serve Cove over HTTPS on a private network with a self-signed certificate,
+# for when you have no public domain / Let's Encrypt. This is REQUIRED for
+# workspace streaming: LinuxServer/Selkies streams need a browser "secure
+# context" and refuse to start over plain HTTP with
+#   "This application requires a secure connection (HTTPS)."
+#
+# 1. Generate the cert (adds your LAN IP/hostname to the SAN list):
+#      scripts/gen-lan-cert.sh 192.168.8.131 myhost.local
+# 2. In .env:
+#      COVE_COOKIE_SECURE=true
+#      COVE_APP_ORIGIN=https://192.168.8.131      # how you reach the box
+# 3. Bring it up:
+#      docker compose -f docker-compose.yml -f docker-compose.lan-tls.yml up -d
+#
+# Keep COVE_WORKSPACE_DOMAIN UNSET (subpath mode): every stream is then
+# same-origin under /workspace/{id}/, so this one certificate covers the app and
+# all streams — subdomain mode would need a wildcard cert instead. Browsers show
+# a one-time "not trusted" warning; click through, or trust certs/cove.crt on
+# your devices to silence it.
+# =============================================================================
+services:
+  traefik:
+    # NOTE: Compose replaces the command list wholesale, so the base flags are
+    # repeated here alongside the TLS additions.
+    command:
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://docker-socket-proxy-ro:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=cove-net
+      - --providers.http.endpoint=http://cove:8080/api/internal/traefik-config
+      - --providers.http.pollInterval=3s
+      # Self-signed default certificate, supplied via the file provider.
+      - --providers.file.filename=/tls/dynamic.yml
+      - --entrypoints.web.address=:80
+      # Force every plain-HTTP request to HTTPS.
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      # TLS on by default for this entrypoint, so routers (incl. the per-workspace
+      # routers, which declare entrypoints web,websecure) need no per-router tls.
+      - --entrypoints.websecure.http.tls=true
+      - --log.level=WARN
+    ports:
+      - "${COVE_HTTP_PORT:-80}:80"
+      - "${COVE_HTTPS_PORT:-443}:443"
+    volumes:
+      - ${COVE_DATA_DIR_HOST:-./data}/zone-certs:/zone-certs:ro
+      - ./certs:/tls:ro
+
+  cove:
+    environment:
+      - COVE_COOKIE_SECURE=true
+      # The origin you browse to (used for the workspace-iframe CSP and, if you
+      # enable OIDC, the redirect URI). Set this in .env to match the cert.
+      - COVE_APP_ORIGIN=${COVE_APP_ORIGIN}
+    labels:
+      # Move the app + login routers onto the HTTPS entrypoint (base binds them
+      # to :80). Compose merges labels by key, so these override the base values.
+      - traefik.http.routers.cove.entrypoints=websecure
+      - traefik.http.routers.cove-login.entrypoints=websecure
