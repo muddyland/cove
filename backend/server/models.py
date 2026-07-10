@@ -196,6 +196,14 @@ class Workspace(Base):
     gpu_accel: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Opt-in: run a per-workspace Docker-in-Docker sidecar so the workspace can
+    # build/run containers for development. The host Docker socket is NEVER
+    # exposed — a nested (privileged) daemon runs in an isolated sidecar sharing
+    # the workspace's netns + egress guard. Only effective when the admin master
+    # toggle (workspace_docker) is on. See docker_manager._launch_dind_sidecar.
+    use_docker: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

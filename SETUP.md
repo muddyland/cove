@@ -210,6 +210,7 @@ docker compose up --build -d         # rebuild & restart after updates
 - Each workspace runs on its **own isolated network** with dropped Linux capabilities and `no-new-privileges`; workspaces cannot reach the Cove backend, the socket proxy, or each other.
 - Workspace **streams are authenticated** by Traefik ForwardAuth against your Cove session — never exposed unauthenticated.
 - Always run with HTTPS and `COVE_COOKIE_SECURE=true` when exposed beyond localhost.
+- **Docker-in-Docker** (letting a workspace run `docker`) is **off by default** and gated behind an admin master toggle (Admin → Settings) plus a per-workspace opt-in. It runs a **privileged** nested daemon in an isolated per-workspace sidecar — the host Docker socket is never exposed and the sidecar can't reach other workspaces, but `--privileged` carries kernel-level risk, so enable it only for trusted users. See [Deployment → Docker-in-Docker](docs/deployment.md#docker-in-docker-development-inside-a-workspace).
 
 ## 10. Troubleshooting
 

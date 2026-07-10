@@ -17,6 +17,7 @@ from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage,
 from server.net import client_ip
 from server.schemas import (
     ContainerLogsOut,
+    DockerPolicyOut,
     GpuPolicyOut,
     LanPolicyOut,
     StreamAuthOut,
@@ -150,6 +151,32 @@ def _validate_routing(db, user_id: int, use_tailscale: bool, use_gluetun: bool) 
             )
 
 
+def _validate_docker(db, use_docker: bool, zone_id: int) -> None:
+    """Reject Docker-in-Docker unless the admin master toggle is on and the
+    workspace runs on the local zone.
+
+    DinD runs a privileged nested daemon, so it is gated at the deployment level
+    (a per-workspace opt-in is only honoured when an admin enables the feature).
+    It is also restricted to the local control-plane zone: remote zone agents
+    refuse privileged container creates (server.docker_policy) to keep their
+    host-escape boundary intact, so the DinD sidecar cannot run there.
+    """
+    from server import settings_store
+
+    if not use_docker:
+        return
+    if not settings_store.get_workspace_docker(db):
+        raise HTTPException(
+            status_code=400,
+            detail="Docker-in-Docker is disabled by the administrator",
+        )
+    if zone_id != 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Docker-in-Docker is only available on the local zone",
+        )
+
+
 def _validate_zone(db, zone_id: int) -> None:
     """Ensure the target zone exists and is enrolled (ready to run workspaces).
 
@@ -240,6 +267,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     _validate_routing(db, user.id, body.use_tailscale, body.use_gluetun)
     if body.use_gluetun:
         _check_gluetun_single_connection(db, user.id)
+    _validate_docker(db, body.use_docker, body.zone_id)
 
     _validate_zone(db, body.zone_id)
     _check_name_unique(db, user.id, body.name)
@@ -271,6 +299,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         pixelflux_wayland=body.pixelflux_wayland,
         clear_browser_lock=body.clear_browser_lock,
         gpu_accel=body.gpu_accel,
+        use_docker=body.use_docker,
         status="creating",
         status_changed_at=datetime.now(timezone.utc),
     )
@@ -372,6 +401,7 @@ def clone_workspace(
     _validate_routing(db, user.id, src.use_tailscale, src.use_gluetun)
     if src.use_gluetun:
         _check_gluetun_single_connection(db, user.id)
+    _validate_docker(db, src.use_docker, src.zone_id)
 
     clone = Workspace(
         user_id=user.id,
@@ -400,6 +430,7 @@ def clone_workspace(
         pixelflux_wayland=src.pixelflux_wayland,
         clear_browser_lock=src.clear_browser_lock,
         gpu_accel=src.gpu_accel,
+        use_docker=src.use_docker,
         status="creating",
         status_changed_at=datetime.now(timezone.utc),
     )
@@ -482,6 +513,19 @@ def gpu_policy(user: CurrentUser, db: DbSession):
     from server import settings_store
 
     return GpuPolicyOut(enabled=settings_store.get_workspace_gpu_accel(db))
+
+
+@router.get("/docker-policy", response_model=DockerPolicyOut)
+def docker_policy(user: CurrentUser, db: DbSession):
+    """Docker-in-Docker policy for the workspace modals.
+
+    Lets the SPA show/hide the per-workspace "Docker (dev)" checkbox. ``enabled``
+    is the admin master toggle; when off, opting a workspace in is rejected (the
+    feature runs a privileged nested daemon, so it is deployment-gated).
+    """
+    from server import settings_store
+
+    return DockerPolicyOut(enabled=settings_store.get_workspace_docker(db))
 
 
 # In-memory cache of fetched project logos (url -> (bytes, content_type)). Logos
@@ -736,6 +780,7 @@ def update_workspace(
         data.get("use_tailscale", ws.use_tailscale),
         data.get("use_gluetun", ws.use_gluetun),
     )
+    _validate_docker(db, data.get("use_docker", ws.use_docker), ws.zone_id)
 
     nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "appimages", "dns_servers"}
     for key, value in data.items():

@@ -33,7 +33,7 @@
         <span>Ephemeral (no saved data — wiped when halted)</span>
       </label>
 
-      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" :gluetun-ready="gluetunReady" :gpu-enabled="gpuPolicy.enabled" />
+      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" :gluetun-ready="gluetunReady" :gpu-enabled="gpuPolicy.enabled" :docker-enabled="dockerPolicy.enabled && ws.zone_id === 0" />
 
       <p class="apply-note">Changes apply the next time the workspace boots.</p>
 
@@ -55,7 +55,7 @@ import { workspacesApi } from '@/api/workspaces'
 import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
-import type { GpuPolicy, LanPolicy, Workspace } from '@/types'
+import type { DockerPolicy, GpuPolicy, LanPolicy, Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
 const open = defineModel<boolean>({ default: false })
@@ -64,6 +64,7 @@ const loading = ref(false)
 const error = ref('')
 const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
 const gpuPolicy = ref<GpuPolicy>({ enabled: false })
+const dockerPolicy = ref<DockerPolicy>({ enabled: false })
 const gluetunReady = ref(false)
 const store = useWorkspacesStore()
 const ui = useUiStore()
@@ -93,6 +94,7 @@ const form = reactive({
   pixelflux_wayland: true,
   clear_browser_lock: false,
   gpu_accel: false,
+  use_docker: false,
   install_packages: '',
   proot_apps: [] as string[],
   appimages: '',
@@ -123,6 +125,7 @@ function resetFromWs() {
   form.pixelflux_wayland = props.ws.pixelflux_wayland
   form.clear_browser_lock = props.ws.clear_browser_lock
   form.gpu_accel = props.ws.gpu_accel
+  form.use_docker = props.ws.use_docker
   form.install_packages = props.ws.install_packages ?? ''
   form.proot_apps = parseProotApps(props.ws.proot_apps)
   form.appimages = props.ws.appimages ?? ''
@@ -138,6 +141,11 @@ async function loadLanPolicy() {
     gpuPolicy.value = await workspacesApi.gpuPolicy()
   } catch {
     // Non-fatal: the GPU checkbox just stays hidden if the policy can't load.
+  }
+  try {
+    dockerPolicy.value = await workspacesApi.dockerPolicy()
+  } catch {
+    // Non-fatal: the Docker checkbox just stays hidden if the policy can't load.
   }
   try {
     const g = await usersApi.getGluetun()
@@ -191,6 +199,7 @@ async function handleSubmit() {
       pixelflux_wayland: form.pixelflux_wayland,
       clear_browser_lock: form.clear_browser_lock,
       gpu_accel: form.gpu_accel,
+      use_docker: form.use_docker,
       install_packages: form.install_packages.trim(),
       proot_apps: form.proot_apps.join(' '),
       appimages: form.appimages.trim(),

@@ -423,3 +423,114 @@ def test_target_url_lan_ips_multiple():
     from server.docker_manager import _target_url_lan_ips
     ips = _target_url_lan_ips("https://10.0.0.5/ https://8.8.8.8/ https://192.168.1.9:3000/")
     assert ips == ["10.0.0.5/32", "192.168.1.9/32"]  # public host excluded
+
+
+# ── Docker-in-Docker sidecar ───────────────────────────────────────────────────
+
+def test_apply_docker_cli_sets_host_and_mount():
+    env: dict = {}
+    volumes: dict = {}
+    DockerManager._apply_docker_cli(env, volumes)
+    assert env["DOCKER_HOST"] == "tcp://127.0.0.1:2375"
+    key = _helper_script_path("install-docker-cli.sh")
+    assert key.endswith("/.cove-scripts/install-docker-cli.sh")
+    assert volumes[key] == {
+        "bind": "/custom-cont-init.d/96-install-docker-cli.sh",
+        "mode": "ro",
+    }
+
+
+def test_dind_names():
+    assert DockerManager._dind_sidecar_name(7) == "cove-dind-7"
+    assert DockerManager._dind_volume_name(7) == "cove-dind-state-7"
+
+
+class _FakeContainers:
+    def __init__(self):
+        self.run_calls = []
+        self.removed = []
+        self.existing = {}  # name -> fake container
+
+    def get(self, name):
+        import docker.errors
+        if name in self.existing:
+            return self.existing[name]
+        raise docker.errors.NotFound(name)
+
+    def run(self, image, **kwargs):
+        self.run_calls.append((image, kwargs))
+        return SimpleNamespace(id="deadbeef" * 5)
+
+
+class _FakeVolumes:
+    def __init__(self):
+        self.created = []
+        self.removed = []
+        self.existing = set()
+
+    def get(self, name):
+        import docker.errors
+        if name in self.existing:
+            return SimpleNamespace(remove=lambda force=False: self.removed.append(name))
+        raise docker.errors.NotFound(name)
+
+    def create(self, name):
+        self.created.append(name)
+
+
+def _dm_fake():
+    dm = DockerManager.__new__(DockerManager)
+    dm._client = SimpleNamespace(
+        containers=_FakeContainers(),
+        volumes=_FakeVolumes(),
+        images=SimpleNamespace(pull=lambda repo, tag=None: None),
+    )
+    dm._pulling = set()
+    dm._pulling_lock = __import__("threading").Lock()
+    return dm
+
+
+def test_launch_dind_sidecar_privileged_loopback_and_volume():
+    dm = _dm_fake()
+    ws = SimpleNamespace(id=7)
+    dm._launch_dind_sidecar(ws, "cove-ws-7", "docker:dind")
+
+    calls = dm._client.containers.run_calls
+    assert len(calls) == 1
+    image, kwargs = calls[0]
+    assert image == "docker:dind"
+    assert kwargs["name"] == "cove-dind-7"
+    assert kwargs["privileged"] is True
+    # Joins the netns owner (workspace container), NOT a bridge network.
+    assert kwargs["network_mode"] == "container:cove-ws-7"
+    assert "network" not in kwargs
+    # No Traefik labels — it rides the workspace's routing.
+    assert "labels" not in kwargs
+    # Daemon bound to loopback only, TLS disabled.
+    assert kwargs["environment"]["DOCKER_TLS_CERTDIR"] == ""
+    assert "--host=tcp://127.0.0.1:2375" in kwargs["command"]
+    assert not any("0.0.0.0" in c for c in kwargs["command"])
+    # State volume mounted at the daemon's data dir + created.
+    assert kwargs["volumes"] == {"cove-dind-state-7": {"bind": "/var/lib/docker", "mode": "rw"}}
+    assert "cove-dind-state-7" in dm._client.volumes.created
+
+
+def test_cleanup_docker_sidecar_removes_container_and_volume():
+    dm = _dm_fake()
+    removed_containers = []
+    dm._client.containers.existing["cove-dind-7"] = SimpleNamespace(
+        stop=lambda timeout=10: None,
+        remove=lambda force=False: removed_containers.append("cove-dind-7"),
+    )
+    dm._client.volumes.existing.add("cove-dind-state-7")
+
+    dm._cleanup_docker_sidecar(7)
+    assert removed_containers == ["cove-dind-7"]
+    assert dm._client.volumes.removed == ["cove-dind-state-7"]
+
+
+def test_cleanup_docker_sidecar_noop_when_absent():
+    dm = _dm_fake()
+    # Neither container nor volume exists — must not raise.
+    dm._cleanup_docker_sidecar(7)
+    assert dm._client.volumes.removed == []

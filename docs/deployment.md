@@ -124,6 +124,59 @@ Leave `COVE_WORKSPACE_DOMAIN` unset to keep the simpler subpath routing (no
 wildcard needed). The trade-offs are discussed further in
 [Security model](security.md).
 
+## Docker-in-Docker (development inside a workspace)
+
+Workspaces can run `docker` themselves — build images, run containers, use
+Compose — for dev workflows. This is **off by default** and gated twice, because
+it runs a **privileged** nested daemon.
+
+### How it works (and why it's safe-ish)
+
+Cove never bind-mounts the host Docker socket into a workspace — that would hand
+the workspace full control of the host daemon (host root: mount the host FS, read
+every other workspace and Cove's `data/`, escape). Instead, when a workspace opts
+in, Cove launches a **per-workspace Docker-in-Docker sidecar** (mirroring the
+Tailscale/Gluetun sidecar pattern):
+
+- The sidecar runs its **own** nested `dockerd` with its own `/var/lib/docker`
+  (a per-workspace volume, discarded on halt). The host socket is never exposed.
+- The daemon listens on **`127.0.0.1:2375` inside the workspace's network
+  namespace only** — not on the workspace bridge — so Traefik and other
+  containers can't reach it, and no TLS is needed.
+- The sidecar shares the workspace's **egress firewall**. Containers the nested
+  daemon runs are additionally filtered via the `DOCKER-USER` iptables chain, so
+  they inherit the same block on cloud metadata, the Docker-internal range (Cove
+  backend, proxies, other workspaces), and un-granted LAN.
+- The workspace gets the `docker` CLI auto-installed and `DOCKER_HOST` preset.
+
+A breakout from the nested daemon lands the attacker in the **privileged
+sidecar**, confined to that one workspace's isolated netns — not the host daemon
+and not other workspaces.
+
+### Residual risk
+
+`--privileged` is a **kernel-level** attack surface. DinD is *dev-grade*
+isolation, not a hardened multi-tenant boundary: a kernel exploit from inside the
+sidecar could reach the host. **Enable it only for trusted users.** For stronger
+isolation, run the daemon rootless (`docker:dind-rootless`) or use the
+[Sysbox](https://github.com/nestybox/sysbox) runtime (unprivileged DinD, no
+`--privileged`) — both require host-level provisioning beyond Cove's defaults.
+
+### Enabling it
+
+1. **Admin → Settings → "Allow Docker-in-Docker"** (master toggle, off by
+   default). Optionally set the DinD image (default `docker:dind`, multi-arch —
+   works on x86_64 and arm64).
+2. Per workspace, tick **"Docker (dev)"** when launching or editing it.
+
+It composes with Tailscale/Gluetun routing (nested containers egress through the
+tunnel) and needs no host changes.
+
+**Local zone only.** DinD is available for workspaces on the **local
+control-plane zone**. Remote zone agents deliberately refuse privileged container
+creates (to keep their host-escape boundary intact), so the "Docker (dev)" toggle
+is hidden — and rejected server-side — for workspaces pinned to a remote zone.
+
 ## Behind another reverse proxy
 
 Cove's own Traefik terminates TLS and performs ForwardAuth on every stream. If

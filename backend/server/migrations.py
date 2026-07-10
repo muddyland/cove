@@ -165,6 +165,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0033_workspace_gpu_accel",
         "ALTER TABLE workspace ADD COLUMN gpu_accel BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Opt-in: per-workspace Docker-in-Docker sidecar (dev container support).
+    (
+        "0034_workspace_use_docker",
+        "ALTER TABLE workspace ADD COLUMN use_docker BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

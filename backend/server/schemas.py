@@ -125,6 +125,10 @@ class WorkspaceCreate(BaseModel):
     # GPU (VAAPI) hardware acceleration for the stream (opt-in, off). Only
     # effective when the admin master toggle is on and the host has a GPU.
     gpu_accel: bool = False
+    # Docker-in-Docker: run a privileged nested Docker daemon sidecar for dev
+    # container workflows (opt-in, off). Only effective when the admin master
+    # toggle (workspace_docker) is on.
+    use_docker: bool = False
 
 
 class WorkspaceUpdate(BaseModel):
@@ -150,6 +154,7 @@ class WorkspaceUpdate(BaseModel):
     pixelflux_wayland: Optional[bool] = None
     clear_browser_lock: Optional[bool] = None
     gpu_accel: Optional[bool] = None
+    use_docker: Optional[bool] = None
 
 
 class LanPolicyOut(BaseModel):
@@ -164,6 +169,13 @@ class GpuPolicyOut(BaseModel):
     # Admin master toggle for GPU (VAAPI) hardware acceleration. Surfaced to
     # non-admin users so the launch/edit modals only show the per-workspace GPU
     # checkbox when an admin has enabled it (and configured a usable render node).
+    enabled: bool
+
+
+class DockerPolicyOut(BaseModel):
+    # Admin master toggle for Docker-in-Docker. Surfaced to non-admin users so the
+    # launch/edit modals only show the per-workspace "Docker (dev)" checkbox when
+    # an admin has enabled the (privileged) feature for the deployment.
     enabled: bool
 
 
@@ -240,6 +252,7 @@ class WorkspaceOut(BaseModel):
     pixelflux_wayland: bool
     clear_browser_lock: bool
     gpu_accel: bool
+    use_docker: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -295,6 +308,7 @@ class WorkspaceOut(BaseModel):
             pixelflux_wayland=ws.pixelflux_wayland,
             clear_browser_lock=ws.clear_browser_lock,
             gpu_accel=ws.gpu_accel,
+            use_docker=ws.use_docker,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,
@@ -331,6 +345,8 @@ class AppSettingsOut(BaseModel):
     workspace_gpu_accel: bool
     workspace_gpu_render_node: str
     workspace_gpu_render_gid: int
+    workspace_docker: bool
+    dind_image: str
 
 
 class EnvEntry(BaseModel):
@@ -395,6 +411,8 @@ class AppSettingsUpdate(BaseModel):
     workspace_gpu_accel: Optional[bool] = None
     workspace_gpu_render_node: Optional[str] = None
     workspace_gpu_render_gid: Optional[int] = None
+    workspace_docker: Optional[bool] = None
+    dind_image: Optional[str] = None
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

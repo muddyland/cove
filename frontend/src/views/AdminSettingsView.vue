@@ -149,6 +149,26 @@
             </p>
           </div>
 
+          <label class="checkbox-row">
+            <input type="checkbox" v-model="form.workspace_docker" />
+            <span>Allow Docker-in-Docker</span>
+          </label>
+          <p class="hint">
+            Master switch for in-workspace Docker (dev container support). When
+            <strong>on</strong>, workspaces can opt in to run a <strong>privileged</strong> nested
+            Docker daemon in an isolated per-workspace sidecar. The host Docker socket is never
+            exposed and the sidecar can't reach other workspaces, but <code>--privileged</code>
+            carries kernel-level risk — enable only for trusted users. Off by default.
+          </p>
+
+          <div v-if="form.workspace_docker" class="form-group">
+            <label>DinD image</label>
+            <input type="text" v-model="form.dind_image" placeholder="docker:dind" />
+            <p class="hint">
+              The Docker-in-Docker image the sidecar runs (multi-arch; works on x86_64 and arm64).
+            </p>
+          </div>
+
           <div v-if="error" class="form-error">⚠ {{ error }}</div>
           <div class="form-actions">
             <NeonButton type="submit" variant="primary" :loading="saving">Save Settings</NeonButton>
@@ -216,6 +236,8 @@ const form = reactive({
   workspace_gpu_accel: false,
   workspace_gpu_render_node: '/dev/dri/renderD128',
   workspace_gpu_render_gid: 992,
+  workspace_docker: false,
+  dind_image: 'docker:dind',
 })
 
 onMounted(async () => {
@@ -232,6 +254,8 @@ onMounted(async () => {
     form.workspace_gpu_accel = settings.workspace_gpu_accel
     form.workspace_gpu_render_node = settings.workspace_gpu_render_node
     form.workspace_gpu_render_gid = settings.workspace_gpu_render_gid
+    form.workspace_docker = settings.workspace_docker
+    form.dind_image = settings.dind_image
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -264,6 +288,8 @@ async function handleSave() {
       workspace_gpu_accel: form.workspace_gpu_accel,
       workspace_gpu_render_node: form.workspace_gpu_render_node,
       workspace_gpu_render_gid: form.workspace_gpu_render_gid,
+      workspace_docker: form.workspace_docker,
+      dind_image: form.dind_image,
     })
     form.tailscale_image = updated.tailscale_image
     form.gluetun_image = updated.gluetun_image
@@ -276,6 +302,8 @@ async function handleSave() {
     form.workspace_gpu_accel = updated.workspace_gpu_accel
     form.workspace_gpu_render_node = updated.workspace_gpu_render_node
     form.workspace_gpu_render_gid = updated.workspace_gpu_render_gid
+    form.workspace_docker = updated.workspace_docker
+    form.dind_image = updated.dind_image
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
     error.value = e.message

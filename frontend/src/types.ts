@@ -90,6 +90,7 @@ export interface Workspace {
   pixelflux_wayland: boolean
   clear_browser_lock: boolean
   gpu_accel: boolean
+  use_docker: boolean
 }
 
 export interface LanPolicy {
@@ -98,6 +99,10 @@ export interface LanPolicy {
 }
 
 export interface GpuPolicy {
+  enabled: boolean
+}
+
+export interface DockerPolicy {
   enabled: boolean
 }
 
@@ -148,6 +153,8 @@ export interface AppSettings {
   workspace_gpu_accel: boolean
   workspace_gpu_render_node: string
   workspace_gpu_render_gid: number
+  workspace_docker: boolean
+  dind_image: string
 }
 
 export interface EnvEntry {
