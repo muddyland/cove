@@ -517,6 +517,39 @@ def test_launch_dind_sidecar_privileged_loopback_and_volume():
     assert "cove-dind-state-7" in dm._client.volumes.created
 
 
+def test_dind_guard_script_blocks_internal_ranges():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script([])
+    # Every metadata/Docker-internal + private/CGNAT range is dropped in DOCKER-USER.
+    for cidr in ("169.254.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16", "100.64.0.0/10"):
+        assert f"iptables -A DOCKER-USER -d {cidr} -j DROP" in script
+    # Established/related return traffic is accepted; it waits for the chain first.
+    assert "ESTABLISHED,RELATED -j ACCEPT" in script
+    assert "DOCKER-USER" in script and "date +%s" in script
+
+
+def test_dind_guard_script_honours_granted_subnets():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script(["10.0.0.0/8"])
+    # A granted subnet is ACCEPTed and NOT dropped (it's removed from the block set).
+    assert "iptables -A DOCKER-USER -d 10.0.0.0/8 -j ACCEPT" in script
+    assert "iptables -A DOCKER-USER -d 10.0.0.0/8 -j DROP" not in script
+    # Other private ranges stay blocked.
+    assert "iptables -A DOCKER-USER -d 192.168.0.0/16 -j DROP" in script
+
+
+def test_apply_dind_egress_guard_execs_in_sidecar():
+    dm = _dm_fake()
+    execed = {}
+    dm._client.containers.existing["cove-dind-7"] = SimpleNamespace(
+        exec_run=lambda cmd: (execed.setdefault("cmd", cmd), (0, b""))[1],
+    )
+    dm._apply_dind_egress_guard(7, [])
+    # Runs inside the dind sidecar (correct iptables backend), not a helper image.
+    assert execed["cmd"][0] == "/bin/sh"
+    assert "DOCKER-USER" in execed["cmd"][2]
+
+
 def test_cleanup_docker_sidecar_removes_container_and_volume():
     dm = _dm_fake()
     removed_containers = []

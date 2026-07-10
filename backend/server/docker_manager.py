@@ -1233,7 +1233,7 @@ class DockerManager:
                     )
                     try:
                         self._launch_dind_sidecar(ws, netns_owner, get_dind_image(db))
-                        self._apply_dind_egress_guard(ws.id, netns_owner, lan_subnets)
+                        self._apply_dind_egress_guard(ws.id, lan_subnets)
                     except Exception as exc:
                         logger.warning("DinD setup failed for workspace %s: %s", ws.id, exc)
 
@@ -2029,9 +2029,25 @@ class DockerManager:
         )
         logger.info("Started DinD sidecar %s for workspace %s", sidecar_name, ws.id)
 
-    def _apply_dind_egress_guard(
-        self, ws_id: int, netns_owner: str, lan_subnets: list[str] | None
-    ) -> None:
+    def _build_dind_guard_script(self, lan_subnets: list[str] | None) -> str:
+        """The DOCKER-USER iptables script for :meth:`_apply_dind_egress_guard`."""
+        blocked = list(_ALWAYS_BLOCK)
+        allowed = lan_subnets or []
+        lan_block = [c for c in _LAN_BLOCK if c not in allowed]
+        parts = [
+            "end=$(($(date +%s)+30))",
+            "while [ $(date +%s) -lt $end ]; do "
+            "iptables -L DOCKER-USER -n >/dev/null 2>&1 && break; sleep 2; done",
+            "iptables -L DOCKER-USER -n >/dev/null 2>&1 || exit 1",
+            "iptables -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+        ]
+        for cidr in allowed:
+            parts.append(f"iptables -A DOCKER-USER -d {cidr} -j ACCEPT")
+        for cidr in blocked + lan_block:
+            parts.append(f"iptables -A DOCKER-USER -d {cidr} -j DROP")
+        return " ; ".join(parts)
+
+    def _apply_dind_egress_guard(self, ws_id: int, lan_subnets: list[str] | None) -> None:
         """Extend the egress policy to containers the nested daemon runs.
 
         The per-workspace OUTPUT guard only filters locally-generated traffic;
@@ -2040,34 +2056,25 @@ class DockerManager:
         for exactly this — admin filters evaluated before its own FORWARD rules.
         We wait for the nested daemon to create that chain, then drop the same
         metadata/Docker-internal/LAN ranges (honouring admin-granted subnets), so
-        nested containers inherit the workspace's egress policy. Best-effort."""
-        blocked = list(_ALWAYS_BLOCK)
-        allowed = lan_subnets or []
-        lan_block = [c for c in _LAN_BLOCK if c not in allowed]
-        parts = [
-            "end=$(($(date +%s)+30))",
-            "while [ $(date +%s) -lt $end ]; do "
-            "iptables -L DOCKER-USER -n >/dev/null 2>&1 && break; sleep 2; done",
-            "iptables -L DOCKER-USER -n >/dev/null 2>&1 || exit 0",
-            "iptables -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
-        ]
-        for cidr in allowed:
-            parts.append(f"iptables -A DOCKER-USER -d {cidr} -j ACCEPT")
-        for cidr in blocked + lan_block:
-            parts.append(f"iptables -A DOCKER-USER -d {cidr} -j DROP")
-        script = " ; ".join(parts)
+        nested containers inherit the workspace's egress policy.
+
+        Runs *inside the DinD sidecar itself* rather than a helper container: the
+        sidecar's ``iptables`` is auto-selected (legacy vs nft) by its entrypoint
+        to match the backend ``dockerd`` used for DOCKER-USER, so the rules always
+        land in the right table. A helper image (e.g. nft-only netshoot) can miss a
+        legacy DOCKER-USER chain entirely and silently leave nested traffic
+        unfiltered. Best-effort."""
+        script = self._build_dind_guard_script(lan_subnets)
         try:
-            self._pull_image(EGRESS_GUARD_IMAGE)
-            self._client.containers.run(
-                EGRESS_GUARD_IMAGE,
-                network_mode=f"container:{netns_owner}",
-                cap_add=["NET_ADMIN"],
-                remove=True,
-                detach=False,
-                entrypoint="/bin/sh",
-                command=["-c", script],
-            )
-            logger.info("Applied DinD egress guard for workspace %s", ws_id)
+            sidecar = self._client.containers.get(self._dind_sidecar_name(ws_id))
+            code, out = sidecar.exec_run(["/bin/sh", "-c", script])
+            if code == 0:
+                logger.info("Applied DinD egress guard for workspace %s", ws_id)
+            else:
+                logger.warning(
+                    "DinD egress guard exit %s for workspace %s: %s",
+                    code, ws_id, (out or b"").decode(errors="ignore")[:300],
+                )
         except Exception as exc:
             logger.warning("DinD egress guard failed for workspace %s: %s", ws_id, exc)
 
