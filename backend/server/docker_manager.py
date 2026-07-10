@@ -2008,13 +2008,20 @@ class DockerManager:
             detach=True,
             privileged=True,
             network_mode=f"container:{netns_owner}",
-            # DOCKER_TLS_CERTDIR="" disables the entrypoint's TLS setup; we then
-            # bind the daemon to the loopback of the shared netns (plus the default
-            # unix socket) so only the workspace can talk to it.
+            # DOCKER_TLS_CERTDIR="" disables the entrypoint's TLS setup. The
+            # command MUST start with the literal "dockerd": the dind entrypoint
+            # only injects its own "--host=tcp://0.0.0.0:2375" default when the
+            # command is empty or starts with a flag — passing "dockerd" explicitly
+            # skips that (which would otherwise collide on port 2375) while still
+            # running its tini/iptables/cgroup setup. We then bind ONLY the loopback
+            # of the shared netns (plus the unix socket) so nothing off-box — not
+            # even Traefik on the workspace bridge — can reach the daemon.
             environment={"DOCKER_TLS_CERTDIR": ""},
             command=[
+                "dockerd",
                 "--host=unix:///var/run/docker.sock",
                 "--host=tcp://127.0.0.1:2375",
+                "--tls=false",
                 "--storage-driver=overlay2",
             ],
             volumes={volume_name: {"bind": "/var/lib/docker", "mode": "rw"}},

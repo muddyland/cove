@@ -506,8 +506,10 @@ def test_launch_dind_sidecar_privileged_loopback_and_volume():
     assert "network" not in kwargs
     # No Traefik labels — it rides the workspace's routing.
     assert "labels" not in kwargs
-    # Daemon bound to loopback only, TLS disabled.
+    # Daemon bound to loopback only, TLS disabled. The command starts with the
+    # literal "dockerd" so the entrypoint doesn't inject its own 0.0.0.0:2375.
     assert kwargs["environment"]["DOCKER_TLS_CERTDIR"] == ""
+    assert kwargs["command"][0] == "dockerd"
     assert "--host=tcp://127.0.0.1:2375" in kwargs["command"]
     assert not any("0.0.0.0" in c for c in kwargs["command"])
     # State volume mounted at the daemon's data dir + created.
