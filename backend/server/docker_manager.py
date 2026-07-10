@@ -2030,21 +2030,30 @@ class DockerManager:
         logger.info("Started DinD sidecar %s for workspace %s", sidecar_name, ws.id)
 
     def _build_dind_guard_script(self, lan_subnets: list[str] | None) -> str:
-        """The DOCKER-USER iptables script for :meth:`_apply_dind_egress_guard`."""
+        """The DOCKER-USER iptables script for :meth:`_apply_dind_egress_guard`.
+
+        dockerd may wire DOCKER-USER into either the legacy or nft iptables backend
+        (it picks based on the netns's existing rules), and that isn't always the
+        backend the sidecar's default ``iptables`` points at. So we probe each
+        candidate binary and use the one whose FORWARD chain actually jumps to
+        DOCKER-USER — the definitive signal of the live backend — instead of
+        assuming ``iptables`` is correct (which silently misses on legacy hosts)."""
         blocked = list(_ALWAYS_BLOCK)
         allowed = lan_subnets or []
         lan_block = [c for c in _LAN_BLOCK if c not in allowed]
         parts = [
-            "end=$(($(date +%s)+30))",
+            'end=$(($(date +%s)+30)); IPT=""',
             "while [ $(date +%s) -lt $end ]; do "
-            "iptables -L DOCKER-USER -n >/dev/null 2>&1 && break; sleep 2; done",
-            "iptables -L DOCKER-USER -n >/dev/null 2>&1 || exit 1",
-            "iptables -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+            "for c in iptables-legacy iptables-nft iptables; do "
+            "$c -S FORWARD 2>/dev/null | grep -q DOCKER-USER && { IPT=$c; break; }; "
+            "done; [ -n \"$IPT\" ] && break; sleep 2; done",
+            '[ -z "$IPT" ] && exit 1',
+            "$IPT -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
         ]
         for cidr in allowed:
-            parts.append(f"iptables -A DOCKER-USER -d {cidr} -j ACCEPT")
+            parts.append(f"$IPT -A DOCKER-USER -d {cidr} -j ACCEPT")
         for cidr in blocked + lan_block:
-            parts.append(f"iptables -A DOCKER-USER -d {cidr} -j DROP")
+            parts.append(f"$IPT -A DOCKER-USER -d {cidr} -j DROP")
         return " ; ".join(parts)
 
     def _apply_dind_egress_guard(self, ws_id: int, lan_subnets: list[str] | None) -> None:

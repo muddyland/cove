@@ -522,20 +522,22 @@ def test_dind_guard_script_blocks_internal_ranges():
     script = dm._build_dind_guard_script([])
     # Every metadata/Docker-internal + private/CGNAT range is dropped in DOCKER-USER.
     for cidr in ("169.254.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16", "100.64.0.0/10"):
-        assert f"iptables -A DOCKER-USER -d {cidr} -j DROP" in script
+        assert f"$IPT -A DOCKER-USER -d {cidr} -j DROP" in script
     # Established/related return traffic is accepted; it waits for the chain first.
     assert "ESTABLISHED,RELATED -j ACCEPT" in script
     assert "DOCKER-USER" in script and "date +%s" in script
+    # Probes each backend and uses the one whose FORWARD jumps to DOCKER-USER.
+    assert "iptables-legacy iptables-nft iptables" in script
 
 
 def test_dind_guard_script_honours_granted_subnets():
     dm = _dm_fake()
     script = dm._build_dind_guard_script(["10.0.0.0/8"])
     # A granted subnet is ACCEPTed and NOT dropped (it's removed from the block set).
-    assert "iptables -A DOCKER-USER -d 10.0.0.0/8 -j ACCEPT" in script
-    assert "iptables -A DOCKER-USER -d 10.0.0.0/8 -j DROP" not in script
+    assert "$IPT -A DOCKER-USER -d 10.0.0.0/8 -j ACCEPT" in script
+    assert "$IPT -A DOCKER-USER -d 10.0.0.0/8 -j DROP" not in script
     # Other private ranges stay blocked.
-    assert "iptables -A DOCKER-USER -d 192.168.0.0/16 -j DROP" in script
+    assert "$IPT -A DOCKER-USER -d 192.168.0.0/16 -j DROP" in script
 
 
 def test_apply_dind_egress_guard_execs_in_sidecar():
