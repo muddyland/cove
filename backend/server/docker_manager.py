@@ -1233,7 +1233,9 @@ class DockerManager:
                     )
                     try:
                         self._launch_dind_sidecar(ws, netns_owner, get_dind_image(db))
-                        self._apply_dind_egress_guard(ws.id, lan_subnets)
+                        self._apply_dind_egress_guard(
+                            ws.id, lan_subnets, tailscale=ws.use_tailscale
+                        )
                     except Exception as exc:
                         logger.warning("DinD setup failed for workspace %s: %s", ws.id, exc)
 
@@ -2029,7 +2031,9 @@ class DockerManager:
         )
         logger.info("Started DinD sidecar %s for workspace %s", sidecar_name, ws.id)
 
-    def _build_dind_guard_script(self, lan_subnets: list[str] | None) -> str:
+    def _build_dind_guard_script(
+        self, lan_subnets: list[str] | None, tailscale: bool = False
+    ) -> str:
         """The DOCKER-USER iptables script for :meth:`_apply_dind_egress_guard`.
 
         dockerd may wire DOCKER-USER into either the legacy or nft iptables backend
@@ -2037,7 +2041,14 @@ class DockerManager:
         backend the sidecar's default ``iptables`` points at. So we probe each
         candidate binary and use the one whose FORWARD chain actually jumps to
         DOCKER-USER — the definitive signal of the live backend — instead of
-        assuming ``iptables`` is correct (which silently misses on legacy hosts)."""
+        assuming ``iptables`` is correct (which silently misses on legacy hosts).
+
+        For Tailscale workspaces we accept anything egressing ``tailscale0`` before
+        the DROPs — mirroring rule #2 of :meth:`_build_egress_rules`. Without it the
+        ``100.64.0.0/10`` DROP would swallow nested containers' queries to Tailscale
+        MagicDNS (``100.100.100.100``, routed out ``tailscale0``), which the
+        workspace's Tailscale-generated ``resolv.conf`` hands them — so nested
+        ``docker build`` / ``apt`` would fail to resolve any mirror."""
         blocked = list(_ALWAYS_BLOCK)
         allowed = lan_subnets or []
         lan_block = [c for c in _LAN_BLOCK if c not in allowed]
@@ -2050,13 +2061,17 @@ class DockerManager:
             '[ -z "$IPT" ] && exit 1',
             "$IPT -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
         ]
+        if tailscale:
+            parts.append("$IPT -A DOCKER-USER -o tailscale0 -j ACCEPT")
         for cidr in allowed:
             parts.append(f"$IPT -A DOCKER-USER -d {cidr} -j ACCEPT")
         for cidr in blocked + lan_block:
             parts.append(f"$IPT -A DOCKER-USER -d {cidr} -j DROP")
         return " ; ".join(parts)
 
-    def _apply_dind_egress_guard(self, ws_id: int, lan_subnets: list[str] | None) -> None:
+    def _apply_dind_egress_guard(
+        self, ws_id: int, lan_subnets: list[str] | None, tailscale: bool = False
+    ) -> None:
         """Extend the egress policy to containers the nested daemon runs.
 
         The per-workspace OUTPUT guard only filters locally-generated traffic;
@@ -2073,7 +2088,7 @@ class DockerManager:
         land in the right table. A helper image (e.g. nft-only netshoot) can miss a
         legacy DOCKER-USER chain entirely and silently leave nested traffic
         unfiltered. Best-effort."""
-        script = self._build_dind_guard_script(lan_subnets)
+        script = self._build_dind_guard_script(lan_subnets, tailscale=tailscale)
         try:
             sidecar = self._client.containers.get(self._dind_sidecar_name(ws_id))
             code, out = sidecar.exec_run(["/bin/sh", "-c", script])

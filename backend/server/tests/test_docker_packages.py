@@ -540,6 +540,22 @@ def test_dind_guard_script_honours_granted_subnets():
     assert "$IPT -A DOCKER-USER -d 192.168.0.0/16 -j DROP" in script
 
 
+def test_dind_guard_script_no_tailscale_accept_by_default():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script([])
+    # Non-Tailscale workspaces get no tailscale0 exemption.
+    assert "tailscale0" not in script
+
+
+def test_dind_guard_script_accepts_tailscale0_before_drops():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script([], tailscale=True)
+    # tailscale0 egress (incl. MagicDNS 100.100.100.100) is accepted...
+    assert "$IPT -A DOCKER-USER -o tailscale0 -j ACCEPT" in script
+    # ...BEFORE the 100.64.0.0/10 DROP that would otherwise swallow MagicDNS.
+    assert script.index("tailscale0") < script.index("100.64.0.0/10")
+
+
 def test_apply_dind_egress_guard_execs_in_sidecar():
     dm = _dm_fake()
     execed = {}
