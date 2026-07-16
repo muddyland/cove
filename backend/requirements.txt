@@ -9,7 +9,7 @@ httpx==0.27.2
 python-multipart==0.0.32
 # Composites the Cove watermark onto project logos to bake per-image PWA icons
 # (server.icons). Self-contained manylinux wheels — no system libs needed.
-Pillow==11.0.0
+Pillow==12.3.0
 # Prebuilt SQLCipher wheels are published for x86_64 only. On other arches
 # (e.g. arm64) there is no wheel, so scope this to x86_64 — the app imports
 # sqlcipher3 lazily and only when COVE_DB_ENCRYPTION_KEY is set (see db.py).
