@@ -5,6 +5,8 @@ monkeypatched to a MagicMock), so creating a workspace schedules a harmless
 background task that never touches a real daemon.
 """
 
+import base64
+
 from server.db import SessionLocal
 from server.models import Workspace
 from server.tests.helpers import (
@@ -740,9 +742,20 @@ def test_workspace_manifest_embeds_logo_as_data_uri(client, fake_docker_manager,
     resp = client.get(f"/api/workspaces/{ws['id']}/manifest.webmanifest")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    icon = body["icons"][0]
-    assert icon["src"].startswith("data:image/png;base64,")
-    assert icon["sizes"] == "1x1"  # read straight from the PNG IHDR header
+    # Primary icon: the logo wrapped in a watermarked SVG. It embeds the logo
+    # (as an <image> data-URL) and the Cove harbor-arch mark.
+    primary = body["icons"][0]
+    assert primary["src"].startswith("data:image/svg+xml;base64,")
+    assert primary["type"] == "image/svg+xml"
+    logo_b64 = base64.b64encode(_PNG_1x1).decode("ascii")
+    svg = base64.b64decode(primary["src"].split(",", 1)[1]).decode("utf-8")
+    assert logo_b64 in svg  # the workspace logo is embedded in the SVG
+    assert "#00f5ff" in svg  # Cove neon-cyan watermark mark is present
+    # Fallback icon: the plain logo as-is, so SVG-incapable targets still get
+    # the workspace's own icon (sizes read straight from the PNG IHDR header).
+    fallback = body["icons"][1]
+    assert fallback["src"].startswith("data:image/png;base64,")
+    assert fallback["sizes"] == "1x1"
 
 
 def test_workspace_manifest_ownership_enforced(client):
