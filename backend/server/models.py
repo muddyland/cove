@@ -2,7 +2,17 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.db import Base
@@ -49,6 +59,11 @@ class WorkspaceImage(Base):
     url_env: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # Project logo URL (from the LinuxServer API project_logo field), for display.
     logo_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # Baked 512x512 PWA icon: the project logo with a small Cove watermark,
+    # composited once at catalog-sync time (see server.icons) and embedded into
+    # this image's per-workspace manifest. NULL until baked (falls back to the
+    # raw logo). Cleared when logo_url changes so the next sync re-bakes it.
+    icon_png: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     workspaces: Mapped[list["Workspace"]] = relationship("Workspace", back_populates="image")

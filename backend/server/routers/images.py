@@ -11,6 +11,7 @@ from server.catalog import (
     linuxserver_base_name,
 )
 from server.deps import AdminUser, CurrentUser, DbSession
+from server.icons import refresh_image_icons
 from server.models import WorkspaceImage
 from server.schemas import ImageCreate, ImageOut, ImageUpdate
 
@@ -22,7 +23,8 @@ def upsert_catalog(db: Session, specs: list[dict]) -> dict:
 
     Matched on docker_image. New rows are inserted. For existing rows, only
     upstream-sourced metadata (logo_url, description) is refreshed — admin edits
-    like name, enabled, internal_port and url_env are preserved. Returns
+    like name, enabled, internal_port and url_env are preserved. A changed logo
+    clears the baked icon so the next icon refresh re-bakes it. Returns
     {"added": n, "updated": m}.
     """
     existing = {row.docker_image: row for row in db.scalars(select(WorkspaceImage)).all()}
@@ -39,6 +41,7 @@ def upsert_catalog(db: Session, specs: list[dict]) -> dict:
         changed = False
         if spec.get("logo_url") and row.logo_url != spec["logo_url"]:
             row.logo_url = spec["logo_url"]
+            row.icon_png = None  # stale watermark — re-baked by refresh_image_icons
             changed = True
         if spec.get("description") and row.description != spec["description"]:
             row.description = spec["description"]
@@ -111,10 +114,14 @@ async def sync_images(user: AdminUser, db: DbSession):
     specs = _build_specs(images_raw)
     result = upsert_catalog(db, specs)
     logos_added = _backfill_logos(db, images_raw)
+    # Bake the watermarked PWA icon for any image missing one (new rows, plus
+    # rows whose logo just changed — upsert cleared their stale icon).
+    icons_baked = await refresh_image_icons(db, only_missing=True)
     total = db.scalar(select(func.count()).select_from(WorkspaceImage))
     return {
         "added": result["added"],
         "updated": result["updated"] + logos_added,
+        "icons_baked": icons_baked,
         "total": total,
     }
 
@@ -150,6 +157,10 @@ async def create_image(body: ImageCreate, user: AdminUser, db: DbSession):
     db.add(image)
     db.commit()
     db.refresh(image)
+    # Bake the watermarked PWA icon from the logo (best-effort, off the launch path).
+    if image.logo_url:
+        await refresh_image_icons(db, only_missing=True)
+        db.refresh(image)
     return image
 
 

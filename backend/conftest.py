@@ -58,6 +58,18 @@ def _clean_db():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_logo_network(monkeypatch):
+    """Never fetch real project logos when baking watermarked icons — icon bakes
+    are a no-op by default so sync/create tests stay hermetic. Tests that exercise
+    baking stub ``server.icons._fetch_logo_bytes`` themselves to return real bytes.
+    """
+    async def _no_fetch(_client, _url):
+        return None
+
+    monkeypatch.setattr("server.icons._fetch_logo_bytes", _no_fetch, raising=False)
+
+
 @pytest.fixture
 def db_session():
     """A SQLAlchemy session bound to the temp DB."""

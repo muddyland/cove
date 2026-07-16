@@ -726,8 +726,33 @@ def test_workspace_manifest_no_logo_uses_fallback_icons(client, fake_docker_mana
     assert not any(s.startswith("data:") for s in srcs)
 
 
-def test_workspace_manifest_embeds_logo_as_data_uri(client, fake_docker_manager, monkeypatch):
+def test_workspace_manifest_uses_baked_watermark_icon(client, fake_docker_manager):
     setup_admin(client)
+    # Seed a pre-baked watermarked icon (what a catalog sync produces).
+    baked = b"\x89PNG\r\n\x1a\n-fake-baked-icon-bytes-"
+    image_id = add_image(
+        name="Brave", image_type="browser", url_env="BRAVE_CLI",
+        logo_url="https://logos.example/brave.png", icon_png=baked,
+    )
+    ws = client.post("/api/workspaces", json={"name": "Brave", "image_id": image_id}).json()
+
+    resp = client.get(f"/api/workspaces/{ws['id']}/manifest.webmanifest")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Single icon: the baked PNG, embedded as a data-URI (a real raster so it
+    # installs everywhere, unlike the earlier SVG overlay).
+    assert len(body["icons"]) == 1
+    icon = body["icons"][0]
+    assert icon["type"] == "image/png"
+    assert icon["sizes"] == "512x512"
+    assert icon["src"] == "data:image/png;base64," + base64.b64encode(baked).decode("ascii")
+
+
+def test_workspace_manifest_falls_back_to_plain_logo_when_not_baked(
+    client, fake_docker_manager, monkeypatch
+):
+    setup_admin(client)
+    # Logo present but not yet baked (icon_png is NULL) -> serve the raw logo.
     image_id = add_image(
         name="Brave", image_type="browser", url_env="BRAVE_CLI",
         logo_url="https://logos.example/brave.png",
@@ -741,21 +766,9 @@ def test_workspace_manifest_embeds_logo_as_data_uri(client, fake_docker_manager,
     monkeypatch.setattr("server.routers.workspaces._fetch_logo", fake_fetch)
     resp = client.get(f"/api/workspaces/{ws['id']}/manifest.webmanifest")
     assert resp.status_code == 200, resp.text
-    body = resp.json()
-    # Primary icon: the logo wrapped in a watermarked SVG. It embeds the logo
-    # (as an <image> data-URL) and the Cove harbor-arch mark.
-    primary = body["icons"][0]
-    assert primary["src"].startswith("data:image/svg+xml;base64,")
-    assert primary["type"] == "image/svg+xml"
-    logo_b64 = base64.b64encode(_PNG_1x1).decode("ascii")
-    svg = base64.b64decode(primary["src"].split(",", 1)[1]).decode("utf-8")
-    assert logo_b64 in svg  # the workspace logo is embedded in the SVG
-    assert "#00f5ff" in svg  # Cove neon-cyan watermark mark is present
-    # Fallback icon: the plain logo as-is, so SVG-incapable targets still get
-    # the workspace's own icon (sizes read straight from the PNG IHDR header).
-    fallback = body["icons"][1]
-    assert fallback["src"].startswith("data:image/png;base64,")
-    assert fallback["sizes"] == "1x1"
+    icon = resp.json()["icons"][0]
+    assert icon["src"].startswith("data:image/png;base64,")
+    assert icon["sizes"] == "1x1"  # read straight from the PNG IHDR header
 
 
 def test_workspace_manifest_ownership_enforced(client):

@@ -217,6 +217,48 @@ def test_create_image_autofetches_logo(client, monkeypatch):
     assert resp.json()["logo_url"] == "https://logo.example/handbrake.png"
 
 
+def _stub_icon_bytes(monkeypatch):
+    """Return a real PNG for logo fetches so icon baking produces an icon."""
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGBA", (100, 100), (10, 160, 200, 255)).save(buf, "PNG")
+    png = buf.getvalue()
+
+    async def _fake(_client, _url):
+        return png
+
+    monkeypatch.setattr("server.icons._fetch_logo_bytes", _fake)
+
+
+def test_sync_bakes_watermarked_icons(client, monkeypatch):
+    """Sync composites a watermarked PWA icon for each image with a logo."""
+    from server.db import SessionLocal
+    from server.models import WorkspaceImage
+
+    token, _ = setup_admin(client)
+    _patch_fetch(monkeypatch, _FAKE_RAW)
+    _stub_icon_bytes(monkeypatch)
+
+    resp = client.post("/api/images/sync", headers=auth_header(token))
+    assert resp.status_code == 200, resp.text
+    # webtop + chromium both carry a project_logo -> both get baked.
+    assert resp.json()["icons_baked"] == 2
+
+    db = SessionLocal()
+    try:
+        for img in db.query(WorkspaceImage).all():
+            assert img.icon_png, f"{img.name} was not baked"
+    finally:
+        db.close()
+
+    # Re-sync is idempotent: icons already baked, nothing re-baked.
+    again = client.post("/api/images/sync", headers=auth_header(token))
+    assert again.json()["icons_baked"] == 0
+
+
 # ── Delete: image-only vs entry+image ─────────────────────────────────────────
 
 def test_delete_image_only_keeps_entry(client, fake_docker_manager):

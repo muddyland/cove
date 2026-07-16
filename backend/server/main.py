@@ -141,28 +141,34 @@ async def lifespan(app: FastAPI):
 
 
 async def _seed_catalog_if_empty():
-    """On first run with an empty catalog, auto-populate from LinuxServer.
+    """On first run with an empty catalog, auto-populate from LinuxServer, then
+    bake any missing watermarked PWA icons.
 
     Best-effort: runs as a background task so a slow/unreachable API never
-    blocks startup, and failures are logged rather than fatal.
+    blocks startup, and failures are logged rather than fatal. The icon bake
+    also runs for existing catalogs so upgraders (whose images predate the
+    watermark) get icons without a manual re-sync.
     """
     from sqlalchemy import func, select
 
     from server.catalog import fetch_catalog
     from server.db import SessionLocal
+    from server.icons import refresh_image_icons
     from server.models import WorkspaceImage
     from server.routers.images import upsert_catalog
 
     db = SessionLocal()
     try:
         count = db.scalar(select(func.count()).select_from(WorkspaceImage))
-        if count and count > 0:
-            return
-        specs = await fetch_catalog()
-        result = upsert_catalog(db, specs)
-        logger.info(
-            "Seeded %d workspace images from LinuxServer on first run", result["added"]
-        )
+        if not count:
+            specs = await fetch_catalog()
+            result = upsert_catalog(db, specs)
+            logger.info(
+                "Seeded %d workspace images from LinuxServer on first run", result["added"]
+            )
+        baked = await refresh_image_icons(db, only_missing=True)
+        if baked:
+            logger.info("Baked %d watermarked workspace icons", baked)
     except Exception as exc:
         logger.warning("Catalog auto-seed skipped: %s", exc)
     finally:

@@ -524,49 +524,6 @@ def _png_size(data: bytes) -> "str | None":
     return None
 
 
-# The Cove brand mark, flattened for use as a watermark. Coordinates match
-# favicon.svg's viewBox (190 55 300 300) so it's the same harbor-arch glyph the
-# app uses; favicon.svg's neon-blur filter and the tiny browser-window details
-# are dropped because they turn to mush at watermark size.
-_COVE_MARK = (
-    '<path d="M215,105 Q215,75 245,75 L435,75 Q465,75 465,105 L465,310 '
-    'Q465,335 440,335 L240,335 Q215,335 215,310 Z" fill="#00f5ff"/>'
-    '<path d="M240,115 Q240,95 258,95 L422,95 Q440,95 440,115 L440,310 '
-    'Q440,330 422,330 L258,330 Q240,330 240,310 Z" fill="#06060f"/>'
-    '<rect x="268" y="155" width="145" height="78" rx="6" fill="#0c5a6b"/>'
-    '<rect x="262" y="175" width="155" height="80" rx="6" fill="#13a0bd"/>'
-    '<rect x="256" y="195" width="165" height="82" rx="6" fill="#0bb6cf"/>'
-    '<circle cx="403" cy="207" r="16" fill="#ff00aa"/>'
-    '<line x1="396" y1="200" x2="410" y2="214" stroke="#06060f" stroke-width="4" stroke-linecap="round"/>'
-    '<line x1="410" y1="200" x2="396" y2="214" stroke="#06060f" stroke-width="4" stroke-linecap="round"/>'
-)
-
-
-def _watermarked_icon_svg(logo_data: bytes, ctype: str) -> str:
-    """A 512x512 SVG: the workspace logo with a small Cove badge in the corner.
-
-    Composed purely as markup (no image library) — the logo is embedded as an
-    ``<image>`` and the Cove mark sits in a dark cyan-ringed disc in the
-    bottom-right, so an installed workspace PWA reads as a Cove app at a glance
-    over any logo. Returned as SVG text to embed as a data-URL manifest icon.
-    """
-    b64 = base64.b64encode(logo_data).decode("ascii")
-    return (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">'
-        # Workspace logo, aspect-preserved and centered.
-        f'<image href="data:{ctype};base64,{b64}" x="0" y="0" width="512" height="512" '
-        'preserveAspectRatio="xMidYMid meet"/>'
-        # Watermark disc — dark fill + cyan ring keeps the mark legible on any logo.
-        '<circle cx="400" cy="400" r="92" fill="#06060f" stroke="#00f5ff" stroke-width="6"/>'
-        '<clipPath id="cove-wm"><circle cx="400" cy="400" r="89"/></clipPath>'
-        '<g clip-path="url(#cove-wm)">'
-        '<svg x="330" y="330" width="140" height="140" viewBox="190 55 300 300" '
-        f'preserveAspectRatio="xMidYMid meet">{_COVE_MARK}</svg>'
-        '</g>'
-        '</svg>'
-    )
-
-
 @router.get("/{ws_id}/manifest.webmanifest")
 async def workspace_manifest(ws_id: int, user: CurrentUser, db: DbSession):
     """A per-workspace PWA manifest so each workspace installs as its own app.
@@ -580,40 +537,32 @@ async def workspace_manifest(ws_id: int, user: CurrentUser, db: DbSession):
     name = ws.name or "Workspace"
 
     icons: list[dict] = []
-    logo = (
-        await _fetch_logo(ws.image.logo_url)
-        if ws.image and ws.image.logo_url
-        else None
-    )
-    if logo:
-        data, ctype = logo
-        # Primary: the workspace logo carrying a small Cove watermark, as a
-        # scalable SVG so it stays crisp at any launcher icon size.
-        svg = _watermarked_icon_svg(data, ctype)
-        svg_b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    img = ws.image
+    if img and img.icon_png:
+        # Primary: the baked icon — the project logo with a Cove watermark,
+        # composited at catalog-sync time (server.icons). A real raster PNG, so
+        # it installs everywhere.
+        b64 = base64.b64encode(img.icon_png).decode("ascii")
         icons.append(
-            {
-                "src": f"data:image/svg+xml;base64,{svg_b64}",
-                "sizes": "any",
-                "type": "image/svg+xml",
-                "purpose": "any",
-            }
-        )
-        # Fallback: the plain logo as-is. Listed after the SVG so SVG-capable
-        # browsers prefer the watermarked mark; targets that don't rasterize SVG
-        # icons still get the workspace's own logo (just without the watermark).
-        b64 = base64.b64encode(data).decode("ascii")
-        sizes = (_png_size(data) if ctype == "image/png" else None) or "any"
-        icons.append(
-            {"src": f"data:{ctype};base64,{b64}", "sizes": sizes, "type": ctype, "purpose": "any"}
+            {"src": f"data:image/png;base64,{b64}", "sizes": "512x512", "type": "image/png", "purpose": "any"}
         )
     else:
-        # No logo — fall back to the Cove icon so the app is still installable.
-        icons.append({"src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"})
-        icons.append({"src": "/pwa-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"})
-        icons.append(
-            {"src": "/pwa-maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
-        )
+        # Not baked yet (e.g. sync hasn't run, or a logo Pillow couldn't decode).
+        # Fall back to the plain logo, then to the bundled Cove icon.
+        logo = await _fetch_logo(img.logo_url) if img and img.logo_url else None
+        if logo:
+            data, ctype = logo
+            b64 = base64.b64encode(data).decode("ascii")
+            sizes = (_png_size(data) if ctype == "image/png" else None) or "any"
+            icons.append(
+                {"src": f"data:{ctype};base64,{b64}", "sizes": sizes, "type": ctype, "purpose": "any"}
+            )
+        else:
+            icons.append({"src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"})
+            icons.append({"src": "/pwa-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"})
+            icons.append(
+                {"src": "/pwa-maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+            )
 
     manifest = {
         "id": f"/workspace/{ws.id}",

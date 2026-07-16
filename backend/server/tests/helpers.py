@@ -51,7 +51,8 @@ def set_workspace_status(ws_id, status):
 
 
 def add_image(name="Ubuntu Desktop", docker_image="lscr.io/linuxserver/webtop:latest",
-              image_type="desktop", url_env=None, internal_port=3000, logo_url=None):
+              image_type="desktop", url_env=None, internal_port=3000, logo_url=None,
+              icon_png=None):
     """Insert a WorkspaceImage directly into the DB and return its id.
 
     Used because the create-image API path currently rejects the "browser"
@@ -66,6 +67,7 @@ def add_image(name="Ubuntu Desktop", docker_image="lscr.io/linuxserver/webtop:la
             url_env=url_env,
             internal_port=internal_port,
             logo_url=logo_url,
+            icon_png=icon_png,
             enabled=True,
         )
         db.add(img)
