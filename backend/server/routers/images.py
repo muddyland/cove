@@ -21,24 +21,34 @@ router = APIRouter(prefix="/api/images", tags=["images"])
 def upsert_catalog(db: Session, specs: list[dict]) -> dict:
     """Insert new catalog images and backfill upstream metadata on existing ones.
 
-    Matched on docker_image. New rows are inserted. For existing rows, only
-    upstream-sourced metadata (logo_url, description) is refreshed — admin edits
-    like name, enabled, internal_port and url_env are preserved. A changed logo
-    clears the baked icon so the next icon refresh re-bakes it. Returns
-    {"added": n, "updated": m}.
+    Matched on docker_image, then falling back to name (which is UNIQUE): if the
+    upstream ref/tag for a curated image changed, the existing row is found by
+    name and its docker_image is updated in place — without the name fallback,
+    the insert would hit "UNIQUE constraint failed: workspace_image.name". New
+    rows are inserted. For existing rows only upstream-sourced metadata
+    (docker_image, logo_url, description) is refreshed — admin edits like name,
+    enabled, internal_port and url_env are preserved. A changed logo clears the
+    baked icon so the next icon refresh re-bakes it. Returns {"added", "updated"}.
     """
-    existing = {row.docker_image: row for row in db.scalars(select(WorkspaceImage)).all()}
+    rows = db.scalars(select(WorkspaceImage)).all()
+    by_docker = {row.docker_image: row for row in rows}
+    by_name = {row.name: row for row in rows}
     added = 0
     updated = 0
     for spec in specs:
-        row = existing.get(spec["docker_image"])
+        row = by_docker.get(spec["docker_image"]) or by_name.get(spec["name"])
         if row is None:
             row = WorkspaceImage(**spec)
             db.add(row)
-            existing[spec["docker_image"]] = row
+            by_docker[spec["docker_image"]] = row
+            by_name[spec["name"]] = row
             added += 1
             continue
         changed = False
+        # Matched by name with a stale ref -> adopt the catalog's current ref.
+        if row.docker_image != spec["docker_image"]:
+            row.docker_image = spec["docker_image"]
+            changed = True
         if spec.get("logo_url") and row.logo_url != spec["logo_url"]:
             row.logo_url = spec["logo_url"]
             row.icon_png = None  # stale watermark — re-baked by refresh_image_icons

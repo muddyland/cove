@@ -153,6 +153,48 @@ def test_sync_backfills_logo_on_existing_rows(client, monkeypatch):
         db.close()
 
 
+def test_sync_reconciles_existing_name_with_changed_ref(client, monkeypatch):
+    """A curated image whose upstream ref/tag changed must be matched by name and
+    updated in place — not re-inserted (which would violate the UNIQUE name)."""
+    from sqlalchemy import select as _select
+
+    from server.db import SessionLocal
+    from server.models import WorkspaceImage
+
+    token, _ = setup_admin(client)
+
+    # Pre-existing 'Chromium' row with a stale docker_image (no tag). The catalog
+    # spec uses '...:latest', so it won't match by docker_image.
+    db = SessionLocal()
+    try:
+        db.add(
+            WorkspaceImage(
+                name="Chromium",
+                docker_image="lscr.io/linuxserver/chromium",
+                image_type="browser",
+                url_env="CHROME_CLI",
+                internal_port=3000,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    _patch_fetch(monkeypatch, _FAKE_RAW)
+    resp = client.post("/api/images/sync", headers=auth_header(token))
+    assert resp.status_code == 200, resp.text  # no IntegrityError / 500
+
+    db = SessionLocal()
+    try:
+        chromiums = db.scalars(
+            _select(WorkspaceImage).where(WorkspaceImage.name == "Chromium")
+        ).all()
+        assert len(chromiums) == 1  # reconciled, not duplicated
+        assert chromiums[0].docker_image == "lscr.io/linuxserver/chromium:latest"
+    finally:
+        db.close()
+
+
 def test_sync_backfills_logo_on_non_catalog_image(client, monkeypatch):
     """A manually-added lsio image outside the curated catalog (e.g. handbrake)
     still gets its project logo backfilled on sync."""
