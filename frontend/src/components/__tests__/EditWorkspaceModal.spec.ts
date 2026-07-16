@@ -12,7 +12,7 @@ vi.mock('@/api/users', () => ({
 }))
 
 vi.mock('@/api/workspaces', () => ({
-  workspacesApi: { lanPolicy: vi.fn(), gpuPolicy: vi.fn() },
+  workspacesApi: { lanPolicy: vi.fn(), gpuPolicy: vi.fn(), dockerPolicy: vi.fn() },
 }))
 
 const updateMock = vi.fn()
@@ -74,6 +74,7 @@ const desktopWs: Workspace = {
   pixelflux_wayland: true,
   clear_browser_lock: false,
   gpu_accel: false,
+  use_docker: false,
 }
 
 describe('EditWorkspaceModal', () => {
@@ -83,6 +84,7 @@ describe('EditWorkspaceModal', () => {
     vi.mocked(prootApi.list).mockResolvedValue({ apps: ['firefox'] })
     vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
     vi.mocked(workspacesApi.gpuPolicy).mockResolvedValue({ enabled: false })
+    vi.mocked(workspacesApi.dockerPolicy).mockResolvedValue({ enabled: false })
     updateMock.mockResolvedValue({ ...desktopWs })
   })
 

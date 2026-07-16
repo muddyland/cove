@@ -423,3 +423,167 @@ def test_target_url_lan_ips_multiple():
     from server.docker_manager import _target_url_lan_ips
     ips = _target_url_lan_ips("https://10.0.0.5/ https://8.8.8.8/ https://192.168.1.9:3000/")
     assert ips == ["10.0.0.5/32", "192.168.1.9/32"]  # public host excluded
+
+
+# ── Docker-in-Docker sidecar ───────────────────────────────────────────────────
+
+def test_apply_docker_cli_sets_host_and_mount():
+    env: dict = {}
+    volumes: dict = {}
+    DockerManager._apply_docker_cli(env, volumes)
+    assert env["DOCKER_HOST"] == "tcp://127.0.0.1:2375"
+    key = _helper_script_path("install-docker-cli.sh")
+    assert key.endswith("/.cove-scripts/install-docker-cli.sh")
+    assert volumes[key] == {
+        "bind": "/custom-cont-init.d/96-install-docker-cli.sh",
+        "mode": "ro",
+    }
+
+
+def test_dind_names():
+    assert DockerManager._dind_sidecar_name(7) == "cove-dind-7"
+    assert DockerManager._dind_volume_name(7) == "cove-dind-state-7"
+
+
+class _FakeContainers:
+    def __init__(self):
+        self.run_calls = []
+        self.removed = []
+        self.existing = {}  # name -> fake container
+
+    def get(self, name):
+        import docker.errors
+        if name in self.existing:
+            return self.existing[name]
+        raise docker.errors.NotFound(name)
+
+    def run(self, image, **kwargs):
+        self.run_calls.append((image, kwargs))
+        return SimpleNamespace(id="deadbeef" * 5)
+
+
+class _FakeVolumes:
+    def __init__(self):
+        self.created = []
+        self.removed = []
+        self.existing = set()
+
+    def get(self, name):
+        import docker.errors
+        if name in self.existing:
+            return SimpleNamespace(remove=lambda force=False: self.removed.append(name))
+        raise docker.errors.NotFound(name)
+
+    def create(self, name):
+        self.created.append(name)
+
+
+def _dm_fake():
+    dm = DockerManager.__new__(DockerManager)
+    dm._client = SimpleNamespace(
+        containers=_FakeContainers(),
+        volumes=_FakeVolumes(),
+        images=SimpleNamespace(pull=lambda repo, tag=None: None),
+    )
+    dm._pulling = set()
+    dm._pulling_lock = __import__("threading").Lock()
+    return dm
+
+
+def test_launch_dind_sidecar_privileged_loopback_and_volume():
+    dm = _dm_fake()
+    ws = SimpleNamespace(id=7)
+    dm._launch_dind_sidecar(ws, "cove-ws-7", "docker:dind")
+
+    calls = dm._client.containers.run_calls
+    assert len(calls) == 1
+    image, kwargs = calls[0]
+    assert image == "docker:dind"
+    assert kwargs["name"] == "cove-dind-7"
+    assert kwargs["privileged"] is True
+    # Joins the netns owner (workspace container), NOT a bridge network.
+    assert kwargs["network_mode"] == "container:cove-ws-7"
+    assert "network" not in kwargs
+    # No Traefik labels — it rides the workspace's routing.
+    assert "labels" not in kwargs
+    # Daemon bound to loopback only, TLS disabled. The command starts with the
+    # literal "dockerd" so the entrypoint doesn't inject its own 0.0.0.0:2375.
+    assert kwargs["environment"]["DOCKER_TLS_CERTDIR"] == ""
+    assert kwargs["command"][0] == "dockerd"
+    assert "--host=tcp://127.0.0.1:2375" in kwargs["command"]
+    assert not any("0.0.0.0" in c for c in kwargs["command"])
+    # State volume mounted at the daemon's data dir + created.
+    assert kwargs["volumes"] == {"cove-dind-state-7": {"bind": "/var/lib/docker", "mode": "rw"}}
+    assert "cove-dind-state-7" in dm._client.volumes.created
+
+
+def test_dind_guard_script_blocks_internal_ranges():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script([])
+    # Every metadata/Docker-internal + private/CGNAT range is dropped in DOCKER-USER.
+    for cidr in ("169.254.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16", "100.64.0.0/10"):
+        assert f"$IPT -A DOCKER-USER -d {cidr} -j DROP" in script
+    # Established/related return traffic is accepted; it waits for the chain first.
+    assert "ESTABLISHED,RELATED -j ACCEPT" in script
+    assert "DOCKER-USER" in script and "date +%s" in script
+    # Probes each backend and uses the one whose FORWARD jumps to DOCKER-USER.
+    assert "iptables-legacy iptables-nft iptables" in script
+
+
+def test_dind_guard_script_honours_granted_subnets():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script(["10.0.0.0/8"])
+    # A granted subnet is ACCEPTed and NOT dropped (it's removed from the block set).
+    assert "$IPT -A DOCKER-USER -d 10.0.0.0/8 -j ACCEPT" in script
+    assert "$IPT -A DOCKER-USER -d 10.0.0.0/8 -j DROP" not in script
+    # Other private ranges stay blocked.
+    assert "$IPT -A DOCKER-USER -d 192.168.0.0/16 -j DROP" in script
+
+
+def test_dind_guard_script_no_tailscale_accept_by_default():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script([])
+    # Non-Tailscale workspaces get no tailscale0 exemption.
+    assert "tailscale0" not in script
+
+
+def test_dind_guard_script_accepts_tailscale0_before_drops():
+    dm = _dm_fake()
+    script = dm._build_dind_guard_script([], tailscale=True)
+    # tailscale0 egress (incl. MagicDNS 100.100.100.100) is accepted...
+    assert "$IPT -A DOCKER-USER -o tailscale0 -j ACCEPT" in script
+    # ...BEFORE the 100.64.0.0/10 DROP that would otherwise swallow MagicDNS.
+    assert script.index("tailscale0") < script.index("100.64.0.0/10")
+
+
+def test_apply_dind_egress_guard_execs_in_sidecar():
+    dm = _dm_fake()
+    execed = {}
+    dm._client.containers.existing["cove-dind-7"] = SimpleNamespace(
+        exec_run=lambda cmd: (execed.setdefault("cmd", cmd), (0, b""))[1],
+    )
+    dm._apply_dind_egress_guard(7, [])
+    # Runs inside the dind sidecar (correct iptables backend), not a helper image.
+    assert execed["cmd"][0] == "/bin/sh"
+    assert "DOCKER-USER" in execed["cmd"][2]
+
+
+def test_cleanup_docker_sidecar_removes_container_and_volume():
+    dm = _dm_fake()
+    removed_containers = []
+    dm._client.containers.existing["cove-dind-7"] = SimpleNamespace(
+        stop=lambda timeout=10: None,
+        remove=lambda force=False: removed_containers.append("cove-dind-7"),
+    )
+    dm._client.volumes.existing.add("cove-dind-state-7")
+
+    dm._cleanup_docker_sidecar(7)
+    assert removed_containers == ["cove-dind-7"]
+    assert dm._client.volumes.removed == ["cove-dind-state-7"]
+
+
+def test_cleanup_docker_sidecar_noop_when_absent():
+    dm = _dm_fake()
+    # Neither container nor volume exists — must not raise.
+    dm._cleanup_docker_sidecar(7)
+    assert dm._client.volumes.removed == []

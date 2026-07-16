@@ -25,6 +25,8 @@ def test_settings_defaults(client):
         "workspace_gpu_accel": False,
         "workspace_gpu_render_node": "/dev/dri/renderD128",
         "workspace_gpu_render_gid": 992,
+        "workspace_docker": False,
+        "dind_image": "docker:dind",
     }
 
 
@@ -47,6 +49,8 @@ def test_settings_put_updates_both(client):
         "workspace_gpu_accel": False,
         "workspace_gpu_render_node": "/dev/dri/renderD128",
         "workspace_gpu_render_gid": 992,
+        "workspace_docker": False,
+        "dind_image": "docker:dind",
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()
@@ -89,6 +93,25 @@ def test_settings_gpu_accel(client):
     got = client.get("/api/admin/settings").json()
     assert got["workspace_cpu_limit"] == 0.0
     assert got["workspace_memory_limit_mb"] == 0
+
+
+def test_settings_docker_toggle(client):
+    setup_admin(client)
+    # Off by default.
+    assert client.get("/api/admin/settings").json()["workspace_docker"] is False
+    resp = client.put(
+        "/api/admin/settings",
+        json={"workspace_docker": True, "dind_image": "docker:27-dind"},
+    )
+    assert resp.status_code == 200, resp.text
+    got = resp.json()
+    assert got["workspace_docker"] is True
+    assert got["dind_image"] == "docker:27-dind"
+    # Blank image falls back to the default rather than persisting empty.
+    resp = client.put("/api/admin/settings", json={"dind_image": "  "})
+    assert resp.json()["dind_image"] == "docker:dind"
+    # Persisted across requests.
+    assert client.get("/api/admin/settings").json()["workspace_docker"] is True
 
 
 def test_settings_lan_subnets_validates_and_normalizes(client):

@@ -20,9 +20,11 @@ from server.db import SessionLocal
 from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
 from server.security import decrypt_secret
 from server.settings_store import (
+    get_dind_image,
     get_gluetun_image,
     get_tailscale_image,
     get_workspace_cpu_limit,
+    get_workspace_docker,
     get_workspace_gpu_accel,
     get_workspace_gpu_render_gid,
     get_workspace_gpu_render_node,
@@ -47,6 +49,7 @@ _HELPER_SCRIPTS = (
     "install-cove-theme.sh",
     "clear-browser-lock.sh",
     "fix-mate-xsettings.sh",
+    "install-docker-cli.sh",
 )
 
 
@@ -787,6 +790,16 @@ class DockerManager:
         """Name of the per-workspace Gluetun VPN sidecar container."""
         return f"cove-gluetun-{ws_id}"
 
+    @staticmethod
+    def _dind_sidecar_name(ws_id: int) -> str:
+        """Name of the per-workspace Docker-in-Docker daemon sidecar container."""
+        return f"cove-dind-{ws_id}"
+
+    @staticmethod
+    def _dind_volume_name(ws_id: int) -> str:
+        """Name of the per-workspace DinD state volume (its /var/lib/docker)."""
+        return f"cove-dind-state-{ws_id}"
+
     def _ensure_ws_network(self, network_name: str) -> None:
         """Create the per-workspace bridge network if it does not exist.
 
@@ -862,6 +875,29 @@ class DockerManager:
         except (docker.errors.NotFound, docker.errors.APIError):
             pass
         _remove_gluetun_config(ws_id)
+
+    def _cleanup_docker_sidecar(self, ws_id: int) -> None:
+        """Stop+remove the DinD sidecar and its state volume. Best-effort.
+
+        The volume holds the nested daemon's /var/lib/docker (its images/layers/
+        containers); it is per-workspace and, like the container itself, is
+        discarded on halt — a workspace's nested Docker state does not survive a
+        stop, matching how the workspace container is removed on halt."""
+        try:
+            sidecar = self._client.containers.get(self._dind_sidecar_name(ws_id))
+            try:
+                sidecar.stop(timeout=10)
+            except docker.errors.APIError:
+                pass
+            sidecar.remove(force=True)
+        except (docker.errors.NotFound, docker.errors.APIError):
+            pass
+
+        try:
+            vol = self._client.volumes.get(self._dind_volume_name(ws_id))
+            vol.remove(force=True)
+        except (docker.errors.NotFound, docker.errors.APIError):
+            pass
 
     def _wait_for_ready(self, container, timeout: int = 120) -> bool:
         """Docker-API-only readiness check (no workspace network access).
@@ -1012,6 +1048,12 @@ class DockerManager:
                     "group_add": [str(get_workspace_gpu_render_gid(db))],
                 }
 
+            # Docker-in-Docker: only when the admin master toggle is on AND this
+            # workspace opted in. Point the workspace at its (about-to-be-launched)
+            # DinD sidecar and install the docker client; the sidecar itself is
+            # started after the container is up (it needs to join its netns).
+            docker_enabled = ws.use_docker and get_workspace_docker(db)
+
             volumes = {}
             if mount_source:
                 volumes[mount_source] = {"bind": "/config", "mode": "rw"}
@@ -1030,6 +1072,8 @@ class DockerManager:
             self._apply_cove_theme(volumes)
             self._apply_mate_theme_fix(volumes)
             self._apply_browser_lock_cleanup(ws, volumes)
+            if docker_enabled:
+                self._apply_docker_cli(env, volumes)
 
             labels = self._build_traefik_labels(ws, image, net_name)
 
@@ -1174,6 +1218,26 @@ class DockerManager:
                 # fight it), so both are skipped here.
                 if not ws.use_tailscale and not ws.use_gluetun:
                     self._apply_egress_guard(ws.id, lan_subnets=lan_subnets)
+
+                # DinD sidecar: launched now that the netns owner (the workspace
+                # container, or its routing sidecar) is running and the egress
+                # guard is in place. Best-effort — a DinD failure leaves the
+                # workspace usable (docker commands will just report no daemon).
+                if docker_enabled:
+                    netns_owner = (
+                        self._ts_sidecar_name(ws.id)
+                        if ws.use_tailscale
+                        else self._gluetun_sidecar_name(ws.id)
+                        if ws.use_gluetun
+                        else container_name
+                    )
+                    try:
+                        self._launch_dind_sidecar(ws, netns_owner, get_dind_image(db))
+                        self._apply_dind_egress_guard(
+                            ws.id, lan_subnets, tailscale=ws.use_tailscale
+                        )
+                    except Exception as exc:
+                        logger.warning("DinD setup failed for workspace %s: %s", ws.id, exc)
 
                 started = self._wait_for_ready(container)
                 ws = db.get(Workspace, ws_id)  # re-fetch after wait
@@ -1372,6 +1436,13 @@ class DockerManager:
             ws = db.get(Workspace, ws_id)
             if not ws:
                 return
+            # Tear the DinD sidecar down FIRST: for plain workspaces it shares the
+            # workspace container's netns, so the container can't be removed while
+            # the sidecar is still attached.
+            try:
+                self._cleanup_docker_sidecar(ws.id)
+            except Exception as exc:
+                logger.warning("DinD cleanup failed for workspace %s: %s", ws.id, exc)
             if ws.container_id:
                 try:
                     container = self._client.containers.get(ws.container_id)
@@ -1417,6 +1488,9 @@ class DockerManager:
             # not docker.errors.APIError) can't be purged: the cleanup raises
             # before db.delete and the row reappears on the next poll.
             try:
+                # DinD sidecar first — it shares the workspace container's netns,
+                # so the container can't be removed while it is still attached.
+                self._cleanup_docker_sidecar(ws.id)
                 if ws.container_id:
                     try:
                         container = self._client.containers.get(ws.container_id)
@@ -1892,6 +1966,141 @@ class DockerManager:
             network=net_name,
         )
         logger.info("Started Gluetun sidecar %s for workspace %s (%s)", sidecar_name, ws.id, vpn_type)
+
+    @staticmethod
+    def _apply_docker_cli(env: dict, volumes: dict) -> None:
+        """Point the workspace at its DinD sidecar and install the docker client.
+
+        Sets DOCKER_HOST to the sidecar's loopback daemon (shared netns) and mounts
+        an init script that fetches the static ``docker`` CLI if the image lacks
+        one. Mutates both dicts in place. Mirrors ``_apply_proot_apps`` /
+        ``_apply_appimages``."""
+        env["DOCKER_HOST"] = "tcp://127.0.0.1:2375"
+        volumes[_helper_script_path("install-docker-cli.sh")] = {
+            "bind": "/custom-cont-init.d/96-install-docker-cli.sh",
+            "mode": "ro",
+        }
+
+    def _launch_dind_sidecar(self, ws: Workspace, netns_owner: str, dind_image: str) -> None:
+        """Launch the per-workspace Docker-in-Docker daemon sidecar.
+
+        The sidecar runs a PRIVILEGED nested ``dockerd`` and joins the workspace's
+        (already egress-guarded) network namespace, exposing the daemon ONLY on
+        127.0.0.1:2375 inside that shared netns — never on the workspace bridge, so
+        Traefik and other containers can't reach it, and TLS is unnecessary. The
+        host Docker socket is never mounted; a breakout stays confined to this
+        throwaway sidecar. State lives in a per-workspace volume discarded on halt.
+        """
+        sidecar_name = self._dind_sidecar_name(ws.id)
+        volume_name = self._dind_volume_name(ws.id)
+
+        # Remove any stale sidecar with the same name.
+        try:
+            old = self._client.containers.get(sidecar_name)
+            old.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
+        self._ensure_named_volume(volume_name)
+
+        self._pull_image(dind_image)
+        self._client.containers.run(
+            dind_image,
+            name=sidecar_name,
+            detach=True,
+            privileged=True,
+            network_mode=f"container:{netns_owner}",
+            # DOCKER_TLS_CERTDIR="" disables the entrypoint's TLS setup. The
+            # command MUST start with the literal "dockerd": the dind entrypoint
+            # only injects its own "--host=tcp://0.0.0.0:2375" default when the
+            # command is empty or starts with a flag — passing "dockerd" explicitly
+            # skips that (which would otherwise collide on port 2375) while still
+            # running its tini/iptables/cgroup setup. We then bind ONLY the loopback
+            # of the shared netns (plus the unix socket) so nothing off-box — not
+            # even Traefik on the workspace bridge — can reach the daemon.
+            environment={"DOCKER_TLS_CERTDIR": ""},
+            command=[
+                "dockerd",
+                "--host=unix:///var/run/docker.sock",
+                "--host=tcp://127.0.0.1:2375",
+                "--tls=false",
+                "--storage-driver=overlay2",
+            ],
+            volumes={volume_name: {"bind": "/var/lib/docker", "mode": "rw"}},
+            shm_size="1g",
+        )
+        logger.info("Started DinD sidecar %s for workspace %s", sidecar_name, ws.id)
+
+    def _build_dind_guard_script(
+        self, lan_subnets: list[str] | None, tailscale: bool = False
+    ) -> str:
+        """The DOCKER-USER iptables script for :meth:`_apply_dind_egress_guard`.
+
+        dockerd may wire DOCKER-USER into either the legacy or nft iptables backend
+        (it picks based on the netns's existing rules), and that isn't always the
+        backend the sidecar's default ``iptables`` points at. So we probe each
+        candidate binary and use the one whose FORWARD chain actually jumps to
+        DOCKER-USER — the definitive signal of the live backend — instead of
+        assuming ``iptables`` is correct (which silently misses on legacy hosts).
+
+        For Tailscale workspaces we accept anything egressing ``tailscale0`` before
+        the DROPs — mirroring rule #2 of :meth:`_build_egress_rules`. Without it the
+        ``100.64.0.0/10`` DROP would swallow nested containers' queries to Tailscale
+        MagicDNS (``100.100.100.100``, routed out ``tailscale0``), which the
+        workspace's Tailscale-generated ``resolv.conf`` hands them — so nested
+        ``docker build`` / ``apt`` would fail to resolve any mirror."""
+        blocked = list(_ALWAYS_BLOCK)
+        allowed = lan_subnets or []
+        lan_block = [c for c in _LAN_BLOCK if c not in allowed]
+        parts = [
+            'end=$(($(date +%s)+30)); IPT=""',
+            "while [ $(date +%s) -lt $end ]; do "
+            "for c in iptables-legacy iptables-nft iptables; do "
+            "$c -S FORWARD 2>/dev/null | grep -q DOCKER-USER && { IPT=$c; break; }; "
+            "done; [ -n \"$IPT\" ] && break; sleep 2; done",
+            '[ -z "$IPT" ] && exit 1',
+            "$IPT -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
+        ]
+        if tailscale:
+            parts.append("$IPT -A DOCKER-USER -o tailscale0 -j ACCEPT")
+        for cidr in allowed:
+            parts.append(f"$IPT -A DOCKER-USER -d {cidr} -j ACCEPT")
+        for cidr in blocked + lan_block:
+            parts.append(f"$IPT -A DOCKER-USER -d {cidr} -j DROP")
+        return " ; ".join(parts)
+
+    def _apply_dind_egress_guard(
+        self, ws_id: int, lan_subnets: list[str] | None, tailscale: bool = False
+    ) -> None:
+        """Extend the egress policy to containers the nested daemon runs.
+
+        The per-workspace OUTPUT guard only filters locally-generated traffic;
+        containers started inside the DinD daemon egress via the kernel FORWARD
+        path, which OUTPUT rules don't see. Docker reserves the DOCKER-USER chain
+        for exactly this — admin filters evaluated before its own FORWARD rules.
+        We wait for the nested daemon to create that chain, then drop the same
+        metadata/Docker-internal/LAN ranges (honouring admin-granted subnets), so
+        nested containers inherit the workspace's egress policy.
+
+        Runs *inside the DinD sidecar itself* rather than a helper container: the
+        sidecar's ``iptables`` is auto-selected (legacy vs nft) by its entrypoint
+        to match the backend ``dockerd`` used for DOCKER-USER, so the rules always
+        land in the right table. A helper image (e.g. nft-only netshoot) can miss a
+        legacy DOCKER-USER chain entirely and silently leave nested traffic
+        unfiltered. Best-effort."""
+        script = self._build_dind_guard_script(lan_subnets, tailscale=tailscale)
+        try:
+            sidecar = self._client.containers.get(self._dind_sidecar_name(ws_id))
+            code, out = sidecar.exec_run(["/bin/sh", "-c", script])
+            if code == 0:
+                logger.info("Applied DinD egress guard for workspace %s", ws_id)
+            else:
+                logger.warning(
+                    "DinD egress guard exit %s for workspace %s: %s",
+                    code, ws_id, (out or b"").decode(errors="ignore")[:300],
+                )
+        except Exception as exc:
+            logger.warning("DinD egress guard failed for workspace %s: %s", ws_id, exc)
 
     @staticmethod
     def _build_hardening(*, no_new_privileges_setting: bool, allow_sudo: bool) -> dict:

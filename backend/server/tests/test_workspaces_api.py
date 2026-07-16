@@ -170,6 +170,58 @@ def test_create_with_tailscale_without_config_400(client):
     assert "Tailscale not configured" in resp.text
 
 
+def test_docker_policy_reflects_master_toggle(client):
+    setup_admin(client)
+    # Off by default.
+    resp = client.get("/api/workspaces/docker-policy")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"enabled": False}
+    # Admin turns it on.
+    client.put("/api/admin/settings", json={"workspace_docker": True})
+    assert client.get("/api/workspaces/docker-policy").json() == {"enabled": True}
+
+
+def test_create_with_docker_rejected_when_master_toggle_off(client):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "dev", "image_id": image_id, "use_docker": True},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "Docker-in-Docker is disabled" in resp.text
+
+
+def test_create_with_docker_accepted_when_enabled(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    client.put("/api/admin/settings", json={"workspace_docker": True})
+
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "dev", "image_id": image_id, "use_docker": True},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["use_docker"] is True
+    fake_docker_manager.launch_workspace.assert_called_once_with(body["id"])
+
+
+def test_create_with_docker_rejected_on_remote_zone(client):
+    # DinD is local-zone only: remote agents refuse privileged creates, so opting
+    # in on a non-zero zone is rejected up front (before the zone even resolves).
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    client.put("/api/admin/settings", json={"workspace_docker": True})
+
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "dev", "image_id": image_id, "use_docker": True, "zone_id": 1},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "only available on the local zone" in resp.text
+
+
 def test_create_with_tailscale_configured_accepted(client, fake_docker_manager):
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")

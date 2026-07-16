@@ -35,6 +35,8 @@ const baseSettings: AppSettings = {
   workspace_gpu_accel: false,
   workspace_gpu_render_node: '/dev/dri/renderD128',
   workspace_gpu_render_gid: 992,
+  workspace_docker: false,
+  dind_image: 'docker:dind',
 }
 
 describe('AdminSettingsView', () => {
@@ -71,6 +73,8 @@ describe('AdminSettingsView', () => {
       workspace_gpu_accel: false,
       workspace_gpu_render_node: '/dev/dri/renderD128',
       workspace_gpu_render_gid: 992,
+      workspace_docker: false,
+      dind_image: 'docker:dind',
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()

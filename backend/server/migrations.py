@@ -165,9 +165,14 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0033_workspace_gpu_accel",
         "ALTER TABLE workspace ADD COLUMN gpu_accel BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Opt-in: per-workspace Docker-in-Docker sidecar (dev container support).
+    (
+        "0034_workspace_use_docker",
+        "ALTER TABLE workspace ADD COLUMN use_docker BOOLEAN NOT NULL DEFAULT 0",
+    ),
     # workspace_image.icon_png: baked PWA icon (logo + Cove watermark) for upgraders.
     (
-        "0034_workspace_image_icon_png",
+        "0035_workspace_image_icon_png",
         "ALTER TABLE workspace_image ADD COLUMN icon_png BLOB",
     ),
 ]

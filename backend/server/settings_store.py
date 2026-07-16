@@ -27,6 +27,9 @@ KEY_WORKSPACE_MEMORY_LIMIT_MB = "workspace_memory_limit_mb"
 KEY_WORKSPACE_GPU_ACCEL = "workspace_gpu_accel"
 KEY_WORKSPACE_GPU_RENDER_NODE = "workspace_gpu_render_node"
 KEY_WORKSPACE_GPU_RENDER_GID = "workspace_gpu_render_gid"
+# Docker-in-Docker master toggle + the dind image the per-workspace sidecar runs.
+KEY_WORKSPACE_DOCKER = "workspace_docker"
+KEY_DIND_IMAGE = "dind_image"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
@@ -52,6 +55,12 @@ DEFAULT_WORKSPACE_MEMORY_LIMIT_MB = 0
 DEFAULT_WORKSPACE_GPU_ACCEL = False
 DEFAULT_WORKSPACE_GPU_RENDER_NODE = "/dev/dri/renderD128"
 DEFAULT_WORKSPACE_GPU_RENDER_GID = 992
+# Docker-in-Docker off by default: it runs a PRIVILEGED nested daemon (dev-grade
+# isolation, not a hard multi-tenant boundary), so an admin must opt the whole
+# deployment in before any workspace can enable it. The host Docker socket is
+# never exposed regardless — see docker_manager._launch_dind_sidecar.
+DEFAULT_WORKSPACE_DOCKER = False
+DEFAULT_DIND_IMAGE = "docker:dind"
 
 
 def get_setting(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -84,6 +93,14 @@ def get_gluetun_image(db: Session) -> str:
 
 def get_workspace_lan_access(db: Session) -> bool:
     return _to_bool(get_setting(db, KEY_WORKSPACE_LAN_ACCESS), DEFAULT_WORKSPACE_LAN_ACCESS)
+
+
+def get_workspace_docker(db: Session) -> bool:
+    return _to_bool(get_setting(db, KEY_WORKSPACE_DOCKER), DEFAULT_WORKSPACE_DOCKER)
+
+
+def get_dind_image(db: Session) -> str:
+    return get_setting(db, KEY_DIND_IMAGE, DEFAULT_DIND_IMAGE) or DEFAULT_DIND_IMAGE
 
 
 def parse_lan_subnets(raw: Optional[str]) -> list[str]:
@@ -182,4 +199,6 @@ def get_all(db: Session) -> dict:
         "workspace_gpu_accel": get_workspace_gpu_accel(db),
         "workspace_gpu_render_node": get_workspace_gpu_render_node(db),
         "workspace_gpu_render_gid": get_workspace_gpu_render_gid(db),
+        "workspace_docker": get_workspace_docker(db),
+        "dind_image": get_dind_image(db),
     }

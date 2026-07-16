@@ -127,6 +127,20 @@
         </p>
       </template>
 
+      <template v-if="dockerEnabled">
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.use_docker" />
+          <span>Docker (dev)</span>
+        </label>
+        <p class="hint">
+          Run <code>docker</code> inside this workspace (build/run containers) via a
+          per-workspace nested daemon. Runs a <strong>privileged</strong> sidecar —
+          it can't reach the host Docker or other workspaces, but grant it only to
+          trusted users. Nested images and state are discarded when the workspace is
+          halted.
+        </p>
+      </template>
+
       <div class="form-group">
         <label>Install packages</label>
         <input v-model="form.install_packages" type="text" placeholder="git vim htop" />
@@ -178,6 +192,7 @@ export interface WorkspaceOptionsForm {
   pixelflux_wayland: boolean
   clear_browser_lock: boolean
   gpu_accel: boolean
+  use_docker: boolean
   install_packages: string
   proot_apps: string[]
   appimages: string
@@ -190,6 +205,8 @@ const props = defineProps<{
   gluetunReady?: boolean
   // Only offer the GPU toggle when an admin has enabled acceleration.
   gpuEnabled?: boolean
+  // Only offer the Docker (dev) toggle when an admin has enabled Docker-in-Docker.
+  dockerEnabled?: boolean
 }>()
 
 const networkSummary = computed(() => {
