@@ -42,33 +42,42 @@ def _badge():
 def bake_watermarked_icon(logo_bytes: bytes) -> "bytes | None":
     """Composite the Cove badge onto a project logo -> a 512x512 PNG.
 
-    Returns None if the logo can't be decoded (e.g. an SVG), so the caller leaves
-    the image un-watermarked rather than dropping its icon entirely.
+    Returns None (never raises) if anything goes wrong — Pillow missing, an
+    undecodable logo (e.g. an SVG), a decode/encode error — so the caller leaves
+    the image un-watermarked rather than failing the whole sync.
     """
-    from PIL import Image, UnidentifiedImageError
+    try:
+        from PIL import Image
+    except ImportError:
+        logger.warning(
+            "Pillow is not installed — workspace icons will not be watermarked. "
+            "Rebuild the image / reinstall requirements.txt to enable it."
+        )
+        return None
 
     try:
         logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
-    except (UnidentifiedImageError, OSError, ValueError):
+
+        canvas = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), (0, 0, 0, 0))
+        # Fit the logo into the icon, aspect-preserved and centered.
+        fitted = logo.copy()
+        fitted.thumbnail((_ICON_SIZE, _ICON_SIZE), Image.LANCZOS)
+        canvas.alpha_composite(
+            fitted,
+            ((_ICON_SIZE - fitted.width) // 2, (_ICON_SIZE - fitted.height) // 2),
+        )
+        # Cove badge in the bottom-right corner.
+        d = round(_ICON_SIZE * _BADGE_FRACTION)
+        badge = _badge().resize((d, d), Image.LANCZOS)
+        offset = _ICON_SIZE - d - _BADGE_MARGIN
+        canvas.alpha_composite(badge, (offset, offset))
+
+        out = io.BytesIO()
+        canvas.save(out, "PNG", optimize=True)
+        return out.getvalue()
+    except Exception as exc:
+        logger.warning("Could not bake watermarked icon: %s", exc)
         return None
-
-    canvas = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), (0, 0, 0, 0))
-    # Fit the logo into the icon, aspect-preserved and centered.
-    fitted = logo.copy()
-    fitted.thumbnail((_ICON_SIZE, _ICON_SIZE), Image.LANCZOS)
-    canvas.alpha_composite(
-        fitted,
-        ((_ICON_SIZE - fitted.width) // 2, (_ICON_SIZE - fitted.height) // 2),
-    )
-    # Cove badge in the bottom-right corner.
-    d = round(_ICON_SIZE * _BADGE_FRACTION)
-    badge = _badge().resize((d, d), Image.LANCZOS)
-    offset = _ICON_SIZE - d - _BADGE_MARGIN
-    canvas.alpha_composite(badge, (offset, offset))
-
-    out = io.BytesIO()
-    canvas.save(out, "PNG", optimize=True)
-    return out.getvalue()
 
 
 async def _fetch_logo_bytes(client: httpx.AsyncClient, url: str) -> "bytes | None":
@@ -93,8 +102,9 @@ async def refresh_image_icons(db, *, only_missing: bool = True) -> int:
 
     ``only_missing`` (the default, and the sync path) bakes just rows without an
     icon yet — new images, and ones whose ``icon_png`` was cleared because their
-    logo changed. Best-effort per image; the caller need not pre-check. Commits
-    and returns the number of icons baked.
+    logo changed. Best-effort and fully defensive: a per-image failure is logged
+    and skipped, and the call never raises, so icon baking can never fail the
+    caller (e.g. an admin sync). Commits and returns the number of icons baked.
     """
     from sqlalchemy import select
 
@@ -107,15 +117,23 @@ async def refresh_image_icons(db, *, only_missing: bool = True) -> int:
         return 0
 
     baked = 0
-    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
-        for row in rows:
-            data = await _fetch_logo_bytes(client, row.logo_url)
-            if not data:
-                continue
-            icon = bake_watermarked_icon(data)
-            if icon:
-                row.icon_png = icon
-                baked += 1
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            for row in rows:
+                try:
+                    data = await _fetch_logo_bytes(client, row.logo_url)
+                    if not data:
+                        continue
+                    icon = bake_watermarked_icon(data)
+                    if icon:
+                        row.icon_png = icon
+                        baked += 1
+                except Exception as exc:  # one bad image must not abort the batch
+                    logger.warning("Icon refresh failed for %r: %s", row.name, exc)
+    except Exception as exc:
+        logger.warning("Icon refresh pass failed: %s", exc)
+
     if baked:
         db.commit()
+    logger.info("Baked %d/%d workspace icons", baked, len(rows))
     return baked

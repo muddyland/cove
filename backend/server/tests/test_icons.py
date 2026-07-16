@@ -61,3 +61,24 @@ async def test_refresh_image_icons_bakes_missing_and_skips_baked(monkeypatch):
         assert done.icon_png == b"already-baked"  # untouched
     finally:
         db.close()
+
+
+async def test_refresh_image_icons_never_raises_on_bake_failure(monkeypatch):
+    """A bake blowing up (e.g. Pillow missing) must be swallowed, not surface as a
+    500 from the admin sync that calls this."""
+    async def _fake_fetch(_client, _url):
+        return b"logo-bytes"
+
+    def _boom(_logo):
+        raise RuntimeError("pillow exploded")
+
+    monkeypatch.setattr("server.icons._fetch_logo_bytes", _fake_fetch)
+    monkeypatch.setattr("server.icons.bake_watermarked_icon", _boom)
+    add_image(name="X", logo_url="https://logo.example/x.png")
+
+    db = SessionLocal()
+    try:
+        baked = await refresh_image_icons(db, only_missing=True)  # must not raise
+        assert baked == 0
+    finally:
+        db.close()
