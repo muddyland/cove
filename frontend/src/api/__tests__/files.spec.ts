@@ -69,7 +69,9 @@ describe('filesApi', () => {
         fakeXhr.onload()
       },
     }
-    vi.stubGlobal('XMLHttpRequest', vi.fn(() => fakeXhr))
+    // vitest 4 only lets a mock be used with `new` when its implementation is a
+    // function/class (not an arrow) — a constructor returning an object yields it.
+    vi.stubGlobal('XMLHttpRequest', vi.fn(function () { return fakeXhr }))
 
     const file = new File(['hi'], 'hi.txt', { type: 'text/plain' })
     const progress: number[] = []
