@@ -69,7 +69,11 @@ build:image:
   tags: [saas-linux-small-amd64]
   image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:24.0.5
   services:
-    - ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:24.0.5-dind
+    # Explicit alias: GitLab derives a service's hostname from its image name, so
+    # the dependency-proxy prefix would otherwise change it away from "docker" and
+    # `docker info` would wait forever for a host that never comes up.
+    - name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:24.0.5-dind
+      alias: docker
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
