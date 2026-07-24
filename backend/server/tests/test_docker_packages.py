@@ -52,12 +52,33 @@ def test_parse_stats_computes_cpu_and_mem():
         },
     }
     out = _parse_stats(raw)
-    # cpu_delta/system_delta = 1000/10000 = 0.1, * 4 cpus * 100 = 40%
-    assert out["cpu_pct"] == 40.0
+    # cpu_delta/system_delta = 1000/10000 = 0.1 -> 10% of the WHOLE host
+    # (whole-machine share; deliberately NOT multiplied by the 4 online CPUs).
+    assert out["cpu_pct"] == 10.0
     # 600MB usage - 100MB cache = 500MB used
     assert out["mem_used"] == 500 * 1024 * 1024
     assert out["mem_limit"] == 1024 * 1024 * 1024
     assert out["mem_pct"] == round(500 / 1024 * 100, 1)
+
+
+def test_parse_stats_clamps_cpu_to_100():
+    """A sampling race where the container delta briefly exceeds the system delta
+    must not report >100% — the whole-machine gauge is bounded at 100."""
+    raw = {
+        "cpu_stats": {
+            "cpu_usage": {"total_usage": 16_000},
+            "system_cpu_usage": 20_000,
+            "online_cpus": 8,
+        },
+        "precpu_stats": {
+            "cpu_usage": {"total_usage": 1_000},
+            "system_cpu_usage": 10_000,
+        },
+        "memory_stats": {"usage": 1024, "limit": 2048, "stats": {}},
+    }
+    out = _parse_stats(raw)
+    # cpu_delta/system_delta = 15000/10000 = 1.5 -> 150% raw, clamped to 100.
+    assert out["cpu_pct"] == 100.0
 
 
 def test_parse_stats_handles_zero_system_delta():

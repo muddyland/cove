@@ -136,8 +136,9 @@ encode (GPU off) can genuinely be the smoother choice.
 
 A running workspace's toolbar has a **gauge** icon next to the **Online** badge.
 Click it for a live **CPU** and **memory** readout (usage vs. the container's
-limit), refreshed every few seconds. CPU can exceed 100% across cores. Admins can
-also cap per-workspace CPU/memory in Administration → Settings.
+limit), refreshed every few seconds. CPU is shown as the container's share of
+the whole host, on a 0-100% scale. Admins can also cap per-workspace CPU/memory
+in Administration → Settings.
 
 ## Lifecycle
 

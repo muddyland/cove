@@ -22,7 +22,7 @@
           <div class="meter"><span class="fill" :class="band(stat.mem_pct)" :style="{ width: barWidth(stat.mem_pct) }" /></div>
         </div>
 
-        <p class="hint">Live container usage, refreshed every few seconds. CPU can exceed 100% across cores.</p>
+        <p class="hint">Live container usage, refreshed every few seconds. CPU is the container's share of the whole host (0-100%).</p>
       </template>
       <p v-else class="hint collecting">Collecting usage…</p>
     </div>

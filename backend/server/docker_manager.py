@@ -430,8 +430,13 @@ def _parse_stats(raw: dict) -> dict | None:
         precpu = raw["precpu_stats"]
         cpu_delta = cpu["cpu_usage"]["total_usage"] - precpu["cpu_usage"]["total_usage"]
         system_delta = cpu.get("system_cpu_usage", 0) - precpu.get("system_cpu_usage", 0)
-        online = cpu.get("online_cpus") or len(cpu["cpu_usage"].get("percpu_usage") or []) or 1
-        cpu_pct = (cpu_delta / system_delta) * online * 100.0 if system_delta > 0 else 0.0
+        # ``system_cpu_usage`` already spans every host core, so cpu_delta/system_delta
+        # is the container's share of the WHOLE machine — a 0-100% figure (one full
+        # core of 8 reads ~12.5%, all cores ~100%). This is deliberately NOT the
+        # per-core-summed number (which multiplies by online CPUs and can hit
+        # online*100%). Clamp to guard against sampling races nudging it past 100.
+        cpu_pct = (cpu_delta / system_delta) * 100.0 if system_delta > 0 else 0.0
+        cpu_pct = max(0.0, min(cpu_pct, 100.0))
 
         mem = raw["memory_stats"]
         usage = mem.get("usage", 0)
