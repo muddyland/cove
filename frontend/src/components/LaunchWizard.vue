@@ -47,7 +47,9 @@
           </span>
           <span class="card-body">
             <span class="card-name">{{ img.name }}</span>
-            <span class="card-type" :class="img.image_type">{{ img.image_type }}</span>
+            <span class="card-type" :class="img.image_type">
+              <component :is="typeIcon(img.image_type)" :size="11" />{{ img.image_type }}
+            </span>
             <span v-if="img.description" class="card-desc">{{ img.description }}</span>
           </span>
         </button>
@@ -97,27 +99,46 @@
       <p v-if="!urlCapable" class="hint ready-note">Ready to launch — or customize networking &amp; apps below.</p>
     </section>
 
-    <!-- Step 3: Advanced (network + apps) — reuses the existing field groups for now -->
-    <section v-else-if="step === 'advanced'" class="wizard-step form">
-      <WorkspaceOptionsFields
+    <!-- Step 3: Network -->
+    <section v-else-if="step === 'network'" class="wizard-step form">
+      <NetworkFields
         :form="form"
         :lan-policy="lanPolicy"
         :gluetun-ready="gluetunReady"
+        :tailscale-ready="tailscaleReady"
+        :dns-error="dnsErr"
+      />
+    </section>
+
+    <!-- Step 4: Access (permissions + streaming) -->
+    <section v-else-if="step === 'access'" class="wizard-step form">
+      <AccessFields
+        :form="form"
         :gpu-enabled="gpuPolicy.enabled"
+        :show-browser-lock="urlCapable"
+      />
+    </section>
+
+    <!-- Step 5: Apps -->
+    <section v-else-if="step === 'apps'" class="wizard-step form">
+      <AppsFields
+        :form="form"
         :docker-enabled="dockerPolicy.enabled && form.zone_id === 0"
+        :pkg-error="pkgErr"
+        :app-image-error="appImageErr"
       />
     </section>
 
     <!-- Step 4: Review -->
     <section v-else-if="step === 'review'" class="wizard-step">
       <dl class="review">
-        <div><dt>Image</dt><dd>{{ selectedImage?.name }} <span class="muted">({{ selectedImage?.image_type }})</span></dd></div>
-        <div><dt>Name</dt><dd>{{ form.name || '—' }}</dd></div>
-        <div v-if="zonesStore.hasRemote"><dt>Zone</dt><dd>{{ zoneName }}</dd></div>
-        <div v-if="urlCapable && form.target_url.trim()"><dt>URL(s)</dt><dd>{{ form.target_url.trim() }}</dd></div>
-        <div><dt>Network</dt><dd>{{ networkSummary }}</dd></div>
-        <div><dt>Access</dt><dd>{{ accessSummary }}</dd></div>
-        <div v-if="appsSummary"><dt>Apps</dt><dd>{{ appsSummary }}</dd></div>
+        <div><dt><component :is="typeIcon(selectedImage?.image_type)" :size="12" />Image</dt><dd>{{ selectedImage?.name }} <span class="muted">({{ selectedImage?.image_type }})</span></dd></div>
+        <div><dt><Tag :size="12" />Name</dt><dd>{{ form.name || '—' }}</dd></div>
+        <div v-if="zonesStore.hasRemote"><dt><Server :size="12" />Zone</dt><dd>{{ zoneName }}</dd></div>
+        <div v-if="urlCapable && form.target_url.trim()"><dt><Link2 :size="12" />URL(s)</dt><dd>{{ form.target_url.trim() }}</dd></div>
+        <div><dt><Network :size="12" />Network</dt><dd>{{ networkSummary }}</dd></div>
+        <div><dt><ShieldCheck :size="12" />Access</dt><dd>{{ accessSummary }}</dd></div>
+        <div v-if="appsSummary"><dt><Package :size="12" />Apps</dt><dd>{{ appsSummary }}</dd></div>
       </dl>
       <p class="hint">SSH key injection and Wayland streaming are on by default. You can change these under Customize.</p>
     </section>
@@ -132,10 +153,20 @@
         <NeonButton type="button" variant="primary" :disabled="!form.image_id" @click="goNext">Next</NeonButton>
       </template>
       <template v-else-if="step === 'basics'">
-        <NeonButton type="button" variant="secondary" @click="goToAdvanced">Customize →</NeonButton>
+        <NeonButton type="button" variant="secondary" @click="goToNetwork">Customize →</NeonButton>
         <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
       </template>
-      <template v-else-if="step === 'advanced'">
+      <template v-else-if="step === 'network'">
+        <NeonButton type="button" variant="secondary" @click="step = 'access'">Next: Access →</NeonButton>
+        <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
+      </template>
+      <template v-else-if="step === 'access'">
+        <NeonButton type="button" variant="secondary" @click="step = appsStepAvailable ? 'apps' : 'review'">
+          {{ appsStepAvailable ? 'Next: Apps →' : 'Review →' }}
+        </NeonButton>
+        <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
+      </template>
+      <template v-else-if="step === 'apps'">
         <NeonButton type="button" variant="secondary" @click="step = 'review'">Review →</NeonButton>
         <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
       </template>
@@ -150,7 +181,11 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
-import WorkspaceOptionsFields from './WorkspaceOptionsFields.vue'
+import NetworkFields from './NetworkFields.vue'
+import AccessFields from './AccessFields.vue'
+import AppsFields from './AppsFields.vue'
+import { Monitor, Globe, AppWindow, Link2, Tag, Server, Network, ShieldCheck, Package } from 'lucide-vue-next'
+import { dnsError, packagesError, appImagesError } from '@/utils/workspaceForm'
 import { imagesApi } from '@/api/images'
 import { workspacesApi } from '@/api/workspaces'
 import { usersApi } from '@/api/users'
@@ -162,18 +197,25 @@ import type { DockerPolicy, GpuPolicy, ImageType, LanPolicy, WorkspaceImage } fr
 
 const open = defineModel<boolean>({ default: false })
 
-type StepKey = 'choose' | 'basics' | 'advanced' | 'review'
+type StepKey = 'choose' | 'basics' | 'network' | 'access' | 'apps' | 'review'
 const STEPS: { key: StepKey; label: string }[] = [
   { key: 'choose', label: 'Choose' },
   { key: 'basics', label: 'Set up' },
-  { key: 'advanced', label: 'Customize' },
+  { key: 'network', label: 'Network' },
+  { key: 'access', label: 'Access' },
+  { key: 'apps', label: 'Apps' },
   { key: 'review', label: 'Review' },
 ]
 const step = ref<StepKey>('choose')
-// The linear "early launch" path skips Customize; it only appears once the user
-// opts into it, so the progress rail shows either 3 or 4 steps.
+// The linear "early launch" path skips the Network/Access/Apps steps; they only
+// appear once the user opts into Customize, so the rail shows either 3 or 6 steps.
+const CUSTOMIZE_STEPS = new Set<StepKey>(['network', 'access', 'apps'])
 const visibleSteps = computed(() =>
-  STEPS.filter(s => s.key !== 'advanced' || customizing.value),
+  STEPS.filter(s => {
+    if (CUSTOMIZE_STEPS.has(s.key) && !customizing.value) return false
+    if (s.key === 'apps' && !appsStepAvailable.value) return false
+    return true
+  }),
 )
 const customizing = ref(false)
 function stepIndex(k: StepKey) {
@@ -185,6 +227,7 @@ const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
 const gpuPolicy = ref<GpuPolicy>({ enabled: false })
 const dockerPolicy = ref<DockerPolicy>({ enabled: false })
 const gluetunReady = ref(false)
+const tailscaleReady = ref(false)
 const loading = ref(false)
 const error = ref('')
 const submitted = ref(false)
@@ -232,12 +275,24 @@ const form = reactive({
   appimages: '',
 })
 
+function typeIcon(t?: ImageType) {
+  return t === 'browser' ? Globe : t === 'app' ? AppWindow : t === 'link' ? Link2 : Monitor
+}
+
 const selectedImage = computed(() => images.value.find(i => i.id === form.image_id))
 const urlCapable = computed(() =>
   !!selectedImage.value && (!!selectedImage.value.url_env || selectedImage.value.image_type === 'link'),
 )
 const urlRequired = computed(() => selectedImage.value?.image_type === 'link')
 const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
+// Package installs / proot-apps / AppImages / Docker-in-Docker only apply to a
+// full desktop — hide the whole Apps step for browser, link, and single-app images.
+const appsStepAvailable = computed(() => selectedImage.value?.image_type === 'desktop')
+
+// Inline validation (owned here so it's available whichever step is mounted).
+const dnsErr = computed(() => dnsError(form.custom_dns, form.dns_servers))
+const pkgErr = computed(() => packagesError(form.install_packages))
+const appImageErr = computed(() => appImagesError(form.appimages))
 
 const filteredImages = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -290,14 +345,18 @@ function selectImage(img: WorkspaceImage) {
 function goNext() {
   if (step.value === 'choose' && form.image_id) step.value = 'basics'
 }
-function goToAdvanced() {
+function goToNetwork() {
   customizing.value = true
-  step.value = 'advanced'
+  step.value = 'network'
 }
 function goBack() {
   if (step.value === 'basics') step.value = 'choose'
-  else if (step.value === 'advanced') step.value = 'basics'
-  else if (step.value === 'review') step.value = customizing.value ? 'advanced' : 'basics'
+  else if (step.value === 'network') step.value = 'basics'
+  else if (step.value === 'access') step.value = 'network'
+  else if (step.value === 'apps') step.value = 'access'
+  else if (step.value === 'review') {
+    step.value = customizing.value ? (appsStepAvailable.value ? 'apps' : 'access') : 'basics'
+  }
 }
 
 onMounted(async () => {
@@ -323,6 +382,12 @@ onMounted(async () => {
     gluetunReady.value = g.enabled && g.has_config
   } catch {
     // Non-fatal: Gluetun toggle just stays hidden.
+  }
+  try {
+    const ts = await usersApi.getTailscale()
+    tailscaleReady.value = ts.has_auth_key
+  } catch {
+    // Non-fatal: the Tailscale segment just stays disabled.
   }
 })
 
@@ -350,6 +415,10 @@ async function launch() {
   // bounce off a server 422; jump the user to the offending step.
   if (!form.image_id) { step.value = 'choose'; return }
   if (!form.name.trim() || (urlRequired.value && !form.target_url.trim())) { step.value = 'basics'; return }
+  if (dnsErr.value) { customizing.value = true; step.value = 'network'; return }
+  if (appsStepAvailable.value && (pkgErr.value || appImageErr.value)) {
+    customizing.value = true; step.value = 'apps'; return
+  }
   error.value = ''
   loading.value = true
   try {
@@ -461,6 +530,7 @@ async function launch() {
   overflow: hidden; overflow-wrap: anywhere;
 }
 .card-type {
+  display: inline-flex; align-items: center; gap: 4px;
   font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--text-muted); width: fit-content;
 }
@@ -476,7 +546,10 @@ async function launch() {
 /* Review */
 .review { display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; }
 .review > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: baseline; }
-.review dt { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin: 0; }
+.review dt {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin: 0;
+}
 .review dd { margin: 0; font-size: 13px; color: var(--text); word-break: break-word; }
 .review .muted, .muted { color: var(--text-muted); }
 

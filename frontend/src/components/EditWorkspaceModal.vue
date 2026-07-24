@@ -33,7 +33,27 @@
         <span>Ephemeral (no saved data — wiped when halted)</span>
       </label>
 
-      <WorkspaceOptionsFields :form="form" :lan-policy="lanPolicy" :gluetun-ready="gluetunReady" :gpu-enabled="gpuPolicy.enabled" :docker-enabled="dockerPolicy.enabled && ws.zone_id === 0" />
+      <div class="section-head">Network</div>
+      <NetworkFields
+        :form="form"
+        :lan-policy="lanPolicy"
+        :gluetun-ready="gluetunReady"
+        :tailscale-ready="tailscaleReady"
+        :dns-error="dnsErr"
+      />
+
+      <div class="section-head">Access</div>
+      <AccessFields :form="form" :gpu-enabled="gpuPolicy.enabled" :show-browser-lock="urlCapable" />
+
+      <template v-if="appsAvailable">
+        <div class="section-head">Apps</div>
+        <AppsFields
+          :form="form"
+          :docker-enabled="dockerPolicy.enabled && ws.zone_id === 0"
+          :pkg-error="pkgErr"
+          :app-image-error="appImageErr"
+        />
+      </template>
 
       <p class="apply-note">Changes apply the next time the workspace boots.</p>
 
@@ -50,7 +70,10 @@
 import { reactive, computed, ref, watch, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
-import WorkspaceOptionsFields from './WorkspaceOptionsFields.vue'
+import NetworkFields from './NetworkFields.vue'
+import AccessFields from './AccessFields.vue'
+import AppsFields from './AppsFields.vue'
+import { dnsError, packagesError, appImagesError } from '@/utils/workspaceForm'
 import { workspacesApi } from '@/api/workspaces'
 import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
@@ -66,6 +89,7 @@ const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
 const gpuPolicy = ref<GpuPolicy>({ enabled: false })
 const dockerPolicy = ref<DockerPolicy>({ enabled: false })
 const gluetunReady = ref(false)
+const tailscaleReady = ref(false)
 const store = useWorkspacesStore()
 const ui = useUiStore()
 
@@ -73,6 +97,12 @@ const urlCapable = computed(
   () => props.ws.workspace_type === 'browser' || props.ws.workspace_type === 'link',
 )
 const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
+// Apps (packages/proot/AppImages/Docker) only apply to full desktops.
+const appsAvailable = computed(() => props.ws.workspace_type === 'desktop')
+
+const dnsErr = computed(() => dnsError(form.custom_dns, form.dns_servers))
+const pkgErr = computed(() => packagesError(form.install_packages))
+const appImageErr = computed(() => appImagesError(form.appimages))
 
 const form = reactive({
   name: '',
@@ -153,6 +183,12 @@ async function loadLanPolicy() {
   } catch {
     // Non-fatal: Gluetun toggle just stays hidden.
   }
+  try {
+    const ts = await usersApi.getTailscale()
+    tailscaleReady.value = ts.has_auth_key
+  } catch {
+    // Non-fatal: the Tailscale segment just stays disabled.
+  }
 }
 
 // Re-seed the form from the workspace whenever the modal is opened.
@@ -171,6 +207,11 @@ onMounted(() => {
 
 async function handleSubmit() {
   error.value = ''
+  const invalid = dnsErr.value || (appsAvailable.value && (pkgErr.value || appImageErr.value))
+  if (invalid) {
+    error.value = invalid
+    return
+  }
   loading.value = true
   try {
     await store.update(props.ws.id, {
@@ -223,6 +264,10 @@ async function handleSubmit() {
 }
 .checkbox-row input { width: auto; margin: 0; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
+.section-head {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.5px; color: var(--accent);
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
 .hint { font-size: 11px; line-height: 1.5; color: var(--text-muted); margin: 0; }
 .apply-note {
   font-size: 11px;

@@ -158,8 +158,8 @@ def _backfill_logos(db: Session, images_raw: list[dict]) -> int:
 
 @router.post("", response_model=ImageOut, status_code=status.HTTP_201_CREATED)
 async def create_image(body: ImageCreate, user: AdminUser, db: DbSession):
-    if body.image_type not in ("desktop", "link", "app"):
-        raise HTTPException(status_code=400, detail="image_type must be 'desktop', 'app', or 'link'")
+    if body.image_type not in ("desktop", "app", "browser"):
+        raise HTTPException(status_code=400, detail="image_type must be 'desktop', 'app', or 'browser'")
     image = WorkspaceImage(**body.model_dump())
     # Auto-fetch the project logo for LinuxServer images when none was provided.
     if not image.logo_url:
