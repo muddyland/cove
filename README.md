@@ -23,14 +23,19 @@
 ---
 
 Cove lets you spin up full Linux desktops (XFCE, KDE, MATE, i3 on
-Ubuntu/Debian/Arch/Fedora/Alpine), security desktops (Kali), and single-app
-browsers (Chromium, Brave, Firefox) **on demand** — then open them in any browser
-tab, with no client to install. It's built for home labs: simple to run, low
-overhead, multi-user.
+Ubuntu/Debian/Arch/Fedora/Alpine), security desktops (Kali), single applications
+(VSCodium, Blender, GIMP, Krita, and more), and single-app browsers (Chromium,
+Brave, Firefox) **on demand** — then open them in any browser tab, with no client
+to install. It's built for home labs: simple to run, low overhead, multi-user.
 
 **[Quick start](#quick-start) · [Features](#features) · [Documentation](docs/) · [Architecture deep-dive](ARCH.md)**
 
 ## Screenshots
+
+<p align="center">
+  <img src="screenshots/wizard.png" width="66%" alt="The step-by-step New Workspace wizard — an image gallery of desktops, apps, and browsers with a type filter" /><br />
+  <sub><b>New Workspace wizard</b> — pick a desktop, app, or browser from the gallery, then launch (network / access / apps steps are optional)</sub>
+</p>
 
 <table>
   <tr>
