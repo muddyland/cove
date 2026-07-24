@@ -32,16 +32,11 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 
 ## Screenshots
 
-<p align="center">
-  <img src="screenshots/wizard.png" width="66%" alt="The step-by-step New Workspace wizard — an image gallery of desktops, apps, and browsers with a type filter" /><br />
-  <sub><b>New Workspace wizard</b> — pick a desktop, app, or browser from the gallery, then launch (network / access / apps steps are optional)</sub>
-</p>
-
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/dashboard.png" alt="The Cove dashboard — the workspace grid with live CPU/memory stats" /><br />
-      <sub><b>Dashboard</b> — workspace grid with live CPU/memory stats</sub>
+      <img src="screenshots/wizard.png" alt="The step-by-step New Workspace wizard — an image gallery of desktops, apps, and browsers with a type filter" /><br />
+      <sub><b>New Workspace wizard</b> — pick a desktop, app, or browser from the gallery, then launch</sub>
     </td>
     <td width="50%" align="center">
       <img src="screenshots/desktop-stream.png" alt="A full Linux desktop streamed to the browser" /><br />
@@ -50,8 +45,8 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/browser-stream.png" alt="A single-app browser workspace streamed to the browser" /><br />
-      <sub><b>Browsers</b> — kiosk-style Chromium/Brave/Firefox</sub>
+      <img src="screenshots/dashboard.png" alt="The Cove dashboard — the workspace grid with a running node and live CPU/memory stats" /><br />
+      <sub><b>Dashboard</b> — workspace grid with live CPU/memory stats</sub>
     </td>
     <td width="50%" align="center">
       <img src="screenshots/image-registry.png" alt="The admin image registry listing available workspace images" /><br />
