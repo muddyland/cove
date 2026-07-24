@@ -85,6 +85,7 @@
           <label>Type</label>
           <select v-model="form.image_type">
             <option value="desktop">Desktop</option>
+            <option value="app">App (single Selkies GUI app)</option>
             <option value="link">Link (browser)</option>
           </select>
         </div>

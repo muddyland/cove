@@ -1015,6 +1015,13 @@ class DockerManager:
                 "PUID": str(settings.workspace_puid),
                 "PGID": str(settings.workspace_pgid),
                 "TZ": settings.workspace_tz,
+                # LinuxServer Selkies images default their web GUI to different
+                # HTTP ports per image — webtops/browsers use 3000, but some apps
+                # (e.g. Calibre) default to 8080. Force the image to serve on the
+                # port Cove probes + routes to (internal_port) via the baseimage's
+                # CUSTOM_PORT override, so readiness detection and the Traefik
+                # target are correct regardless of the image's own default.
+                "CUSTOM_PORT": str(image.internal_port),
             }
             # Browser images open a startup URL via their native CLI env var
             # (e.g. CHROME_CLI / BRAVE_CLI / FIREFOX_CLI), which is appended to the

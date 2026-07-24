@@ -49,6 +49,13 @@ def _fake_images():
             "tags": [{"tag": "latest", "desc": "Edge"}],
         },
         {
+            "name": "vscodium",
+            "deprecated": False,
+            "description": "VSCodium editor",
+            "project_logo": "https://logo.example/vscodium.png",
+            "tags": [{"tag": "latest", "desc": "VSCodium"}],
+        },
+        {
             # Should be skipped entirely.
             "name": "deprecated-thing",
             "deprecated": True,
@@ -79,6 +86,16 @@ def test_desktop_specs_shape():
     webtops = [s for s in desktops if "webtop" in s["docker_image"]]
     for s in webtops:
         assert s["docker_image"].startswith("lscr.io/linuxserver/webtop:")
+
+
+def test_app_specs_shape():
+    """Curated Selkies single-app images -> image_type 'app', no URL, port 3000."""
+    specs = catalog._build_specs(_fake_images())
+    by_name = {s["name"]: s for s in specs}
+    assert by_name["VSCodium"]["image_type"] == "app"
+    assert by_name["VSCodium"]["url_env"] is None
+    assert by_name["VSCodium"]["internal_port"] == catalog.WEBTOP_PORT
+    assert by_name["VSCodium"]["docker_image"] == "lscr.io/linuxserver/vscodium:latest"
 
 
 def test_browser_specs_have_correct_url_env():

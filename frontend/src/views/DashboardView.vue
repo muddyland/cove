@@ -42,7 +42,7 @@
       </section>
     </template>
 
-    <LaunchModal v-model="showLaunch" />
+    <LaunchWizard v-model="showLaunch" />
     <OpenWebsiteModal v-model="showWebsite" />
   </AppShell>
 </template>
@@ -51,7 +51,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import WorkspaceCard from '@/components/WorkspaceCard.vue'
-import LaunchModal from '@/components/LaunchModal.vue'
+import LaunchWizard from '@/components/LaunchWizard.vue'
 import OpenWebsiteModal from '@/components/OpenWebsiteModal.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { Globe, Plus, MonitorOff, Activity, PowerOff } from 'lucide-vue-next'

@@ -14,7 +14,7 @@ export interface AuthConfig {
   oidc_only: boolean
 }
 
-export type ImageType = 'desktop' | 'browser' | 'link'
+export type ImageType = 'desktop' | 'browser' | 'link' | 'app'
 
 export interface WorkspaceImage {
   id: number

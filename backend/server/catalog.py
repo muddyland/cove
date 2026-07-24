@@ -31,6 +31,27 @@ BROWSERS: dict[str, tuple[str, str]] = {
     "msedge": ("Edge", "MSEDGE_CLI"),
 }
 
+# Single-application GUI images (LinuxServer's Selkies apps: one desktop app
+# streamed to the browser on port 3000, persisting to /config). They launch
+# exactly like a webtop — no startup URL — so they're their own "app" type for
+# categorization in the picker. Curated (base name -> display name) because the
+# LinuxServer API exposes no "is this a Selkies app" flag; every entry here was
+# verified to build on baseimage-selkies. Extend as new ones are confirmed.
+APPS: dict[str, str] = {
+    "vscodium": "VSCodium",
+    "blender": "Blender",
+    "gimp": "GIMP",
+    "krita": "Krita",
+    "inkscape": "Inkscape",
+    "audacity": "Audacity",
+    "calibre": "Calibre",
+    "digikam": "digiKam",
+    "obsidian": "Obsidian",
+    "kdenlive": "Kdenlive",
+    "freecad": "FreeCAD",
+    "darktable": "darktable",
+}
+
 WEBTOP_PORT = 3000
 
 
@@ -83,6 +104,23 @@ def _build_specs(linuxserver_images: list[dict]) -> list[dict]:
                 "image_type": "browser",
                 "internal_port": WEBTOP_PORT,
                 "url_env": url_env,
+                "logo_url": img.get("project_logo"),
+                "description": img.get("description"),
+            }
+        )
+
+    # Single-app GUI images — same Selkies launch as a webtop, no startup URL.
+    for base_name, display in APPS.items():
+        img = by_name.get(base_name)
+        if not img or img.get("deprecated"):
+            continue
+        specs.append(
+            {
+                "name": display,
+                "docker_image": f"lscr.io/linuxserver/{base_name}:latest",
+                "image_type": "app",
+                "internal_port": WEBTOP_PORT,
+                "url_env": None,
                 "logo_url": img.get("project_logo"),
                 "description": img.get("description"),
             }

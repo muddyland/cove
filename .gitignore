@@ -9,3 +9,7 @@ frontend/dev-dist/
 *.tsbuildinfo
 .venv/
 *.egg-info/
+
+# Local standalone-run artifacts (built SPA + runtime data)
+backend/static/
+.localrun-data/

@@ -138,6 +138,21 @@ def test_gpu_accel_passes_device_group_and_env(monkeypatch):
     assert kwargs["environment"]["DRI_NODE"] == "/dev/dri/renderD128"
 
 
+def test_launch_sets_custom_port_to_internal_port(monkeypatch):
+    """CUSTOM_PORT forces the Selkies image to serve on the port Cove routes to
+    (internal_port), so images that default elsewhere (e.g. Calibre on 8080) are
+    reachable by the readiness probe + Traefik."""
+    ws_id = _seed_ws(zone_id=0)
+    dm = DockerManager(0)
+    fake = _ready_fake(monkeypatch)
+    dm._client = fake
+
+    dm.launch_workspace(ws_id)
+
+    kwargs = _workspace_run_kwargs(fake, ws_id)
+    assert kwargs["environment"]["CUSTOM_PORT"] == "3000"
+
+
 def test_gpu_accel_off_by_default_no_device(monkeypatch):
     """Master toggle off (default) → no GPU device even if the workspace opts in,
     so a non-GPU host never gets a failing device mount."""
