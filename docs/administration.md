@@ -46,10 +46,12 @@ reported only as present/absent — never shown.
 **Admin → Images** manages the catalog of launchable images. On first run the
 catalog auto-seeds from the LinuxServer.io API; thereafter:
 
-- **Sync LinuxServer** — re-fetch the curated catalog from `api.linuxserver.io`, adding new entries and backfilling logos/descriptions while preserving your edits (name, enabled state, port). Returns counts of added/updated.
+- **Sync LinuxServer** — re-fetch the curated catalog from `api.linuxserver.io`, adding new entries and backfilling logos/descriptions while preserving your edits (name, enabled state, type, port). Returns counts of added/updated.
+- **Reset Catalog** — like Sync, but also **force-reapplies the curated launch metadata** (type, internal port, `url_env`) onto existing entries. Use this to correct catalog drift — e.g. an app that an older seed marked as a `desktop` — or to pull in newly-curated images. Manually-added images (those outside the curated catalog) and your enable/disable choices are left untouched.
 - **Pull / Re-pull** — pull an image to the host in the background. Each image shows a live status (**present / absent / pulling**); the view polls while anything is pulling.
-- **Add custom image** — add your own entry: name, `docker_image`, type (`desktop` or `link`), internal port (default 3000), and an optional description.
-- **Edit / Enable / Disable** — rename, retarget, or hide an entry. Only **enabled** images appear in the launch UI.
+- **Add custom image** — add your own entry: name, `docker_image`, type (`desktop`, `app`, or `browser`), internal port (default 3000), and an optional description.
+- **Edit** — open an entry to change its name, `docker_image`, **type**, internal port, description, or logo URL. Retyping (e.g. `desktop` → `app`) is the manual fix for a single drifted entry, or for a custom image that Reset Catalog won't touch. Changing the logo re-bakes its watermarked PWA icon.
+- **Enable / Disable** — hide an entry from the launch UI without deleting it. Only **enabled** images appear when launching.
 - **Delete** — either remove just the **local image** (keep the catalog entry; it becomes "absent") or remove the **catalog entry** (optionally also deleting the local image). An image in use by a workspace can't be removed (`409`).
 
 > Newly started workspaces always pull the latest image first, so a re-pull is

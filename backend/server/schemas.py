@@ -61,7 +61,11 @@ class ImageCreate(BaseModel):
 class ImageUpdate(BaseModel):
     name: Optional[str] = None
     docker_image: Optional[str] = None
+    image_type: Optional[str] = None
     description: Optional[str] = None
+    internal_port: Optional[int] = None
+    url_env: Optional[str] = None
+    logo_url: Optional[str] = None
     enabled: Optional[bool] = None
 
 

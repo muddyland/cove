@@ -13,7 +13,13 @@ export const imagesApi = {
     api.delete(`/images/${id}?zone_id=${zoneId}${removeImage ? '&remove_image=true' : ''}`),
   // Delete the downloaded Docker image on a zone only, keeping the catalog entry.
   removeImageOnly: (id: number, zoneId = 0) => api.delete(`/images/${id}/image?zone_id=${zoneId}`),
-  sync: () => api.post<{ added: number; updated: number; total: number }>('/images/sync'),
+  // Sync the LinuxServer catalog. With reset=true (admin "Reset Catalog"), the
+  // curated launch metadata (type/port/url_env) is also force-reapplied to
+  // existing rows, correcting entries that drifted from an older seed.
+  sync: (reset = false) =>
+    api.post<{ added: number; updated: number; total: number }>(
+      `/images/sync${reset ? '?reset=true' : ''}`,
+    ),
   // Download state is per-zone: the catalog is shared, but whether an image is
   // pulled (and the pull/remove actions) target one zone's daemon.
   pullStatus: (zoneId = 0) =>

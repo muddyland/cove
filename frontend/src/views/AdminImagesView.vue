@@ -7,7 +7,8 @@
           <option v-for="z in zones.items" :key="z.id" :value="z.id">{{ z.name }}</option>
         </select>
         <NeonButton variant="secondary" :loading="syncing" @click="handleSync"><RefreshCw :size="14" /> Sync LinuxServer</NeonButton>
-        <NeonButton variant="primary" @click="showForm = true"><Plus :size="14" /> Add Image</NeonButton>
+        <NeonButton variant="secondary" :loading="resetting" @click="showReset = true"><RotateCcw :size="14" /> Reset Catalog</NeonButton>
+        <NeonButton variant="primary" @click="openAdd"><Plus :size="14" /> Add Image</NeonButton>
       </div>
     </div>
     <div v-if="loading" class="empty">LOADING…</div>
@@ -64,6 +65,7 @@
                 <component :is="img.enabled ? ToggleRight : ToggleLeft" :size="15" />
                 {{ img.enabled ? 'Disable' : 'Enable' }}
               </NeonButton>
+              <NeonButton variant="ghost" @click="openEdit(img)"><Pencil :size="13" /> Edit</NeonButton>
               <NeonButton variant="danger" @click="confirmDelete(img)"><Trash2 :size="13" /> Delete</NeonButton>
             </td>
           </tr>
@@ -71,8 +73,8 @@
       </table>
     </div>
 
-    <BaseModal v-model="showForm" title="Add Image">
-      <form @submit.prevent="handleAdd" class="form">
+    <BaseModal v-model="showForm" :title="editingId ? 'Edit Image' : 'Add Image'">
+      <form @submit.prevent="handleSubmit" class="form">
         <div class="form-group">
           <label>Display Name</label>
           <input v-model="form.name" required placeholder="Ubuntu KDE" />
@@ -97,12 +99,33 @@
           <label>Description (optional)</label>
           <input v-model="form.description" />
         </div>
+        <div v-if="editingId" class="form-group">
+          <label>Logo URL (optional)</label>
+          <input v-model="form.logo_url" placeholder="https://…/logo.png" />
+        </div>
         <div v-if="formError" class="form-error">{{ formError }}</div>
         <div class="form-actions">
           <NeonButton type="button" variant="secondary" @click="showForm = false">Cancel</NeonButton>
-          <NeonButton type="submit" variant="primary" :loading="adding">Add</NeonButton>
+          <NeonButton type="submit" variant="primary" :loading="adding">{{ editingId ? 'Save' : 'Add' }}</NeonButton>
         </div>
       </form>
+    </BaseModal>
+
+    <BaseModal v-model="showReset" title="Reset Catalog">
+      <div class="reset-modal">
+        <p class="reset-q">Re-apply curated catalog defaults?</p>
+        <p class="reset-desc">
+          This re-fetches the LinuxServer catalog, adds any missing images, and
+          <strong>forces curated images back to their default type, port, and
+          launch settings</strong> — correcting entries that drifted from an
+          older seed (e.g. an app stuck as a desktop). Your manually-added images
+          and enable/disable choices are left untouched.
+        </p>
+        <div class="form-actions">
+          <NeonButton variant="secondary" :disabled="resetting" @click="showReset = false">Cancel</NeonButton>
+          <NeonButton variant="primary" :loading="resetting" @click="handleReset">Reset to defaults</NeonButton>
+        </div>
+      </div>
     </BaseModal>
 
     <BaseModal v-model="showConfirm" title="Delete Image">
@@ -159,13 +182,13 @@ import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import {
-  RefreshCw, Plus, Trash2, ToggleLeft, ToggleRight,
+  RefreshCw, RotateCcw, Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
   Download, CheckCircle2, CircleDashed, Loader, HardDriveDownload,
 } from 'lucide-vue-next'
 import { imagesApi, type ImagePullStatus } from '@/api/images'
 import { useUiStore } from '@/stores/ui'
 import { useZonesStore } from '@/stores/zones'
-import type { WorkspaceImage } from '@/types'
+import type { WorkspaceImage, ImageType } from '@/types'
 
 const images = ref<WorkspaceImage[]>([])
 const loading = ref(true)
@@ -180,13 +203,19 @@ const zones = useZonesStore()
 const zoneId = ref(0)
 const showForm = ref(false)
 const showConfirm = ref(false)
+const showReset = ref(false)
 const deleteTarget = ref<WorkspaceImage | null>(null)
+// null = adding a new image; an id = editing that existing image.
+const editingId = ref<number | null>(null)
 const adding = ref(false)
 // null = idle; 'image' / 'entry' marks which delete action is in flight.
 const deleting = ref<null | 'image' | 'entry'>(null)
 const syncing = ref(false)
+const resetting = ref(false)
 const formError = ref('')
-const form = reactive({ name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000 })
+const form = reactive({ name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000, logo_url: '' })
+
+const EMPTY_FORM = { name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000, logo_url: '' }
 
 function hideLogo(e: Event) {
   ;(e.target as HTMLImageElement).style.display = 'none'
@@ -266,6 +295,32 @@ async function handleSync() {
   finally { syncing.value = false }
 }
 
+function openAdd() {
+  editingId.value = null
+  formError.value = ''
+  Object.assign(form, EMPTY_FORM)
+  showForm.value = true
+}
+
+function openEdit(img: WorkspaceImage) {
+  editingId.value = img.id
+  formError.value = ''
+  Object.assign(form, {
+    name: img.name,
+    docker_image: img.docker_image,
+    image_type: img.image_type,
+    description: img.description ?? '',
+    internal_port: img.internal_port ?? 3000,
+    logo_url: img.logo_url ?? '',
+  })
+  showForm.value = true
+}
+
+async function handleSubmit() {
+  if (editingId.value !== null) return handleEdit()
+  return handleAdd()
+}
+
 async function handleAdd() {
   formError.value = ''
   adding.value = true
@@ -281,9 +336,42 @@ async function handleAdd() {
     showForm.value = false
     await loadPullStatus()
     ui.toast('Image added', 'success')
-    Object.assign(form, { name: '', docker_image: '', image_type: 'desktop', description: '', internal_port: 3000 })
+    Object.assign(form, EMPTY_FORM)
   } catch (e: any) { formError.value = e.message }
   finally { adding.value = false }
+}
+
+async function handleEdit() {
+  formError.value = ''
+  adding.value = true
+  try {
+    const updated = await imagesApi.update(editingId.value!, {
+      name: form.name,
+      docker_image: form.docker_image,
+      image_type: form.image_type as ImageType,
+      description: form.description || undefined,
+      internal_port: form.internal_port,
+      logo_url: form.logo_url || undefined,
+    })
+    const idx = images.value.findIndex(i => i.id === editingId.value)
+    if (idx !== -1) images.value[idx] = updated
+    showForm.value = false
+    await loadPullStatus()
+    ui.toast('Image updated', 'success')
+  } catch (e: any) { formError.value = e.message }
+  finally { adding.value = false }
+}
+
+async function handleReset() {
+  resetting.value = true
+  try {
+    const res = await imagesApi.sync(true)
+    await load()
+    await loadPullStatus()
+    showReset.value = false
+    ui.toast(`Catalog reset — ${res.added} added, ${res.updated} updated (${res.total} total)`, 'success')
+  } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { resetting.value = false }
 }
 
 async function toggleEnabled(img: WorkspaceImage) {
@@ -355,6 +443,12 @@ async function handleRemoveEntry() {
 @keyframes spin { to { transform: rotate(360deg); } }
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Reset-catalog confirmation. */
+.reset-modal { display: flex; flex-direction: column; gap: 14px; }
+.reset-q { margin: 0; font-size: 14px; color: var(--text); }
+.reset-desc { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+.reset-desc strong { color: var(--accent); }
 
 /* Delete-image modal: two stacked choice cards. */
 .delete-modal { display: flex; flex-direction: column; gap: 14px; }

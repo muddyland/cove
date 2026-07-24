@@ -56,9 +56,9 @@ cookies.
 | GET | `/api/images` | auth | List enabled catalog images. |
 | GET | `/api/images/pull-status` | admin | Per-image local availability. |
 | POST | `/api/images/{id}/pull` | admin | Background pull / re-pull. |
-| POST | `/api/images/sync` | admin | Sync the catalog from LinuxServer. |
+| POST | `/api/images/sync` | admin | Sync the catalog from LinuxServer (optional `?reset=true` also force-reapplies curated type/port/`url_env` to existing entries). |
 | POST | `/api/images` | admin | Add a custom image. |
-| PATCH | `/api/images/{id}` | admin | Edit / enable / disable. |
+| PATCH | `/api/images/{id}` | admin | Edit (name, `docker_image`, `image_type`, port, `url_env`, logo) / enable / disable. |
 | DELETE | `/api/images/{id}/image` | admin | Delete the local image, keep the entry. |
 | DELETE | `/api/images/{id}` | admin | Delete the catalog entry (optional `?remove_image=true`). |
 

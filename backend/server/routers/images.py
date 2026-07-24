@@ -18,7 +18,7 @@ from server.schemas import ImageCreate, ImageOut, ImageUpdate
 router = APIRouter(prefix="/api/images", tags=["images"])
 
 
-def upsert_catalog(db: Session, specs: list[dict]) -> dict:
+def upsert_catalog(db: Session, specs: list[dict], reset: bool = False) -> dict:
     """Insert new catalog images and backfill upstream metadata on existing ones.
 
     Matched on docker_image, then falling back to name (which is UNIQUE): if the
@@ -29,6 +29,12 @@ def upsert_catalog(db: Session, specs: list[dict]) -> dict:
     (docker_image, logo_url, description) is refreshed — admin edits like name,
     enabled, internal_port and url_env are preserved. A changed logo clears the
     baked icon so the next icon refresh re-bakes it. Returns {"added", "updated"}.
+
+    With ``reset=True`` (the "Reset Catalog" action), the curated launch metadata
+    — image_type, internal_port and url_env — is *also* forced back to the
+    catalog's defaults on matched rows. This is how a drifted entry (e.g. an app
+    stuck as ``desktop`` from an older seed) gets corrected; only curated images
+    are touched, so manually-added entries outside the catalog are left alone.
     """
     rows = db.scalars(select(WorkspaceImage)).all()
     by_docker = {row.docker_image: row for row in rows}
@@ -56,6 +62,13 @@ def upsert_catalog(db: Session, specs: list[dict]) -> dict:
         if spec.get("description") and row.description != spec["description"]:
             row.description = spec["description"]
             changed = True
+        if reset:
+            # Force curated launch metadata back to catalog defaults, correcting
+            # rows that drifted from an older seed (e.g. an app typed as desktop).
+            for field in ("image_type", "internal_port", "url_env"):
+                if field in spec and getattr(row, field) != spec[field]:
+                    setattr(row, field, spec[field])
+                    changed = True
         if changed:
             updated += 1
     if added or updated:
@@ -111,18 +124,23 @@ def pull_image(image_id: int, user: AdminUser, db: DbSession, bg: BackgroundTask
 
 
 @router.post("/sync")
-async def sync_images(user: AdminUser, db: DbSession):
+async def sync_images(user: AdminUser, db: DbSession, reset: bool = False):
     """Auto-populate the catalog from the LinuxServer.io API (admin only).
 
     Also backfills missing logos for any LinuxServer image already in the DB
     (including manually-added ones outside the curated catalog).
+
+    With ``reset=true`` (the admin "Reset Catalog" button) the curated launch
+    metadata — image_type, internal_port, url_env — is force-reapplied to
+    existing rows in addition to pulling in any missing catalog images, fixing
+    entries that drifted from an older seed.
     """
     try:
         images_raw = await fetch_linuxserver_images()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to reach LinuxServer API: {exc}")
     specs = _build_specs(images_raw)
-    result = upsert_catalog(db, specs)
+    result = upsert_catalog(db, specs, reset=reset)
     logos_added = _backfill_logos(db, images_raw)
     # Bake the watermarked PWA icon for any image missing one (new rows, plus
     # rows whose logo just changed — upsert cleared their stale icon).
@@ -175,14 +193,25 @@ async def create_image(body: ImageCreate, user: AdminUser, db: DbSession):
 
 
 @router.patch("/{image_id}", response_model=ImageOut)
-def update_image(image_id: int, body: ImageUpdate, user: AdminUser, db: DbSession):
+async def update_image(image_id: int, body: ImageUpdate, user: AdminUser, db: DbSession):
     image = db.get(WorkspaceImage, image_id)
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
-    for field, value in body.model_dump(exclude_none=True).items():
+    if body.image_type is not None and body.image_type not in ("desktop", "app", "browser"):
+        raise HTTPException(status_code=400, detail="image_type must be 'desktop', 'app', or 'browser'")
+    fields = body.model_dump(exclude_none=True)
+    # A changed logo invalidates the baked (watermarked) PWA icon — clear it so
+    # it's re-baked below from the new source.
+    logo_changed = "logo_url" in fields and fields["logo_url"] != image.logo_url
+    for field, value in fields.items():
         setattr(image, field, value)
+    if logo_changed:
+        image.icon_png = None
     db.commit()
     db.refresh(image)
+    if logo_changed and image.logo_url:
+        await refresh_image_icons(db, only_missing=True)
+        db.refresh(image)
     return image
 
 

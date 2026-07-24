@@ -301,6 +301,101 @@ def test_sync_bakes_watermarked_icons(client, monkeypatch):
     assert again.json()["icons_baked"] == 0
 
 
+# ── Edit an existing image ────────────────────────────────────────────────────
+
+def test_update_image_changes_type(client):
+    """The edit menu can retype an image (e.g. an app mis-seeded as a desktop)."""
+    token, _ = setup_admin(client)
+    img_id = add_image(
+        name="VSCodium", docker_image="lscr.io/linuxserver/vscodium:latest", image_type="desktop"
+    )
+    resp = client.patch(
+        f"/api/images/{img_id}",
+        json={"image_type": "app", "internal_port": 3001},
+        headers=auth_header(token),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["image_type"] == "app"
+    assert body["internal_port"] == 3001
+
+
+def test_update_image_rejects_invalid_type(client):
+    token, _ = setup_admin(client)
+    img_id = add_image()
+    resp = client.patch(
+        f"/api/images/{img_id}", json={"image_type": "bogus"}, headers=auth_header(token)
+    )
+    assert resp.status_code == 400
+
+
+# ── Reset catalog (force curated defaults) ────────────────────────────────────
+
+def test_reset_catalog_forces_curated_type(client, monkeypatch):
+    """Reset re-applies curated launch metadata to drifted rows, while a plain
+    sync leaves the (wrong) type in place."""
+    from sqlalchemy import select as _select
+
+    from server.db import SessionLocal
+    from server.models import WorkspaceImage
+
+    token, _ = setup_admin(client)
+    # Drifted seed: chromium (a curated browser) stuck as a desktop with no url_env.
+    add_image(
+        name="Chromium",
+        docker_image="lscr.io/linuxserver/chromium:latest",
+        image_type="desktop",
+        url_env=None,
+    )
+    _patch_fetch(monkeypatch, _FAKE_RAW)
+
+    # Plain sync preserves the existing (wrong) type — only upstream metadata refreshes.
+    plain = client.post("/api/images/sync", headers=auth_header(token))
+    assert plain.status_code == 200, plain.text
+    db = SessionLocal()
+    try:
+        row = db.scalar(_select(WorkspaceImage).where(WorkspaceImage.name == "Chromium"))
+        assert row.image_type == "desktop"
+    finally:
+        db.close()
+
+    # Reset forces the curated defaults (type + url_env) back onto the row.
+    reset = client.post("/api/images/sync?reset=true", headers=auth_header(token))
+    assert reset.status_code == 200, reset.text
+    db = SessionLocal()
+    try:
+        row = db.scalar(_select(WorkspaceImage).where(WorkspaceImage.name == "Chromium"))
+        assert row.image_type == "browser"
+        assert row.url_env == "CHROME_CLI"
+    finally:
+        db.close()
+
+
+def test_reset_catalog_preserves_non_catalog_image(client, monkeypatch):
+    """A manually-added image outside the curated catalog is untouched by reset."""
+    from sqlalchemy import select as _select
+
+    from server.db import SessionLocal
+    from server.models import WorkspaceImage
+
+    token, _ = setup_admin(client)
+    add_image(
+        name="My Custom App",
+        docker_image="registry.example/custom/app:latest",
+        image_type="desktop",
+    )
+    _patch_fetch(monkeypatch, _FAKE_RAW)
+
+    resp = client.post("/api/images/sync?reset=true", headers=auth_header(token))
+    assert resp.status_code == 200, resp.text
+    db = SessionLocal()
+    try:
+        row = db.scalar(_select(WorkspaceImage).where(WorkspaceImage.name == "My Custom App"))
+        assert row.image_type == "desktop"  # not in catalog -> left alone
+    finally:
+        db.close()
+
+
 # ── Delete: image-only vs entry+image ─────────────────────────────────────────
 
 def test_delete_image_only_keeps_entry(client, fake_docker_manager):
