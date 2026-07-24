@@ -16,6 +16,10 @@ limits they started with.
 | **Default memory limit (MB)** | `0` (unlimited) | Caps each new workspace container's RAM. |
 | **Max runtime (hours)** | `24` (`0` = unlimited) | Running workspaces older than this are auto-stopped. |
 | **Force-disable sudo** | off | Applies `no-new-privileges` to **all** workspaces, overriding the per-launch "Allow sudo". |
+| **GPU acceleration** (master toggle) | off | Allows workspaces to use host-GPU hardware video encode (each workspace must still opt in, and needs Wayland streaming). See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). |
+| **GPU render node** | `/dev/dri/renderD128` | DRI device bind-mounted for GPU workspaces. Change only on multi-GPU hosts. |
+| **GPU render group GID** | `992` | Group added so the workspace can open the render node. **Fallback only** — Cove auto-detects the node's real group on each host at launch; set this if detection can't run. |
+| **Docker-in-Docker** (master toggle) | off | Allows workspaces to run a privileged nested Docker daemon (each workspace must still opt in; local zone only). |
 | **LAN access** (master toggle) | off | Allows workspaces to reach the LAN directly (each workspace must still opt in). |
 | **Allowed LAN subnets** | _(empty)_ | IPv4 CIDRs reachable when LAN access is on. Invalid entries are dropped; bare IPs become `/32`. |
 | **Tailscale sidecar image** | `tailscale/tailscale:latest` | Image used for the Tailscale sidecar (pin a tag/digest). |

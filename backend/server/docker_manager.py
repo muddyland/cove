@@ -523,6 +523,10 @@ class DockerManager:
         # Image refs with a manual pull currently in flight (for the Images UI).
         self._pulling: set[str] = set()
         self._pulling_lock = Lock()
+        # Cache of detected DRI render-node group GIDs (per node path) on this
+        # zone's host. The device group is stable, so we probe it once; None
+        # results (probe infra failure) are not cached so they retry.
+        self._render_gid_cache: dict[str, "int | str"] = {}
 
     def _build_zone_client(self, zone_id: int, api_version: str | None) -> "docker.DockerClient":
         """Build a Docker client pointed at a remote zone's endpoint.
@@ -981,6 +985,56 @@ class DockerManager:
             logger.warning("HTTP readiness probe failed for workspace %s: %s", ws_id, exc)
             return True  # don't block the launch on probe infrastructure issues
 
+    def _detect_render_gid(self, render_node: str) -> "int | str | None":
+        """Group GID that owns the DRI render node on this zone's host.
+
+        Returns the GID (int) to ``group_add`` so the workspace user can open the
+        device, ``"missing"`` if the node doesn't exist on the host (caller fails
+        the launch with a clear message), or ``None`` if the probe couldn't run
+        (fall back to the admin-configured GID; never block on probe infra).
+
+        The device's group varies per host (e.g. 990 on Debian, 44/993 elsewhere)
+        and a wrong GID silently breaks VAAPI — the classic "GPU on ⇒ stutter"
+        failure — so probing the real device beats a fixed default. Cached since
+        the device group is stable.
+        """
+        cached = self._render_gid_cache.get(render_node)
+        if cached is not None:
+            return cached
+        if not render_node.startswith("/dev/"):
+            return None  # unusual path; leave it to the configured GID
+        # Bind /dev read-only so we can stat the node even when it's absent (a
+        # non-existent --device mount can't be created; a /dev bind can).
+        inside = "/hostdev" + render_node[len("/dev"):]
+        script = f'if [ -e "{inside}" ]; then stat -c "%g" "{inside}"; else echo MISSING; fi'
+        try:
+            self._pull_image(EGRESS_GUARD_IMAGE)
+            out = self._client.containers.run(
+                EGRESS_GUARD_IMAGE,
+                entrypoint="/bin/sh",
+                command=["-c", script],
+                volumes={"/dev": {"bind": "/hostdev", "mode": "ro"}},
+                network_mode="none",
+                remove=True,
+                detach=False,
+            )
+        except Exception as exc:
+            logger.warning("Render-node probe failed for %s (zone %s): %s", render_node, self.zone_id, exc)
+            return None
+        text = out.decode() if isinstance(out, (bytes, bytearray)) else str(out)
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        val = lines[-1] if lines else ""
+        result: "int | str | None"
+        if val == "MISSING":
+            result = "missing"
+        elif val.isdigit():
+            result = int(val)
+        else:
+            logger.warning("Unexpected render-node probe output for %s: %r", render_node, text)
+            return None
+        self._render_gid_cache[render_node] = result
+        return result
+
     def launch_workspace(self, ws_id: int) -> None:
         db = self._get_db()
         try:
@@ -1047,12 +1101,43 @@ class DockerManager:
             # works in either mode.
             gpu_kwargs: dict = {}
             if ws.gpu_accel and get_workspace_gpu_accel(db):
+                # Hardware VAAPI encode requires the Wayland stream. Refuse the
+                # degraded combo loudly instead of shipping a stuttering,
+                # software-encoded stream that looks like a GPU failure.
+                if not ws.pixelflux_wayland:
+                    raise RuntimeError(
+                        "GPU acceleration needs Wayland streaming (hardware encode "
+                        "requires it). Enable Wayland streaming, or turn off GPU "
+                        "acceleration for this workspace."
+                    )
                 render_node = get_workspace_gpu_render_node(db)
+                # Detect the render node's real group on the host. A wrong GID is
+                # the #1 silent GPU failure (VAAPI can't open the device), so we
+                # probe and use the actual group instead of a fixed default.
+                detected = self._detect_render_gid(render_node)
+                if detected == "missing":
+                    raise RuntimeError(
+                        f"GPU acceleration is on, but no render node exists at "
+                        f"{render_node} on this host's GPU. Turn off GPU acceleration "
+                        f"for this workspace, or set the correct render node in "
+                        f"Admin → Settings."
+                    )
+                if isinstance(detected, int):
+                    gid = detected
+                    configured = get_workspace_gpu_render_gid(db)
+                    if configured != detected:
+                        logger.info(
+                            "Workspace %s: render node %s is group %d on the host; "
+                            "using it (admin-configured GID was %d)",
+                            ws.id, render_node, detected, configured,
+                        )
+                else:
+                    gid = get_workspace_gpu_render_gid(db)  # probe couldn't run
                 env["DRINODE"] = render_node
                 env["DRI_NODE"] = render_node
                 gpu_kwargs = {
                     "devices": [f"{render_node}:{render_node}"],
-                    "group_add": [str(get_workspace_gpu_render_gid(db))],
+                    "group_add": [str(gid)],
                 }
 
             # Docker-in-Docker: only when the admin master toggle is on AND this

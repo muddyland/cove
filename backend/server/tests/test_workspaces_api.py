@@ -170,6 +170,19 @@ def test_create_with_tailscale_without_config_400(client):
     assert "Tailscale not configured" in resp.text
 
 
+def test_create_with_gpu_but_wayland_off_400(client):
+    """GPU hardware encode needs the Wayland stream — the combo is rejected with a
+    clear message rather than silently launching a software-encoded (stuttery) stream."""
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "g", "image_id": image_id, "gpu_accel": True, "pixelflux_wayland": False},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "Wayland" in resp.text
+
+
 def test_docker_policy_reflects_master_toggle(client):
     setup_admin(client)
     # Off by default.

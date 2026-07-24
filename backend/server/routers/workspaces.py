@@ -177,6 +177,18 @@ def _validate_docker(db, use_docker: bool, zone_id: int) -> None:
         )
 
 
+def _validate_gpu(gpu_accel: bool, pixelflux_wayland: bool) -> None:
+    """GPU hardware (VAAPI) encode requires the Wayland stream. Reject the combo
+    that would silently fall back to software encode — a stuttering stream that
+    looks like a GPU failure — so the user gets a clear message up front."""
+    if gpu_accel and not pixelflux_wayland:
+        raise HTTPException(
+            status_code=400,
+            detail="GPU acceleration requires Wayland streaming (hardware encode "
+            "needs it). Enable Wayland streaming, or turn off GPU acceleration.",
+        )
+
+
 def _validate_zone(db, zone_id: int) -> None:
     """Ensure the target zone exists and is enrolled (ready to run workspaces).
 
@@ -268,6 +280,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     if body.use_gluetun:
         _check_gluetun_single_connection(db, user.id)
     _validate_docker(db, body.use_docker, body.zone_id)
+    _validate_gpu(body.gpu_accel, body.pixelflux_wayland)
 
     _validate_zone(db, body.zone_id)
     _check_name_unique(db, user.id, body.name)
@@ -788,6 +801,10 @@ def update_workspace(
         data.get("use_gluetun", ws.use_gluetun),
     )
     _validate_docker(db, data.get("use_docker", ws.use_docker), ws.zone_id)
+    _validate_gpu(
+        data.get("gpu_accel", ws.gpu_accel),
+        data.get("pixelflux_wayland", ws.pixelflux_wayland),
+    )
 
     nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "appimages", "dns_servers"}
     for key, value in data.items():

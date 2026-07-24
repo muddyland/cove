@@ -138,6 +138,61 @@ def test_gpu_accel_passes_device_group_and_env(monkeypatch):
     assert kwargs["environment"]["DRI_NODE"] == "/dev/dri/renderD128"
 
 
+def test_gpu_uses_detected_render_gid(monkeypatch):
+    """The render node's real host group is probed and used for group_add, so a
+    wrong admin-configured GID (the classic silent VAAPI failure) is corrected."""
+    from server import settings_store
+
+    ws_id = _seed_ws(zone_id=0)
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, ws_id)
+        ws.gpu_accel = True
+        db.commit()
+        settings_store.set_setting(db, settings_store.KEY_WORKSPACE_GPU_ACCEL, "true")
+        # Admin has the (wrong) default 992 configured...
+        settings_store.set_setting(db, settings_store.KEY_WORKSPACE_GPU_RENDER_GID, "992")
+    finally:
+        db.close()
+
+    dm = DockerManager(0)
+    fake = _ready_fake(monkeypatch)
+    dm._client = fake
+    dm._detect_render_gid = lambda node: 990  # ...but the host device is group 990
+
+    dm.launch_workspace(ws_id)
+
+    kwargs = _workspace_run_kwargs(fake, ws_id)
+    assert kwargs["group_add"] == ["990"]
+
+
+def test_gpu_missing_render_node_errors_clearly(monkeypatch):
+    """GPU on but no render node on the host -> the workspace fails with a clear,
+    user-visible error instead of launching a broken/stuttering stream."""
+    from server import settings_store
+
+    ws_id = _seed_ws(zone_id=0)
+    db = SessionLocal()
+    try:
+        ws = db.get(Workspace, ws_id)
+        ws.gpu_accel = True
+        db.commit()
+        settings_store.set_setting(db, settings_store.KEY_WORKSPACE_GPU_ACCEL, "true")
+    finally:
+        db.close()
+
+    dm = DockerManager(0)
+    fake = _ready_fake(monkeypatch)
+    dm._client = fake
+    dm._detect_render_gid = lambda node: "missing"
+
+    dm.launch_workspace(ws_id)
+
+    status, msg = _status(ws_id)
+    assert status == "error"
+    assert "render node" in (msg or "").lower()
+
+
 def test_launch_sets_custom_port_to_internal_port(monkeypatch):
     """CUSTOM_PORT forces the Selkies image to serve on the port Cove routes to
     (internal_port), so images that default elsewhere (e.g. Calibre on 8080) are

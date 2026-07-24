@@ -35,6 +35,13 @@
           </div>
         </div>
         <StatusBadge v-if="ws" :status="ws.status" class="ws-status" />
+        <button
+          v-if="ws?.status === 'running'"
+          class="conn-icon gauge-btn"
+          title="CPU &amp; memory usage"
+          aria-label="Resource usage"
+          @click="showMetrics = true"
+        ><Gauge :size="14" /></button>
         <!-- Connection indicators: a running node with a routing flag means its
              sidecar is healthy (a failed one would force the node into error). -->
         <span
@@ -100,6 +107,7 @@
     </div>
 
     <DiagnosticsModal v-if="ws" v-model="showDiag" :ws="ws" />
+    <WorkspaceMetricsModal v-if="ws" v-model="showMetrics" :ws-id="ws.id" :name="ws.name" />
 
     <BaseModal v-model="showHelp" title="Workspace Help" width="520px">
       <p class="help-intro">Common actions for working with a workspace node.</p>
@@ -222,9 +230,10 @@ import { useUiStore } from '@/stores/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
+import WorkspaceMetricsModal from '@/components/WorkspaceMetricsModal.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Menu, HelpCircle, Pencil, CopyPlus, ArrowRightLeft, Trash2, PanelLeft, MousePointer2 } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Pencil, CopyPlus, ArrowRightLeft, Trash2, PanelLeft, MousePointer2 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -237,6 +246,7 @@ const installing = computed(() => !!(ws.value?.install_packages || ws.value?.pro
 const stopping = ref(false)
 const showDiag = ref(false)
 const showHelp = ref(false)
+const showMetrics = ref(false)
 const streamUrl = ref<string | null>(null)
 // Set while we poll for Traefik to publish the node's route (see loadStreamUrl);
 // streamError holds a message if the route never came up or stream-auth failed.
@@ -671,6 +681,11 @@ async function handleStop() {
 .ws-name-locked { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; color: var(--text); }
 .ws-icon { width: 16px; height: 16px; border-radius: 3px; object-fit: contain; flex-shrink: 0; }
 .conn-icon { display: inline-flex; align-items: center; flex-shrink: 0; }
+.gauge-btn {
+  background: none; border: none; padding: 2px; cursor: pointer;
+  color: var(--text-muted); transition: color 0.15s;
+}
+.gauge-btn:hover { color: var(--accent); }
 .conn-icon.vpn-on { color: var(--green); filter: drop-shadow(0 0 4px rgba(0, 255, 157, 0.5)); }
 .conn-icon.ts-on { color: var(--accent-2); filter: drop-shadow(0 0 4px rgba(255, 0, 170, 0.5)); }
 
