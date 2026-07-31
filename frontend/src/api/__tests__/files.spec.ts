@@ -115,19 +115,23 @@ describe('filesApi', () => {
     expect(revokeObjectURL).toHaveBeenCalled()
   })
 
-  it('downloadArchive() fetches the zip endpoint and downloads {name}.zip', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200))
-    const createObjectURL = vi.fn(() => 'blob:mock')
-    const revokeObjectURL = vi.fn()
-    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+  it('downloadArchive() streams to disk via a native navigation download (no fetch/blob)', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    const downloadSpy = vi.spyOn(HTMLAnchorElement.prototype, 'download', 'set')
+    let anchor: HTMLAnchorElement | null = null
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag)
+      if (tag === 'a') anchor = el as HTMLAnchorElement
+      return el
+    })
 
-    await filesApi.downloadArchive('docs/reports', 2)
+    filesApi.downloadArchive('docs/reports', 2)
 
-    const [url] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/files/download-archive?path=docs%2Freports&zone_id=2')
-    expect(downloadSpy).toHaveBeenCalledWith('reports.zip')
+    // No fetch — the browser navigates the anchor and streams straight to disk.
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(anchor).not.toBeNull()
+    expect(anchor!.getAttribute('href')).toBe('/api/files/download-archive?path=docs%2Freports&zone_id=2')
+    expect(anchor!.download).toBe('reports.zip')
     expect(clickSpy).toHaveBeenCalled()
   })
 

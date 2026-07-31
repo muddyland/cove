@@ -51,9 +51,21 @@ export const filesApi = {
   },
 
   // Download a folder (or file) as a zip streamed by the server.
+  //
+  // Uses a native navigation download (a plain <a download>) rather than
+  // fetch()+blob(): the endpoint accepts the session cookie, so the browser
+  // streams the archive straight to disk with its own progress UI. fetch()+blob()
+  // would buffer the ENTIRE zip in tab memory before the download even appears —
+  // fine for small trees, but a large folder then shows no progress and a
+  // multi-GB zip exhausts memory and never completes.
   downloadArchive(path: string, zoneId = 0) {
-    const name = (path.split('/').pop() || 'archive') + '.zip'
-    return filesApi._saveAs(BASE + '/files/download-archive' + buildQuery(path, zoneId), name)
+    const url = BASE + '/files/download-archive' + buildQuery(path, zoneId)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = (path.split('/').pop() || 'archive') + '.zip'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
   },
 
   copy: (src: string, dstDir: string, zoneId = 0) =>
