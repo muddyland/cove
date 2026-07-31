@@ -52,20 +52,58 @@ export const filesApi = {
 
   // Download a folder (or file) as a zip streamed by the server.
   //
-  // Uses a native navigation download (a plain <a download>) rather than
-  // fetch()+blob(): the endpoint accepts the session cookie, so the browser
-  // streams the archive straight to disk with its own progress UI. fetch()+blob()
-  // would buffer the ENTIRE zip in tab memory before the download even appears —
-  // fine for small trees, but a large folder then shows no progress and a
-  // multi-GB zip exhausts memory and never completes.
-  downloadArchive(path: string, zoneId = 0) {
+  // Fetches over the network (a plain same-origin request the service worker
+  // passes straight through — an <a download> navigation to /api was being
+  // swallowed by the SW, so no request fired at all). When the File System
+  // Access API is available (Chromium) the response body is streamed directly to
+  // the chosen file with NO memory ceiling, so multi-GB folders work; elsewhere
+  // it falls back to a blob (fine for moderate sizes). The save-picker must be
+  // opened first, inside the click gesture, before we await the network.
+  async downloadArchive(path: string, zoneId = 0) {
     const url = BASE + '/files/download-archive' + buildQuery(path, zoneId)
+    const filename = (path.split('/').pop() || 'archive') + '.zip'
+    const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<any> }).showSaveFilePicker
+
+    // 1) Open the OS save dialog first (streaming path), while still in the gesture.
+    let writable: { write: (d: Uint8Array) => Promise<void>; close: () => Promise<void>; abort: () => Promise<void> } | null = null
+    if (picker) {
+      try {
+        const handle = await picker({
+          suggestedName: filename,
+          types: [{ description: 'Zip archive', accept: { 'application/zip': ['.zip'] } }],
+        })
+        writable = await handle.createWritable()
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return // user cancelled the save dialog
+        writable = null // any other picker error → fall back to a blob download
+      }
+    }
+
+    // 2) Fetch (Bearer + cookie both accepted by the endpoint).
+    const auth = useAuthStore()
+    const headers: Record<string, string> = {}
+    if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`
+    const resp = await fetch(url, { headers, credentials: 'include' })
+    if (!resp.ok) {
+      if (writable) await writable.abort().catch(() => {})
+      throw new Error(`Download failed (HTTP ${resp.status})`)
+    }
+
+    // 3a) Stream to disk.
+    if (writable && resp.body) {
+      await resp.body.pipeTo(writable as unknown as WritableStream)
+      return
+    }
+    // 3b) Fallback: buffer as a blob and click a blob: URL (never a navigation).
+    const blob = await resp.blob()
+    const objUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = (path.split('/').pop() || 'archive') + '.zip'
+    a.href = objUrl
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     a.remove()
+    URL.revokeObjectURL(objUrl)
   },
 
   copy: (src: string, dstDir: string, zoneId = 0) =>

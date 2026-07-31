@@ -115,23 +115,24 @@ describe('filesApi', () => {
     expect(revokeObjectURL).toHaveBeenCalled()
   })
 
-  it('downloadArchive() streams to disk via a native navigation download (no fetch/blob)', () => {
+  it('downloadArchive() fetches over the network and saves {name}.zip (blob fallback)', async () => {
+    // jsdom has no showSaveFilePicker, so this exercises the fetch()+blob fallback
+    // (the streaming path is Chromium-only). The key guarantee is that a network
+    // request is actually made — an <a> navigation to /api was swallowed by the SW.
+    fetchMock.mockResolvedValueOnce(jsonResponse(200))
+    const createObjectURL = vi.fn(() => 'blob:mock')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    let anchor: HTMLAnchorElement | null = null
-    const realCreate = document.createElement.bind(document)
-    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      const el = realCreate(tag)
-      if (tag === 'a') anchor = el as HTMLAnchorElement
-      return el
-    })
+    const downloadSpy = vi.spyOn(HTMLAnchorElement.prototype, 'download', 'set')
 
-    filesApi.downloadArchive('docs/reports', 2)
+    await filesApi.downloadArchive('docs/reports', 2)
 
-    // No fetch — the browser navigates the anchor and streams straight to disk.
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(anchor).not.toBeNull()
-    expect(anchor!.getAttribute('href')).toBe('/api/files/download-archive?path=docs%2Freports&zone_id=2')
-    expect(anchor!.download).toBe('reports.zip')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files/download-archive?path=docs%2Freports&zone_id=2')
+    expect(init.credentials).toBe('include')
+    expect(createObjectURL).toHaveBeenCalled()
+    expect(downloadSpy).toHaveBeenCalledWith('reports.zip')
     expect(clickSpy).toHaveBeenCalled()
   })
 
