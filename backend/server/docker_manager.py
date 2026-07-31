@@ -242,6 +242,14 @@ def _resolve_mount(ws) -> tuple[str, bool]:
     base = settings.storage_path or (settings.data_dir / "workspaces")
     base_r = base.resolve()
 
+    # Shared profile: every one of the user's shared-profile workspaces mounts the
+    # same per-user /config home, regardless of workspace name or a recorded
+    # volume_name. This is what lets multiple distros share dotfiles/proot apps.
+    if getattr(ws, "shared_profile", False):
+        shared = base / ws.user.username / "_profile"
+        shared.mkdir(parents=True, exist_ok=True)
+        return str(shared), True
+
     if ws.volume_name:
         pinned = Path(ws.volume_name)
         try:
@@ -266,6 +274,12 @@ def delete_workspace_storage(ws) -> None:
     """
     settings = get_settings()
     base = (settings.storage_path or (settings.data_dir / "workspaces")).resolve()
+
+    # Never purge the shared per-user profile: it is owned by the user, not this
+    # workspace, and by design survives a deleted container/workspace.
+    if getattr(ws, "shared_profile", False):
+        logger.info("Skipping storage purge for shared-profile workspace %s", ws.id)
+        return
 
     # Prefer the recorded mount source; fall back to the derived path.
     if ws.volume_name:
@@ -1306,7 +1320,11 @@ class DockerManager:
 
                 ws.container_id = container.id
                 ws.container_name = container_name
-                ws.volume_name = mount_source
+                # Don't pin volume_name to the shared profile path — that path is
+                # not this workspace's own home, and pinning it would strand the
+                # workspace on the shared dir if shared_profile is later turned off.
+                if not ws.shared_profile:
+                    ws.volume_name = mount_source
                 db.commit()
 
                 # EGRESS GUARD for plain workspaces. Tailscale workspaces are

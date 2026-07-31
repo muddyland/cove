@@ -52,6 +52,20 @@
           </div>
 
           <div class="form-group">
+            <label>// trash retention (days)</label>
+            <input
+              v-model.number="form.trash_retention_days"
+              type="number"
+              min="0"
+              placeholder="30"
+            />
+            <p class="hint">
+              Keep soft-deleted files in the file-browser trash this many days, then
+              auto-purge them. 0 = keep until a user empties the trash.
+            </p>
+          </div>
+
+          <div class="form-group">
             <label>// default CPU limit (cores)</label>
             <input
               v-model.number="form.workspace_cpu_limit"
@@ -238,6 +252,7 @@ const form = reactive({
   workspace_gpu_render_gid: 992,
   workspace_docker: false,
   dind_image: 'docker:dind',
+  trash_retention_days: 30,
 })
 
 onMounted(async () => {
@@ -256,6 +271,7 @@ onMounted(async () => {
     form.workspace_gpu_render_gid = settings.workspace_gpu_render_gid
     form.workspace_docker = settings.workspace_docker
     form.dind_image = settings.dind_image
+    form.trash_retention_days = settings.trash_retention_days
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -290,6 +306,7 @@ async function handleSave() {
       workspace_gpu_render_gid: form.workspace_gpu_render_gid,
       workspace_docker: form.workspace_docker,
       dind_image: form.dind_image,
+      trash_retention_days: form.trash_retention_days,
     })
     form.tailscale_image = updated.tailscale_image
     form.gluetun_image = updated.gluetun_image
@@ -304,6 +321,7 @@ async function handleSave() {
     form.workspace_gpu_render_gid = updated.workspace_gpu_render_gid
     form.workspace_docker = updated.workspace_docker
     form.dind_image = updated.dind_image
+    form.trash_retention_days = updated.trash_retention_days
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
     error.value = e.message

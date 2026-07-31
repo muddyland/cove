@@ -270,6 +270,7 @@ const form = reactive({
   clear_browser_lock: false,
   gpu_accel: false,
   use_docker: false,
+  shared_profile: false,
   install_packages: '',
   proot_apps: [] as string[],
   appimages: '',
@@ -319,6 +320,7 @@ const accessSummary = computed(() => {
   if (form.allow_sudo) parts.push('sudo')
   if (form.gpu_accel) parts.push('GPU')
   if (form.use_docker) parts.push('Docker')
+  if (form.shared_profile) parts.push('shared profile')
   return parts.join(', ')
 })
 const appsSummary = computed(() => {
@@ -405,7 +407,7 @@ function resetForm() {
     ts_exit_node: '', ts_accept_routes: true, ts_accept_dns: true,
     custom_dns: false, dns_servers: '', allow_sudo: false, inject_ssh_key: true,
     pixelflux_wayland: true, clear_browser_lock: false, gpu_accel: false,
-    use_docker: false, install_packages: '', proot_apps: [], appimages: '',
+    use_docker: false, shared_profile: false, install_packages: '', proot_apps: [], appimages: '',
   })
 }
 
@@ -451,6 +453,7 @@ async function launch() {
       clear_browser_lock: form.clear_browser_lock,
       gpu_accel: form.gpu_accel,
       use_docker: form.use_docker,
+      shared_profile: form.shared_profile,
       ...(form.install_packages.trim() ? { install_packages: form.install_packages.trim() } : {}),
       ...(form.proot_apps.length ? { proot_apps: form.proot_apps.join(' ') } : {}),
       ...(form.appimages.trim() ? { appimages: form.appimages.trim() } : {}),

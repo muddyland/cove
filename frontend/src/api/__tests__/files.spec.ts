@@ -114,4 +114,67 @@ describe('filesApi', () => {
     expect(clickSpy).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalled()
   })
+
+  it('downloadArchive() fetches the zip endpoint and downloads {name}.zip', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200))
+    const createObjectURL = vi.fn(() => 'blob:mock')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const downloadSpy = vi.spyOn(HTMLAnchorElement.prototype, 'download', 'set')
+
+    await filesApi.downloadArchive('docs/reports', 2)
+
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files/download-archive?path=docs%2Freports&zone_id=2')
+    expect(downloadSpy).toHaveBeenCalledWith('reports.zip')
+    expect(clickSpy).toHaveBeenCalled()
+  })
+
+  it('copy() and move() POST src/dst_dir to their endpoints', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { path: 'dir/a.txt' }))
+    await filesApi.copy('a.txt', 'dir', 0)
+    let [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files/copy?zone_id=0')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ src: 'a.txt', dst_dir: 'dir' })
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { path: 'dir/a.txt' }))
+    await filesApi.move('a.txt', 'dir', 4)
+    ;[url, init] = fetchMock.mock.calls[1]
+    expect(url).toBe('/api/files/move?zone_id=4')
+    expect(JSON.parse(init.body)).toEqual({ src: 'a.txt', dst_dir: 'dir' })
+  })
+
+  it('trash() POSTs the path and returns the created entry', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { id: 9, name: 'x.txt' }))
+    const entry = await filesApi.trash('x.txt', 0)
+    expect(entry).toEqual({ id: 9, name: 'x.txt' })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files/trash?zone_id=0')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ path: 'x.txt' })
+  })
+
+  it('listTrash() GETs the trash for a zone', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, []))
+    await filesApi.listTrash(3)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files/trash?zone_id=3')
+    expect(init.method).toBe('GET')
+  })
+
+  it('restore() POSTs to the restore endpoint and purge() DELETEs the entry', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {}))
+    await filesApi.restore(7)
+    let [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files/trash/7/restore')
+    expect(init.method).toBe('POST')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(204))
+    await filesApi.purge(7)
+    ;[url, init] = fetchMock.mock.calls[1]
+    expect(url).toBe('/api/files/trash/7')
+    expect(init.method).toBe('DELETE')
+  })
 })

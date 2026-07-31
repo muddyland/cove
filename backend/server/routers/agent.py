@@ -113,8 +113,10 @@ def agent_download_file(username: str, path: str):
 
 @router.post("/files/upload", status_code=status.HTTP_201_CREATED)
 def agent_upload_file(
-    username: str, path: str = Form(""), file: UploadFile = File(...)
+    username: str, path: str = "", file: UploadFile = File(...)
 ):
+    # ``path`` rides as a query param (the control-plane proxy sends it there), so
+    # uploads into a subdirectory land correctly rather than always at the root.
     base = _agent_user_base(username)
     max_bytes = get_settings().max_upload_mb * 1024 * 1024
     return storage_local.save_upload(
@@ -125,6 +127,44 @@ def agent_upload_file(
 @router.delete("/files", status_code=status.HTTP_204_NO_CONTENT)
 def agent_delete_file(username: str, path: str):
     storage_local.delete(_agent_user_base(username), path)
+
+
+@router.get("/files/download-archive")
+def agent_download_archive(username: str, path: str = ""):
+    base = _agent_user_base(username)
+    name = Path(path).name or "archive"
+    return StreamingResponse(
+        storage_local.iter_zip(base, path),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}.zip"'},
+    )
+
+
+@router.post("/files/copy")
+def agent_copy_file(username: str, src: str = Form(...), dst_dir: str = Form("")):
+    return storage_local.copy(_agent_user_base(username), src, dst_dir)
+
+
+@router.post("/files/move")
+def agent_move_file(username: str, src: str = Form(...), dst_dir: str = Form("")):
+    return storage_local.move(_agent_user_base(username), src, dst_dir)
+
+
+@router.post("/files/trash")
+def agent_trash_file(username: str, path: str = Form(...)):
+    return storage_local.trash_move(_agent_user_base(username), path)
+
+
+@router.post("/files/restore")
+def agent_restore_file(
+    username: str, token: str = Form(...), original_path: str = Form(...)
+):
+    return storage_local.trash_restore(_agent_user_base(username), token, original_path)
+
+
+@router.delete("/files/trash", status_code=status.HTTP_204_NO_CONTENT)
+def agent_purge_trash(username: str, token: str):
+    storage_local.trash_purge(_agent_user_base(username), token)
 
 
 # ── Migration (workspace /config transfer, relayed by the control plane) ───────

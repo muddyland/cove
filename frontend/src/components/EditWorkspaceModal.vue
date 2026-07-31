@@ -125,6 +125,7 @@ const form = reactive({
   clear_browser_lock: false,
   gpu_accel: false,
   use_docker: false,
+  shared_profile: false,
   install_packages: '',
   proot_apps: [] as string[],
   appimages: '',
@@ -156,6 +157,7 @@ function resetFromWs() {
   form.clear_browser_lock = props.ws.clear_browser_lock
   form.gpu_accel = props.ws.gpu_accel
   form.use_docker = props.ws.use_docker
+  form.shared_profile = props.ws.shared_profile
   form.install_packages = props.ws.install_packages ?? ''
   form.proot_apps = parseProotApps(props.ws.proot_apps)
   form.appimages = props.ws.appimages ?? ''
@@ -241,6 +243,7 @@ async function handleSubmit() {
       clear_browser_lock: form.clear_browser_lock,
       gpu_accel: form.gpu_accel,
       use_docker: form.use_docker,
+      shared_profile: form.shared_profile,
       install_packages: form.install_packages.trim(),
       proot_apps: form.proot_apps.join(' '),
       appimages: form.appimages.trim(),

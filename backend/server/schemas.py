@@ -133,6 +133,9 @@ class WorkspaceCreate(BaseModel):
     # container workflows (opt-in, off). Only effective when the admin master
     # toggle (workspace_docker) is on.
     use_docker: bool = False
+    # Share the user's persistent /config profile across their shared-profile
+    # workspaces (opt-in, off). Survives container/workspace deletion.
+    shared_profile: bool = False
 
 
 class WorkspaceUpdate(BaseModel):
@@ -159,6 +162,7 @@ class WorkspaceUpdate(BaseModel):
     clear_browser_lock: Optional[bool] = None
     gpu_accel: Optional[bool] = None
     use_docker: Optional[bool] = None
+    shared_profile: Optional[bool] = None
 
 
 class LanPolicyOut(BaseModel):
@@ -257,6 +261,7 @@ class WorkspaceOut(BaseModel):
     clear_browser_lock: bool
     gpu_accel: bool
     use_docker: bool
+    shared_profile: bool
     stream_url: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -313,6 +318,7 @@ class WorkspaceOut(BaseModel):
             clear_browser_lock=ws.clear_browser_lock,
             gpu_accel=ws.gpu_accel,
             use_docker=ws.use_docker,
+            shared_profile=ws.shared_profile,
             stream_url=stream_url,
             created_at=ws.created_at,
             started_at=ws.started_at,
@@ -351,6 +357,7 @@ class AppSettingsOut(BaseModel):
     workspace_gpu_render_gid: int
     workspace_docker: bool
     dind_image: str
+    trash_retention_days: int
 
 
 class EnvEntry(BaseModel):
@@ -417,6 +424,7 @@ class AppSettingsUpdate(BaseModel):
     workspace_gpu_render_gid: Optional[int] = None
     workspace_docker: Optional[bool] = None
     dind_image: Optional[str] = None
+    trash_retention_days: Optional[int] = None
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────
@@ -501,6 +509,31 @@ class FileEntry(BaseModel):
 class FileListing(BaseModel):
     path: str
     entries: list[FileEntry]
+
+
+class FileOp(BaseModel):
+    # src: path (relative to the user's storage root) of the item to copy/move.
+    # dst_dir: destination directory (its own root = ""). Name is preserved and
+    # suffixed on collision — copy/move never overwrite.
+    src: str
+    dst_dir: str = ""
+
+
+class FilePathIn(BaseModel):
+    path: str
+
+
+class TrashEntryOut(BaseModel):
+    id: int
+    zone_id: int
+    original_path: str
+    name: str
+    is_dir: bool
+    size: int
+    deleted_at: datetime
+    expires_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ── Zones ─────────────────────────────────────────────────────────────────────

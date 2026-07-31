@@ -313,6 +313,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         clear_browser_lock=body.clear_browser_lock,
         gpu_accel=body.gpu_accel,
         use_docker=body.use_docker,
+        shared_profile=body.shared_profile,
         status="creating",
         status_changed_at=datetime.now(timezone.utc),
     )

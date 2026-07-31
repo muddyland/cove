@@ -175,6 +175,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0035_workspace_image_icon_png",
         "ALTER TABLE workspace_image ADD COLUMN icon_png BLOB",
     ),
+    # Opt-in: share the user's persistent /config profile across workspaces.
+    (
+        "0036_workspace_shared_profile",
+        "ALTER TABLE workspace ADD COLUMN shared_profile BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

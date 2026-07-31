@@ -91,6 +91,7 @@ export interface Workspace {
   clear_browser_lock: boolean
   gpu_accel: boolean
   use_docker: boolean
+  shared_profile: boolean
 }
 
 export interface LanPolicy {
@@ -141,6 +142,17 @@ export interface FileListing {
   entries: FileEntry[]
 }
 
+export interface TrashEntry {
+  id: number
+  zone_id: number
+  original_path: string
+  name: string
+  is_dir: boolean
+  size: number
+  deleted_at: string
+  expires_at: string
+}
+
 export interface AppSettings {
   tailscale_image: string
   gluetun_image: string
@@ -155,6 +167,7 @@ export interface AppSettings {
   workspace_gpu_render_gid: number
   workspace_docker: boolean
   dind_image: string
+  trash_retention_days: number
 }
 
 export interface EnvEntry {

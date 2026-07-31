@@ -37,6 +37,7 @@ export const workspacesApi = {
     clear_browser_lock?: boolean
     gpu_accel?: boolean
     use_docker?: boolean
+    shared_profile?: boolean
   }) => api.post<Workspace>('/workspaces', payload),
   update: (
     id: number,
@@ -64,6 +65,7 @@ export const workspacesApi = {
       clear_browser_lock?: boolean
       gpu_accel?: boolean
       use_docker?: boolean
+      shared_profile?: boolean
     },
   ) => api.patch<Workspace>(`/workspaces/${id}`, payload),
   clone: (id: number, payload: { name: string; image_id?: number }) =>

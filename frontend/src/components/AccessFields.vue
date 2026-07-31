@@ -18,6 +18,20 @@
       Settings, which overrides this choice.
     </p>
 
+    <div class="group-label"><FolderSync :size="12" />Storage</div>
+
+    <label class="checkbox-row">
+      <input type="checkbox" v-model="form.shared_profile" /><FolderSync :size="14" class="row-ico" /><span>Shared profile</span>
+    </label>
+    <p class="hint">
+      Share one persistent <code>/config</code> home across all your shared-profile
+      workspaces — dotfiles, proot apps, browser profiles and VSCodium workspaces carry
+      between distros. The profile is per-user and is <strong>never</strong> deleted when a
+      workspace is removed. Best used one workspace at a time (concurrent desktops sharing a
+      home can hit profile/browser locks — see “Clear stale browser lock”). Enabling this on
+      an existing workspace switches its home; the old per-workspace files stay on disk.
+    </p>
+
     <div class="group-label"><MonitorPlay :size="12" />Streaming</div>
 
     <label class="checkbox-row">
@@ -51,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { ShieldCheck, ShieldAlert, KeyRound, MonitorPlay, Zap, Lock } from 'lucide-vue-next'
+import { ShieldCheck, ShieldAlert, KeyRound, MonitorPlay, Zap, Lock, FolderSync } from 'lucide-vue-next'
 
 export interface AccessForm {
   allow_sudo: boolean
@@ -59,6 +73,7 @@ export interface AccessForm {
   pixelflux_wayland: boolean
   clear_browser_lock: boolean
   gpu_accel: boolean
+  shared_profile: boolean
 }
 
 defineProps<{

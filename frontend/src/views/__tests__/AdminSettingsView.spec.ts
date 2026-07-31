@@ -37,6 +37,7 @@ const baseSettings: AppSettings = {
   workspace_gpu_render_gid: 992,
   workspace_docker: false,
   dind_image: 'docker:dind',
+  trash_retention_days: 30,
 }
 
 describe('AdminSettingsView', () => {
@@ -75,6 +76,7 @@ describe('AdminSettingsView', () => {
       workspace_gpu_render_gid: 992,
       workspace_docker: false,
       dind_image: 'docker:dind',
+      trash_retention_days: 30,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()

@@ -375,5 +375,11 @@ def update_app_settings(
             settings_store.KEY_DIND_IMAGE,
             body.dind_image.strip() or settings_store.DEFAULT_DIND_IMAGE,
         )
+    if body.trash_retention_days is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_TRASH_RETENTION_DAYS,
+            str(max(0, body.trash_retention_days)),
+        )
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

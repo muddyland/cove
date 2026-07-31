@@ -133,10 +133,12 @@ async def lifespan(app: FastAPI):
     seed_task = asyncio.create_task(_seed_catalog_if_empty())
 
     monitor_task = asyncio.create_task(_status_monitor())
+    trash_task = asyncio.create_task(_trash_purge_monitor())
     try:
         yield
     finally:
         monitor_task.cancel()
+        trash_task.cancel()
         seed_task.cancel()
 
 
@@ -185,6 +187,58 @@ async def _status_monitor():
             break
         except Exception as exc:
             logger.warning("Status monitor error: %s", exc)
+
+
+async def _trash_purge_monitor():
+    """Periodically remove file-browser trash entries past their retention window.
+    Runs hourly (retention is measured in days, so an hour of slack is fine)."""
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _purge_expired_trash)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning("Trash purge error: %s", exc)
+
+
+def _purge_expired_trash():
+    """Delete the bytes + DB row of every trash entry whose expiry has passed.
+
+    The bytes live on the entry's zone (local disk or a remote agent); the row
+    lives here. One failing item never blocks the rest of the sweep."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from server.db import SessionLocal
+    from server.models import TrashEntry, User
+    from server.routers.files import _purge_trash_bytes
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        expired = db.scalars(
+            select(TrashEntry).where(TrashEntry.expires_at <= now)
+        ).all()
+        for entry in expired:
+            user = db.get(User, entry.user_id)
+            if user is None:
+                db.delete(entry)
+                continue
+            try:
+                _purge_trash_bytes(db, user.username, entry)
+            except Exception as exc:
+                logger.warning("Failed to purge trash %s: %s", entry.id, exc)
+                continue
+            db.delete(entry)
+        db.commit()
+    except Exception as exc:
+        logger.warning("Trash purge sweep failed: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _sync_all_zones():

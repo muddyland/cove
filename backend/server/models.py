@@ -219,6 +219,14 @@ class Workspace(Base):
     use_docker: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Share the user's persistent /config profile with their other shared-profile
+    # workspaces instead of getting a private per-workspace home. Lets multiple
+    # distros share one home (dotfiles, proot apps, VSCodium workspaces, ...). The
+    # shared profile is per-user and is NEVER removed when a container/workspace is
+    # deleted — see docker_manager._resolve_mount / delete_workspace_storage.
+    shared_profile: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     volume_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -304,3 +312,40 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+
+class TrashEntry(Base):
+    """A soft-deleted file/dir from the file browser.
+
+    The *metadata* lives here (in the control-plane DB) for every zone; the *bytes*
+    live under ``{base}/{username}/.trash/{token}/{name}`` on the owning zone's
+    filesystem (zone 0 = local, otherwise the agent's disk). The control plane owns
+    all bookkeeping so restore/purge/expiry work identically for local and remote
+    zones — the agent only ever moves bytes. Rows past ``expires_at`` are swept by
+    the periodic purge task in ``main._trash_purge_monitor``.
+    """
+
+    __tablename__ = "trash_entry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id"), index=True, nullable=False
+    )
+    # Zone the bytes live on (0 = local control plane).
+    zone_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # Opaque per-item directory name under .trash/ (keeps names collision-free).
+    token: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Path (relative to the user's storage base) the item was deleted from, and its
+    # display name, so it can be restored to where it came from.
+    original_path: Mapped[str] = mapped_column(String(4096), nullable=False)
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    is_dir: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    deleted_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    user: Mapped["User"] = relationship("User")

@@ -75,6 +75,7 @@ const desktopWs: Workspace = {
   clear_browser_lock: false,
   gpu_accel: false,
   use_docker: false,
+  shared_profile: false,
 }
 
 describe('EditWorkspaceModal', () => {

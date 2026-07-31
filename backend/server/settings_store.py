@@ -30,6 +30,9 @@ KEY_WORKSPACE_GPU_RENDER_GID = "workspace_gpu_render_gid"
 # Docker-in-Docker master toggle + the dind image the per-workspace sidecar runs.
 KEY_WORKSPACE_DOCKER = "workspace_docker"
 KEY_DIND_IMAGE = "dind_image"
+# How long soft-deleted files stay in the file-browser trash before the periodic
+# purge sweep removes them for good (0 = keep until manually emptied).
+KEY_TRASH_RETENTION_DAYS = "trash_retention_days"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
@@ -61,6 +64,8 @@ DEFAULT_WORKSPACE_GPU_RENDER_GID = 992
 # never exposed regardless — see docker_manager._launch_dind_sidecar.
 DEFAULT_WORKSPACE_DOCKER = False
 DEFAULT_DIND_IMAGE = "docker:dind"
+# Keep trashed files for 30 days by default, then auto-purge.
+DEFAULT_TRASH_RETENTION_DAYS = 30
 
 
 def get_setting(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -186,6 +191,16 @@ def get_workspace_gpu_render_gid(db: Session) -> int:
         return DEFAULT_WORKSPACE_GPU_RENDER_GID
 
 
+def get_trash_retention_days(db: Session) -> int:
+    raw = get_setting(db, KEY_TRASH_RETENTION_DAYS)
+    if raw is None:
+        return DEFAULT_TRASH_RETENTION_DAYS
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_TRASH_RETENTION_DAYS
+
+
 def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
@@ -201,4 +216,5 @@ def get_all(db: Session) -> dict:
         "workspace_gpu_render_gid": get_workspace_gpu_render_gid(db),
         "workspace_docker": get_workspace_docker(db),
         "dind_image": get_dind_image(db),
+        "trash_retention_days": get_trash_retention_days(db),
     }

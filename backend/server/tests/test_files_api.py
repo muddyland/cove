@@ -1,6 +1,7 @@
 """Tests for the files router (per-user file browser)."""
 
 import io
+import zipfile
 
 from server.config import get_settings
 from server.tests.helpers import setup_admin
@@ -143,3 +144,157 @@ def test_upload_under_limit_ok(client, monkeypatch):
         files={"file": ("ok.bin", io.BytesIO(payload), "application/octet-stream")},
     )
     assert resp.status_code == 201, resp.text
+
+
+# ── Copy / move ────────────────────────────────────────────────────────────────
+
+def test_copy_into_dir(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "a.txt").write_text("A")
+    (base / "dir").mkdir(exist_ok=True)
+
+    resp = client.post("/api/files/copy", json={"src": "a.txt", "dst_dir": "dir"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["path"] == "dir/a.txt"
+    assert (base / "a.txt").exists()  # original stays
+    assert (base / "dir" / "a.txt").read_text() == "A"
+
+
+def test_copy_collision_suffixes(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "a.txt").write_text("A")
+    (base / "dir").mkdir(exist_ok=True)
+    (base / "dir" / "a.txt").write_text("existing")
+
+    resp = client.post("/api/files/copy", json={"src": "a.txt", "dst_dir": "dir"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"] == "a (2).txt"
+
+
+def test_move_into_dir(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "m.txt").write_text("M")
+    (base / "dir").mkdir(exist_ok=True)
+
+    resp = client.post("/api/files/move", json={"src": "m.txt", "dst_dir": "dir"})
+    assert resp.status_code == 200, resp.text
+    assert not (base / "m.txt").exists()
+    assert (base / "dir" / "m.txt").read_text() == "M"
+
+
+def test_move_folder_into_itself_rejected(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "dir").mkdir(exist_ok=True)
+    resp = client.post("/api/files/move", json={"src": "dir", "dst_dir": "dir"})
+    assert resp.status_code == 400
+
+
+# ── Folder download (zip) + folder upload ──────────────────────────────────────
+
+def test_download_archive_of_dir(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "tree").mkdir(exist_ok=True)
+    (base / "tree" / "one.txt").write_text("one")
+    (base / "tree" / "sub").mkdir(exist_ok=True)
+    (base / "tree" / "sub" / "two.txt").write_text("two")
+
+    resp = client.get("/api/files/download-archive", params={"path": "tree"})
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("application/zip")
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    assert zf.testzip() is None
+    assert set(zf.namelist()) == {"tree/one.txt", "tree/sub/two.txt"}
+    assert zf.read("tree/sub/two.txt") == b"two"
+
+
+def test_folder_upload_creates_nested_dirs(client):
+    # A folder upload is many single-file uploads whose `path` carries the subdir.
+    setup_admin(client)
+    base = _user_base()
+    resp = client.post(
+        "/api/files/upload",
+        data={"path": "myfolder/sub"},
+        files={"file": ("deep.txt", io.BytesIO(b"deep"), "text/plain")},
+    )
+    assert resp.status_code == 201, resp.text
+    assert (base / "myfolder" / "sub" / "deep.txt").read_text() == "deep"
+
+
+# ── Trash (soft delete) ────────────────────────────────────────────────────────
+
+def test_trash_hides_and_lists(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "doc.txt").write_text("keep me")
+
+    resp = client.post("/api/files/trash", json={"path": "doc.txt"})
+    assert resp.status_code == 201, resp.text
+    entry = resp.json()
+    assert entry["name"] == "doc.txt"
+    assert entry["original_path"] == "doc.txt"
+
+    # Gone from the normal listing, and .trash itself is hidden.
+    names = [e["name"] for e in client.get("/api/files").json()["entries"]]
+    assert "doc.txt" not in names
+    assert ".trash" not in names
+
+    # Present in the trash listing.
+    trash = client.get("/api/files/trash").json()
+    assert [t["name"] for t in trash] == ["doc.txt"]
+
+
+def test_trash_restore_roundtrip(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "r.txt").write_text("restore me")
+    entry = client.post("/api/files/trash", json={"path": "r.txt"}).json()
+    assert not (base / "r.txt").exists()
+
+    resp = client.post(f"/api/files/trash/{entry['id']}/restore")
+    assert resp.status_code == 200, resp.text
+    assert (base / "r.txt").read_text() == "restore me"
+    # The trash row is gone.
+    assert client.get("/api/files/trash").json() == []
+
+
+def test_trash_purge_removes_permanently(client):
+    setup_admin(client)
+    base = _user_base()
+    (base / "p.txt").write_text("purge me")
+    entry = client.post("/api/files/trash", json={"path": "p.txt"}).json()
+
+    resp = client.delete(f"/api/files/trash/{entry['id']}")
+    assert resp.status_code == 204, resp.text
+    assert client.get("/api/files/trash").json() == []
+    # Bytes are gone from the trash bucket on disk.
+    assert not any((base / ".trash").rglob("p.txt")) if (base / ".trash").exists() else True
+
+
+def test_expired_trash_is_purged_by_sweep(client, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from server.db import SessionLocal
+    from server.main import _purge_expired_trash
+    from server.models import TrashEntry
+
+    setup_admin(client)
+    base = _user_base()
+    (base / "old.txt").write_text("stale")
+    entry = client.post("/api/files/trash", json={"path": "old.txt"}).json()
+
+    # Backdate the expiry so the sweep considers it due.
+    db = SessionLocal()
+    try:
+        row = db.get(TrashEntry, entry["id"])
+        row.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+        db.commit()
+    finally:
+        db.close()
+
+    _purge_expired_trash()
+    assert client.get("/api/files/trash").json() == []

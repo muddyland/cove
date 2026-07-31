@@ -27,6 +27,7 @@ def test_settings_defaults(client):
         "workspace_gpu_render_gid": 992,
         "workspace_docker": False,
         "dind_image": "docker:dind",
+        "trash_retention_days": 30,
     }
 
 
@@ -51,6 +52,7 @@ def test_settings_put_updates_both(client):
         "workspace_gpu_render_gid": 992,
         "workspace_docker": False,
         "dind_image": "docker:dind",
+        "trash_retention_days": 30,
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()

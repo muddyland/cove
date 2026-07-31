@@ -122,6 +122,61 @@ def test_delete_proxies_to_agent(client, agent_transport):
     assert "gone.txt" not in [e["name"] for e in listing["entries"]]
 
 
+def test_copy_move_proxy_to_agent(client, agent_transport):
+    setup_admin(client)
+    zid = _enroll_zone(client)
+    client.post(f"/api/files/upload?zone_id={zid}", files={"file": ("c.txt", b"C")}, data={"path": ""})
+    client.post(f"/api/files/upload?zone_id={zid}", files={"file": ("keep", b"")}, data={"path": "dir"})
+
+    cp = client.post(f"/api/files/copy?zone_id={zid}", json={"src": "c.txt", "dst_dir": "dir"})
+    assert cp.status_code == 200, cp.text
+    assert cp.json()["path"] == "dir/c.txt"
+
+    mv = client.post(f"/api/files/move?zone_id={zid}", json={"src": "c.txt", "dst_dir": "dir"})
+    assert mv.status_code == 200, mv.text
+    root = [e["name"] for e in client.get(f"/api/files?zone_id={zid}").json()["entries"]]
+    assert "c.txt" not in root  # moved out of root
+
+
+def test_download_archive_proxies_to_agent(client, agent_transport):
+    import io
+    import zipfile
+
+    setup_admin(client)
+    zid = _enroll_zone(client)
+    client.post(f"/api/files/upload?zone_id={zid}", files={"file": ("a.txt", b"A")}, data={"path": "tree"})
+
+    resp = client.get(f"/api/files/download-archive?zone_id={zid}&path=tree")
+    assert resp.status_code == 200, resp.text
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    assert zf.testzip() is None
+    assert "tree/a.txt" in zf.namelist()
+
+
+def test_trash_lifecycle_proxies_to_agent(client, agent_transport):
+    setup_admin(client)
+    zid = _enroll_zone(client)
+    client.post(f"/api/files/upload?zone_id={zid}", files={"file": ("t.txt", b"T")}, data={"path": ""})
+
+    # Soft delete on the remote zone (bytes move on the agent, row is on the CP).
+    tr = client.post(f"/api/files/trash?zone_id={zid}", json={"path": "t.txt"})
+    assert tr.status_code == 201, tr.text
+    entry = tr.json()
+    assert entry["zone_id"] == zid
+    assert "t.txt" not in [e["name"] for e in client.get(f"/api/files?zone_id={zid}").json()["entries"]]
+
+    # Restore round-trip.
+    rs = client.post(f"/api/files/trash/{entry['id']}/restore")
+    assert rs.status_code == 200, rs.text
+    assert "t.txt" in [e["name"] for e in client.get(f"/api/files?zone_id={zid}").json()["entries"]]
+
+    # Trash again then purge the bytes on the agent.
+    entry2 = client.post(f"/api/files/trash?zone_id={zid}", json={"path": "t.txt"}).json()
+    pg = client.delete(f"/api/files/trash/{entry2['id']}")
+    assert pg.status_code == 204, pg.text
+    assert client.get(f"/api/files/trash?zone_id={zid}").json() == []
+
+
 def test_agent_file_api_rejects_bad_username():
     """The agent validates the control-plane-supplied username can't escape root."""
     app = FastAPI()
