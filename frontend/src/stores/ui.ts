@@ -18,10 +18,13 @@ export const useUiStore = defineStore('ui', () => {
     message: string,
     type: Toast['type'] = 'info',
     duration = type === 'error' ? 0 : 4000,
-  ) {
+  ): number {
     const id = ++_id
     toasts.value.push({ id, message, type })
     if (duration > 0) setTimeout(() => dismiss(id), duration)
+    // Returned so a caller can dismiss a persistent (duration 0) progress toast
+    // once the work it announced has finished.
+    return id
   }
 
   function dismiss(id: number) {

@@ -248,6 +248,17 @@ def test_trash_hides_and_lists(client):
     assert [t["name"] for t in trash] == ["doc.txt"]
 
 
+def test_double_trash_returns_404_not_500(client):
+    # A duplicate request (e.g. an impatient double-click) must fail cleanly, not 500.
+    setup_admin(client)
+    base = _user_base()
+    (base / "twice.txt").write_text("x")
+    first = client.post("/api/files/trash", json={"path": "twice.txt"})
+    assert first.status_code == 201, first.text
+    second = client.post("/api/files/trash", json={"path": "twice.txt"})
+    assert second.status_code == 404
+
+
 def test_trash_restore_roundtrip(client):
     setup_admin(client)
     base = _user_base()

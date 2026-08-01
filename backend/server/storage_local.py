@@ -203,7 +203,11 @@ def move(base: Path, src: str, dst_dir: str) -> dict:
         # Already in that folder — treat as a no-op rather than making a suffixed copy.
         return {"name": s.name, "path": str(s.relative_to(base))}
     dest = _unique_dest(d / s.name)
-    shutil.move(str(s), str(dest))
+    try:
+        shutil.move(str(s), str(dest))
+    except (FileNotFoundError, shutil.Error) as e:
+        # Source moved/removed by a concurrent request between the check and here.
+        raise HTTPException(status_code=404, detail="Path not found") from e
     return {"name": dest.name, "path": str(dest.relative_to(base))}
 
 
@@ -300,11 +304,18 @@ def trash_move(base: Path, path: str) -> dict:
         raise HTTPException(status_code=404, detail="Path not found")
 
     is_dir = target.is_dir()
-    size = _dir_size(target) if is_dir else target.stat().st_size
     token = uuid4().hex
     token_dir = base / TRASH_DIR / token
     token_dir.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(target), str(token_dir / target.name))
+    try:
+        size = _dir_size(target) if is_dir else target.stat().st_size
+        shutil.move(str(target), str(token_dir / target.name))
+    except (FileNotFoundError, shutil.Error) as e:
+        # The item vanished between the check and the move — e.g. a duplicate
+        # request from an impatient double-click already trashed it. Return a
+        # clean 404 rather than a 500.
+        shutil.rmtree(token_dir, ignore_errors=True)
+        raise HTTPException(status_code=404, detail="Path not found") from e
     return {"token": token, "name": target.name, "is_dir": is_dir, "size": size}
 
 

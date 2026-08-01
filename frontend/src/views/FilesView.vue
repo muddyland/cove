@@ -9,7 +9,7 @@
         <input ref="fileInput" type="file" multiple class="hidden-input" @change="handleFileUpload" />
         <input ref="folderInput" type="file" webkitdirectory multiple class="hidden-input" @change="handleFolderUpload" />
         <template v-if="view === 'files'">
-          <NeonButton v-if="clipboard" variant="ghost" @click="paste">
+          <NeonButton v-if="clipboard" variant="ghost" :loading="isBusy('paste')" @click="paste">
             <ClipboardPaste :size="14" /> Paste{{ clipboard.mode === 'cut' ? ' (move)' : '' }}
           </NeonButton>
           <NeonButton variant="ghost" :disabled="uploading" @click="triggerFolderUpload"><FolderUp :size="14" /> Folder</NeonButton>
@@ -80,11 +80,14 @@
               <td>{{ entry.type === 'dir' ? '—' : humanSize(entry.size) }}</td>
               <td>{{ formatDate(entry.modified) }}</td>
               <td class="actions">
-                <button class="icon-btn" title="Download" @click="downloadEntry(entry)"><Download :size="14" /></button>
-                <button class="icon-btn" title="Copy" @click="copyEntry(entry)"><Copy :size="14" /></button>
-                <button class="icon-btn" title="Cut" @click="cutEntry(entry)"><Scissors :size="14" /></button>
-                <button class="icon-btn" title="Move to trash" @click="trashEntry(entry)"><Trash2 :size="14" /></button>
-                <button class="icon-btn danger" title="Delete permanently" @click="confirmDeletePermanent(entry)"><X :size="14" /></button>
+                <span v-if="rowBusy(entry)" class="op-inline"><Loader2 :size="14" class="spin" /> working…</span>
+                <template v-else>
+                  <button class="icon-btn" title="Download" @click="downloadEntry(entry)"><Download :size="14" /></button>
+                  <button class="icon-btn" title="Copy" @click="copyEntry(entry)"><Copy :size="14" /></button>
+                  <button class="icon-btn" title="Cut" @click="cutEntry(entry)"><Scissors :size="14" /></button>
+                  <button class="icon-btn" title="Move to trash" @click="trashEntry(entry)"><Trash2 :size="14" /></button>
+                  <button class="icon-btn danger" title="Delete permanently" @click="confirmDeletePermanent(entry)"><X :size="14" /></button>
+                </template>
               </td>
             </tr>
           </tbody>
@@ -124,8 +127,11 @@
               <td>{{ formatDate(t.deleted_at) }}</td>
               <td>{{ expiryLabel(t.expires_at) }}</td>
               <td class="actions">
-                <NeonButton variant="ghost" @click="restore(t)"><RotateCcw :size="13" /> Restore</NeonButton>
-                <NeonButton variant="danger" @click="confirmPurge(t)"><X :size="13" /> Delete</NeonButton>
+                <span v-if="isBusy(`trash:${t.id}`)" class="op-inline"><Loader2 :size="14" class="spin" /> working…</span>
+                <template v-else>
+                  <NeonButton variant="ghost" @click="restore(t)"><RotateCcw :size="13" /> Restore</NeonButton>
+                  <NeonButton variant="danger" @click="confirmPurge(t)"><X :size="13" /> Delete</NeonButton>
+                </template>
               </td>
             </tr>
           </tbody>
@@ -151,7 +157,7 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Upload, FolderUp, House, Folder, File, Download, Copy, Scissors, ClipboardPaste, Trash2, RotateCcw, X } from 'lucide-vue-next'
+import { Upload, FolderUp, House, Folder, File, Download, Copy, Scissors, ClipboardPaste, Trash2, RotateCcw, X, Loader2 } from 'lucide-vue-next'
 import { filesApi, type UploadItem } from '@/api/files'
 import { useUiStore } from '@/stores/ui'
 import { useZonesStore } from '@/stores/zones'
@@ -180,6 +186,32 @@ const uploadTotal = ref(0)     // total files in this batch
 
 // Copy/cut clipboard: paste targets the current directory.
 const clipboard = ref<{ path: string; name: string; mode: 'copy' | 'cut' } | null>(null)
+
+// In-flight operations, keyed so re-entrant clicks are ignored and the row shows
+// a spinner instead of its action buttons (files keyed by path, trash rows by
+// `trash:<id>`, the header paste by `paste`). Without this a slow trash/delete
+// looked idle, so it was clicked several times → 500s from the racing requests.
+const busy = reactive(new Set<string>())
+const isBusy = (key: string) => busy.has(key)
+const rowBusy = (entry: FileEntry) => busy.has(join(entry.name))
+
+// Run an async op single-flight for `key`: guard re-entry, disable its controls,
+// show a persistent "in progress" toast, and swap it for a success/error toast.
+async function runOp(key: string, progress: string, fn: () => Promise<void>, done?: string) {
+  if (busy.has(key)) return
+  busy.add(key)
+  const tid = ui.toast(progress, 'info', 0) // persistent until we dismiss it
+  try {
+    await fn()
+    ui.dismiss(tid)
+    if (done) ui.toast(done, 'success')
+  } catch (e: any) {
+    ui.dismiss(tid)
+    ui.toast(e.message, 'error')
+  } finally {
+    busy.delete(key)
+  }
+}
 
 // Drag state. draggingPath is the row being dragged within the explorer (a move
 // source); dropDir is the folder currently hovered; osDragActive is an OS file
@@ -276,13 +308,13 @@ function humanSize(bytes: number): string {
 }
 
 // ── Download ──
-async function downloadEntry(entry: FileEntry) {
-  try {
-    if (entry.type === 'dir') await filesApi.downloadArchive(join(entry.name), zoneId.value)
-    else await filesApi.download(join(entry.name), zoneId.value)
-  } catch (e: any) {
-    ui.toast(e.message, 'error')
-  }
+function downloadEntry(entry: FileEntry) {
+  const p = join(entry.name)
+  const label = entry.type === 'dir' ? `Preparing “${entry.name}”…` : `Downloading “${entry.name}”…`
+  return runOp(p, label, async () => {
+    if (entry.type === 'dir') await filesApi.downloadArchive(p, zoneId.value)
+    else await filesApi.download(p, zoneId.value)
+  })
 }
 
 // ── Upload ──
@@ -353,42 +385,39 @@ function cutEntry(entry: FileEntry) {
   clipboard.value = { path: join(entry.name), name: entry.name, mode: 'cut' }
   ui.toast(`Cut ${entry.name}`, 'success')
 }
-async function paste() {
+function paste() {
   const cb = clipboard.value
   if (!cb) return
-  try {
-    if (cb.mode === 'copy') await filesApi.copy(cb.path, path.value, zoneId.value)
-    else await filesApi.move(cb.path, path.value, zoneId.value)
-    if (cb.mode === 'cut') clipboard.value = null
-    ui.toast(cb.mode === 'copy' ? 'Copied' : 'Moved', 'success')
-    await load()
-  } catch (e: any) {
-    ui.toast(e.message, 'error')
-  }
+  return runOp(
+    'paste',
+    cb.mode === 'copy' ? `Copying “${cb.name}”…` : `Moving “${cb.name}”…`,
+    async () => {
+      if (cb.mode === 'copy') await filesApi.copy(cb.path, path.value, zoneId.value)
+      else await filesApi.move(cb.path, path.value, zoneId.value)
+      if (cb.mode === 'cut') clipboard.value = null
+      await load()
+    },
+    cb.mode === 'copy' ? 'Copied' : 'Moved',
+  )
 }
 
 // ── Trash (soft delete) ──
-async function trashEntry(entry: FileEntry) {
-  try {
-    await filesApi.trash(join(entry.name), zoneId.value)
-    ui.toast(`Moved ${entry.name} to trash`, 'success')
-    if (clipboard.value?.path === join(entry.name)) clipboard.value = null
+function trashEntry(entry: FileEntry) {
+  const p = join(entry.name)
+  return runOp(p, `Moving “${entry.name}” to trash…`, async () => {
+    await filesApi.trash(p, zoneId.value)
+    if (clipboard.value?.path === p) clipboard.value = null
     await load()
     await loadTrash()
-  } catch (e: any) {
-    ui.toast(e.message, 'error')
-  }
+  }, `Moved “${entry.name}” to trash`)
 }
 
-async function restore(t: TrashEntry) {
-  try {
+function restore(t: TrashEntry) {
+  return runOp(`trash:${t.id}`, `Restoring “${t.name}”…`, async () => {
     await filesApi.restore(t.id)
-    ui.toast(`Restored ${t.name}`, 'success')
     await loadTrash()
     if (view.value === 'files') await load()
-  } catch (e: any) {
-    ui.toast(e.message, 'error')
-  }
+  }, `Restored “${t.name}”`)
 }
 
 // ── Drag & drop within the explorer (move) + OS→browser (upload) ──
@@ -609,6 +638,13 @@ tr.drop-target > td { background: color-mix(in srgb, var(--accent) 15%, transpar
 }
 .icon-btn:hover { color: var(--accent); border-color: var(--border); }
 .icon-btn.danger:hover { color: var(--danger, #f56); border-color: var(--danger, #f56); }
+
+.op-inline {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--accent); font-family: var(--font-mono); font-size: 12px;
+}
+.spin { animation: op-spin 0.8s linear infinite; }
+@keyframes op-spin { to { transform: rotate(360deg); } }
 
 .trash-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .trash-note { color: var(--text-muted); font-size: 12px; font-family: var(--font-mono); }
