@@ -1,5 +1,17 @@
 <template>
-  <div class="card" :class="{ interactive: ws.status === 'running', 'menu-open': actionsOpen }" @click="open">
+  <div
+    ref="cardEl"
+    class="card"
+    :class="{ interactive: ws.status === 'running', 'menu-open': actionsOpen }"
+    @click="open"
+  >
+    <!-- Live screen preview. Only for running nodes: previews are dropped when a
+         workspace halts, so an offline card never shows a stale desktop. -->
+    <div v-if="ws.status === 'running'" class="preview" :class="{ empty: !previewUrl }">
+      <img v-if="previewUrl" :src="previewUrl" class="preview-img" alt="" />
+      <MonitorPlay v-else :size="22" class="preview-icon" />
+      <div class="preview-scan" aria-hidden="true" />
+    </div>
     <div class="card-header">
       <div class="card-title">{{ ws.name }}</div>
       <div class="card-header-right">
@@ -120,11 +132,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useZonesStore } from '@/stores/zones'
 import { useUiStore } from '@/stores/ui'
+import { usePreviewsStore } from '@/stores/previews'
 import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
@@ -132,7 +145,7 @@ import EditWorkspaceModal from './EditWorkspaceModal.vue'
 import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
-import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2 } from 'lucide-vue-next'
+import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2, MonitorPlay } from 'lucide-vue-next'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -195,8 +208,56 @@ function onDocClick(e: MouseEvent) {
     actionsOpen.value = false
   }
 }
-onMounted(() => document.addEventListener('click', onDocClick))
-onUnmounted(() => document.removeEventListener('click', onDocClick))
+// --- Screen preview -------------------------------------------------------
+// Fetched only once the card is actually on screen: a grid of twenty nodes
+// shouldn't pull twenty JPEGs for the fifteen the user never scrolls to.
+const previews = usePreviewsStore()
+const cardEl = ref<HTMLElement | null>(null)
+const visible = ref(false)
+let observer: IntersectionObserver | null = null
+
+const previewUrl = computed(() => previews.urls[props.ws.id] ?? null)
+
+function maybeLoadPreview() {
+  if (visible.value && props.ws.status === 'running') previews.load(props.ws)
+}
+
+// Re-fetch when a newer capture exists (preview_at changes on reboot/refresh),
+// and drop ours the moment the node stops so no stale desktop lingers.
+watch(
+  () => [props.ws.preview_at, props.ws.status] as const,
+  ([, status]) => {
+    if (status !== 'running') previews.clear(props.ws.id)
+    else maybeLoadPreview()
+  },
+)
+
+onMounted(() => {
+  document.addEventListener('click', onDocClick)
+  if (typeof IntersectionObserver === 'undefined') {
+    // jsdom and very old browsers: just load eagerly rather than never.
+    visible.value = true
+    maybeLoadPreview()
+    return
+  }
+  observer = new IntersectionObserver(
+    entries => {
+      if (!entries.some(e => e.isIntersecting)) return
+      visible.value = true
+      maybeLoadPreview()
+      // One-shot: once loaded, the watcher above handles later frames.
+      observer?.disconnect()
+      observer = null
+    },
+    { rootMargin: '200px' },
+  )
+  if (cardEl.value) observer.observe(cardEl.value)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+  observer?.disconnect()
+  observer = null
+})
 
 function hideLogo(e: Event) {
   ;(e.target as HTMLImageElement).style.display = 'none'
@@ -290,6 +351,56 @@ async function handleRemove() {
 }
 /* Let the Actions dropdown escape the card's clip (and sit above neighbours). */
 .card.menu-open { overflow: visible; z-index: 10; }
+
+/* --- Screen preview --- */
+.preview {
+  position: relative;
+  /* Bleed to the card edges: the padding would otherwise frame the screenshot
+     in a way that reads as a thumbnail rather than a window onto the node. */
+  margin: -18px -18px 0;
+  aspect-ratio: 16 / 9;
+  background: var(--bg, #05070a);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Desktops are busy; settle them down so the card's own text stays readable. */
+  filter: saturate(0.9) contrast(0.96);
+  animation: preview-in 0.35s ease-out;
+}
+@keyframes preview-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.preview.empty { background: color-mix(in srgb, var(--surface) 88%, #000); }
+.preview-icon { color: var(--text-muted); opacity: 0.35; }
+/* Scanlines + a faint accent wash, matching the stream's CRT treatment. */
+.preview-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--accent) 8%, transparent),
+      transparent 40%
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.16) 0 1px,
+      transparent 1px 3px
+    );
+}
+.card.interactive:hover .preview-img { filter: saturate(1) contrast(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-img { animation: none; }
+}
 /* Corner accent */
 .card::before {
   content: '';

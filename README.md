@@ -63,6 +63,7 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 - **Open-a-website flow** — paste a URL, pick a browser, and Cove boots a kiosk-style browser pointed at it (web-app delivery), with optional dark mode and menu/full-screen variants.
 - **In-stream controls** — fullscreen, a CRT toggle, HALT, and a **quick-switch menu** to jump between (or boot) other nodes without leaving the stream.
 - **Live dashboard** — workspaces split into Active/Offline, with per-container **CPU & memory** on running cards and the **Tailscale IP** shown (and copyable) for tailnet nodes.
+- **Screen previews** — every running card shows a still of what's actually on that node's screen, captured from its own stream (X11 and Wayland alike). Doubles as the readiness check: a node isn't "running" until its stream renders a real frame. Previews are dropped the moment a workspace halts, and refreshes taken while you're watching stay in your browser — never uploaded.
 - **Per-workspace apps** — install distro packages (`universal-package-install`), LinuxServer **proot-apps**, and **AppImages** (auto-extracted with a desktop launcher) at launch.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
 - **Persistent storage** — per-workspace home directories that survive restarts (or go fully ephemeral, wiped on halt).

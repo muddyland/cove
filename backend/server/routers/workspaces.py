@@ -665,6 +665,54 @@ def tailscale_status(ws_id: int, user: CurrentUser, db: DbSession):
     return TailscaleStatusOut(available=out is not None, output=out or "")
 
 
+@router.get("/{ws_id}/preview.jpg")
+def workspace_preview(ws_id: int, user: CurrentUser, db: DbSession, request: Request):
+    """The stored still frame of this workspace's screen.
+
+    404 when there is none — a workspace that is stopped (previews are dropped on
+    halt), still coming up, or running an image whose stream we can't capture.
+    The card falls back to the project logo in every one of those cases.
+
+    ``private`` caching only: this is a picture of someone's desktop and must
+    never be held by a shared proxy. The ETag lets the browser skip re-downloading
+    a frame it already has, which matters because the whole grid requests these
+    at once.
+    """
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if not ws.preview_jpg:
+        raise HTTPException(status_code=404, detail="No preview available")
+
+    stamp = ws.preview_at.isoformat() if ws.preview_at else "0"
+    etag = f'W/"ws{ws.id}-{stamp}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, no-cache"})
+    return Response(
+        content=ws.preview_jpg,
+        media_type="image/jpeg",
+        headers={"ETag": etag, "Cache-Control": "private, no-cache"},
+    )
+
+
+@router.post("/{ws_id}/preview/refresh")
+def refresh_workspace_preview(ws_id: int, user: CurrentUser, db: DbSession):
+    """Re-take the preview from whatever the stream is already broadcasting.
+
+    Passive only, deliberately. Asking Selkies to *start* a stream means becoming
+    its primary client, which evicts whoever is currently watching — and someone
+    watching is precisely when a refresh is most likely to be requested. So if
+    nothing is streaming this returns the existing frame unchanged rather than
+    risking a live session.
+    """
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if ws.status != "running":
+        raise HTTPException(status_code=409, detail="Workspace is not running")
+    from server.docker_manager import get_docker_manager
+
+    frame = get_docker_manager(ws.zone_id).capture_preview(ws.id, passive_only=True)
+    db.refresh(ws)
+    return {"captured": frame is not None, "preview_at": ws.preview_at}
+
+
 _LOG_SOURCES = {"desktop", "tailscale", "gluetun"}
 
 

@@ -237,6 +237,17 @@ class Workspace(Base):
     # which is stale for a restarted workspace). Null on pre-upgrade rows.
     status_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # A still frame of the workspace's screen, captured from its own Selkies
+    # stream once the stream comes up at launch (see server.preview). Doubles as
+    # the launch readiness signal: a decodable frame proves the stream really
+    # works, which an HTTP 200 from nginx does not.
+    #
+    # Cleared on halt/purge — a stopped workspace must not keep showing what was
+    # last on its screen. Lives in the DB rather than on disk so it inherits the
+    # deployment's at-rest encryption (COVE_DB_ENCRYPTION_KEY) and is removed
+    # transactionally with the row.
+    preview_jpg: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    preview_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="workspaces")
     image: Mapped["WorkspaceImage"] = relationship("WorkspaceImage", back_populates="workspaces")

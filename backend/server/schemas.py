@@ -267,6 +267,11 @@ class WorkspaceOut(BaseModel):
     started_at: Optional[datetime]
     stopped_at: Optional[datetime]
     error_message: Optional[str]
+    # When this workspace's screen capture was taken, or None if it has none.
+    # The frame itself is served separately (GET /{id}/preview.jpg) so listing
+    # workspaces doesn't drag a JPEG per row through the JSON payload; this field
+    # is what tells the card whether to request one, and busts its cache.
+    preview_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
 
@@ -324,6 +329,7 @@ class WorkspaceOut(BaseModel):
             started_at=ws.started_at,
             stopped_at=ws.stopped_at,
             error_message=ws.error_message,
+            preview_at=ws.preview_at,
         )
 
 

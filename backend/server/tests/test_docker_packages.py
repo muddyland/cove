@@ -12,8 +12,18 @@ from server.docker_manager import (
     _dns_list,
     _helper_script_path,
     _parse_stats,
+    _pixelflux_wayland_env,
     _split_packages,
 )
+
+# ── _pixelflux_wayland_env (stream backend selection) ─────────────────────────
+
+def test_pixelflux_wayland_env_is_always_explicit():
+    """The image only starts Wayland on the literal string "true", and treats an
+    unset variable as X11 — so both states must be sent explicitly. Leaving the
+    enabled case unset is what made the toggle a silent no-op."""
+    assert _pixelflux_wayland_env(SimpleNamespace(pixelflux_wayland=True)) == "true"
+    assert _pixelflux_wayland_env(SimpleNamespace(pixelflux_wayland=False)) == "false"
 
 # ── _dns_list (custom DNS resolution) ──────────────────────────────────────────
 

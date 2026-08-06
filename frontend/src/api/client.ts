@@ -56,7 +56,12 @@ function tryRefresh(): Promise<string | null> {
   return refreshInFlight
 }
 
-async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  retried = false,
+  parse: 'json' | 'blob' = 'json',
+): Promise<T> {
   const auth = useAuthStore()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -79,7 +84,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
       if (newToken) {
         auth.setToken(newToken)
         // Replay the original request once with the fresh bearer header.
-        return request<T>(path, init, true)
+        return request<T>(path, init, true, parse)
       }
       // Refresh failed for an expired session — clear and bounce to login.
       auth.clear()
@@ -107,11 +112,16 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   }
 
   if (resp.status === 204) return undefined as T
+  if (parse === 'blob') return (await resp.blob()) as T
   return resp.json()
 }
 
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
+  // Binary GET (workspace previews). Goes through request() rather than a bare
+  // <img src> so it inherits the 401-refresh-retry cycle — an <img> that hits an
+  // expired token just renders broken with no way to recover.
+  getBlob: (path: string) => request<Blob>(path, { method: 'GET' }, false, 'blob'),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body: unknown) =>

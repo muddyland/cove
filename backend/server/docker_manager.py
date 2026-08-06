@@ -18,6 +18,7 @@ from sqlalchemy import select
 from server.config import get_settings
 from server.db import SessionLocal
 from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
+from server.preview import capture as capture_preview_frame
 from server.security import decrypt_secret
 from server.settings_store import (
     get_dind_image,
@@ -400,6 +401,23 @@ def _remove_ssh_key(ws_id: int) -> None:
 
 # Public resolvers used when a workspace opts into custom DNS without naming any.
 _DEFAULT_PUBLIC_DNS = ["1.1.1.1", "9.9.9.9"]
+
+
+def _pixelflux_wayland_env(ws) -> str:
+    """The PIXELFLUX_WAYLAND value for a workspace: ``"true"`` or ``"false"``.
+
+    Selkies images default to **X11** (Xvfb) and only bring up the Wayland stack
+    — Smithay + labwc — when this variable is the literal string ``"true"``; the
+    baseimage's init tests for exactly that. So leaving it unset means X11, not
+    Wayland, and the value must always be sent explicitly rather than relying on
+    an image default. Harmless on images that don't read it.
+
+    This is deliberately not "only set it when disabled": doing that made the
+    Wayland toggle a no-op (every workspace silently ran X11), which in turn made
+    the GPU check pass for workspaces that had no Wayland stream to hardware
+    encode from.
+    """
+    return "true" if ws.pixelflux_wayland else "false"
 
 
 def _dns_list(ws) -> list[str] | None:
@@ -1004,6 +1022,81 @@ class DockerManager:
             logger.warning("HTTP readiness probe failed for workspace %s: %s", ws_id, exc)
             return True  # don't block the launch on probe infrastructure issues
 
+    # How long to keep asking the stream for its first frame before giving up and
+    # calling the workspace running anyway. The HTTP probe has already passed at
+    # this point, so this only buys the extra confidence that the stream itself
+    # renders — worth a wait, but never worth failing a launch over.
+    _FIRST_FRAME_GRACE_SECONDS = 30
+    # Reconciler counterpart: how long a row may sit HTTP-ready but frameless
+    # before we promote it on the HTTP probe alone. Without this the frame gate
+    # would be a hard gate in the reconciler, and an image whose stream we can't
+    # capture would never come up at all.
+    _FIRST_FRAME_PROMOTE_SECONDS = 120
+
+    def _await_first_frame(self, container, port: int, ws_id: int) -> "bytes | None":
+        """Block until the workspace's stream yields a decodable frame.
+
+        This is the real readiness signal. ``_wait_for_http_ready`` only proves
+        nginx is serving its static index — it returns 200 while Selkies, the
+        compositor and the encode pipeline are all still coming up, which is how a
+        workspace ends up "running" with a stream that 502s or shows black. A
+        frame we can actually decode proves the whole path works, and it doubles
+        as this workspace's preview.
+
+        Fail-open, like every other probe here: returns None once the grace period
+        expires so an image whose stream we can't capture (e.g. a KasmVNC one)
+        still launches normally, just without a preview.
+        """
+        deadline = time.monotonic() + self._FIRST_FRAME_GRACE_SECONDS
+        attempt = 0
+        while time.monotonic() < deadline:
+            attempt += 1
+            # Nothing can be watching a workspace that hasn't gone running yet, so
+            # spend only a moment on the passive pass before starting the stream.
+            frame = capture_preview_frame(container, port, passive_wait=0.8)
+            if frame:
+                logger.info(
+                    "Workspace %s stream produced its first frame (attempt %d)", ws_id, attempt
+                )
+                return frame
+            time.sleep(2)
+        logger.warning(
+            "Workspace %s stream produced no frame within %ds — marking running without a preview",
+            ws_id, self._FIRST_FRAME_GRACE_SECONDS,
+        )
+        return None
+
+    def capture_preview(self, ws_id: int, *, passive_only: bool = True) -> "bytes | None":
+        """Capture a fresh preview frame for a running workspace, or None.
+
+        Defaults to ``passive_only``: it will take a frame that the stream is
+        already broadcasting, but never ask the server to start one. Starting a
+        stream requires announcing ourselves as the primary client, which evicts
+        whoever is currently watching — unacceptable for an on-demand refresh,
+        where someone having the workspace open is exactly the likely case.
+        """
+        db = self._get_db()
+        try:
+            ws = db.get(Workspace, ws_id)
+            if not ws or ws.status != "running" or not ws.container_id:
+                return None
+            port = ws.image.internal_port if ws.image else 3000
+            try:
+                container = self._client.containers.get(ws.container_id)
+            except docker.errors.NotFound:
+                return None
+            frame = capture_preview_frame(container, port, passive_only=passive_only)
+            if frame:
+                ws.preview_jpg = frame
+                ws.preview_at = datetime.now(timezone.utc)
+                db.commit()
+            return frame
+        except Exception as exc:  # noqa: BLE001 - previews are always best-effort
+            logger.debug("Preview capture failed for workspace %s: %s", ws_id, exc)
+            return None
+        finally:
+            db.close()
+
     def _detect_render_gid(self, render_node: str) -> "int | str | None":
         """Group GID that owns the DRI render node on this zone's host.
 
@@ -1104,11 +1197,7 @@ class DockerManager:
             elif ws.workspace_type == "link" and ws.target_url:
                 # Legacy webtop-based link workspaces use a custom init script.
                 env["LAUNCH_URL"] = ws.target_url
-            # Pixelflux/Selkies images stream over Wayland by default; only set
-            # the override when the user opts into the X11 fallback (harmless on
-            # images that don't read it).
-            if not ws.pixelflux_wayland:
-                env["PIXELFLUX_WAYLAND"] = "false"
+            env["PIXELFLUX_WAYLAND"] = _pixelflux_wayland_env(ws)
 
             # GPU (VAAPI) hardware acceleration: only when the admin master toggle
             # is on AND this workspace opted in. Bind-mount the host's DRI render
@@ -1375,8 +1464,21 @@ class DockerManager:
                     # status monitor promotes them once the GUI answers, so we
                     # never give up just because an install is slow.
                     if self._wait_for_http_ready(ws.id, image.internal_port, 60):
+                        # Hold at "creating" until the stream actually renders a
+                        # frame — nginx answering says nothing about whether the
+                        # desktop is up. The frame becomes the initial preview.
+                        frame = self._await_first_frame(container, image.internal_port, ws.id)
+                        ws = db.get(Workspace, ws_id)  # re-fetch after the wait
+                        if not ws or ws.status != "creating":
+                            logger.info(
+                                "Workspace %s left 'creating' during first-frame wait", ws_id
+                            )
+                            return
                         ws.status = "running"
                         ws.started_at = datetime.now(timezone.utc)
+                        if frame:
+                            ws.preview_jpg = frame
+                            ws.preview_at = ws.started_at
                         db.commit()
 
             except docker.errors.APIError as exc:
@@ -1583,6 +1685,11 @@ class DockerManager:
 
             ws.status = "stopped"
             ws.stopped_at = datetime.now(timezone.utc)
+            # Drop the screen capture with the container. A halted workspace must
+            # not keep showing what was last on its screen, and the next boot
+            # takes a fresh frame anyway.
+            ws.preview_jpg = None
+            ws.preview_at = None
             db.commit()
         finally:
             db.close()
@@ -1675,11 +1782,13 @@ class DockerManager:
                     if container.status in ("exited", "dead"):
                         ws.status = "error"
                         ws.error_message = f"Container exited unexpectedly (status: {container.status})"
+                        ws.preview_jpg = ws.preview_at = None
                         db.commit()
                         continue
                 except docker.errors.NotFound:
                     ws.status = "error"
                     ws.error_message = "Container not found"
+                    ws.preview_jpg = ws.preview_at = None
                     db.commit()
                     continue
                 # The workload is up, but a routing sidecar (Gluetun/Tailscale)
@@ -1747,9 +1856,19 @@ class DockerManager:
                     continue
                 port = ws.image.internal_port if ws.image else 3000
                 if self._wait_for_http_ready(ws.id, port, 5):
+                    # Same gate as the launch path, but the reconciler runs on a
+                    # schedule and must not block it — take a single quick shot
+                    # and let the next pass retry if the stream isn't up yet.
+                    frame = capture_preview_frame(container, port, passive_wait=0.8)
+                    if not frame and _age(ws) <= self._FIRST_FRAME_PROMOTE_SECONDS:
+                        continue  # stream not rendering yet; retry next pass
+                    # Past the grace window we promote on the HTTP probe alone, so
+                    # an image whose stream we can't capture still comes up.
                     ws.status = "running"
                     ws.started_at = now
                     ws.error_message = None
+                    ws.preview_jpg = frame
+                    ws.preview_at = now
                     db.commit()
                     continue
                 # Still starting: only fail a "creating" one past the (generous)
