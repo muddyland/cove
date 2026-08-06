@@ -359,6 +359,11 @@ async function handleRemove() {
      in a way that reads as a thumbnail rather than a window onto the node. */
   margin: -18px -18px 0;
   aspect-ratio: 16 / 9;
+  /* Never absorb the card's flex shrinkage. The <img> is height:100%, so this
+     box has a min-content height of ~0 and would otherwise be the one item that
+     collapses when a row is shorter than its content — a preview that silently
+     disappears rather than a card that overflows. */
+  flex: none;
   background: var(--bg, #05070a);
   border-bottom: 1px solid var(--border);
   overflow: hidden;

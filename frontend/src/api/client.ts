@@ -102,6 +102,11 @@ async function request<T>(
     throw new ApiError(401, detail)
   }
 
+  // 304 is a successful revalidation, not a failure — the caller already holds
+  // this body. It is NOT covered by resp.ok (200-299), so without this it would
+  // fall into the error branch below and surface as a thrown ApiError.
+  if (resp.status === 304) return null as T
+
   if (!resp.ok) {
     let detail = `HTTP ${resp.status}`
     try {
@@ -120,8 +125,9 @@ export const api = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   // Binary GET (workspace previews). Goes through request() rather than a bare
   // <img src> so it inherits the 401-refresh-retry cycle — an <img> that hits an
-  // expired token just renders broken with no way to recover.
-  getBlob: (path: string) => request<Blob>(path, { method: 'GET' }, false, 'blob'),
+  // expired token just renders broken with no way to recover. Resolves to null
+  // on a 304, meaning "what you already have is current".
+  getBlob: (path: string) => request<Blob | null>(path, { method: 'GET' }, false, 'blob'),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body: unknown) =>

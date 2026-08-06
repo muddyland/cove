@@ -211,4 +211,31 @@ describe('api client error formatting', () => {
       message: 'Already on that zone',
     })
   })
+
+  it('getBlob() returns the body as a Blob', async () => {
+    const blob = new Blob(['jpeg'], { type: 'image/jpeg' })
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      blob: async () => blob,
+    } as unknown as Response)
+    await expect(api.getBlob('/workspaces/1/preview.jpg')).resolves.toBe(blob)
+  })
+
+  it('getBlob() resolves null on 304 instead of throwing', async () => {
+    // 304 is outside resp.ok (200-299). Treating it as an error meant a
+    // revalidated preview threw, and the card silently fell back to blank.
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 304,
+      blob: async () => new Blob([]),
+      json: async () => ({}),
+    } as unknown as Response)
+    await expect(api.getBlob('/workspaces/1/preview.jpg')).resolves.toBeNull()
+  })
+
+  it('a genuine error status still rejects', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { detail: 'No preview available' }))
+    await expect(api.getBlob('/workspaces/1/preview.jpg')).rejects.toMatchObject({ status: 404 })
+  })
 })

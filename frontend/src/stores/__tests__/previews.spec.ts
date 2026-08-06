@@ -64,11 +64,52 @@ describe('previews store', () => {
     expect(store.urls[1]).toBeUndefined()
   })
 
-  it('leaves the card blank when the fetch fails', async () => {
-    vi.mocked(workspacesApi.preview).mockRejectedValue(new Error('404'))
+  it('falls back to the logo silently when there is no capture (404)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(workspacesApi.preview).mockRejectedValue(
+      Object.assign(new Error('No preview available'), { status: 404 }),
+    )
     const store = usePreviewsStore()
     await store.load(ws())
     expect(store.urls[1]).toBeUndefined()
+    // A workspace with no frame is ordinary, not a fault — don't cry wolf.
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('warns on a real failure rather than swallowing it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(workspacesApi.preview).mockRejectedValue(
+      Object.assign(new Error('Internal Server Error'), { status: 500 }),
+    )
+    const store = usePreviewsStore()
+    await store.load(ws())
+    expect(store.urls[1]).toBeUndefined()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('keeps the existing frame when the server says 304', async () => {
+    // getBlob resolves null on a revalidation. Treating that as a new frame
+    // would replace a good preview with an empty blob and blank the card.
+    const store = usePreviewsStore()
+    await store.load(ws())
+    expect(store.urls[1]).toBe('blob:frame-1')
+
+    vi.mocked(workspacesApi.preview).mockResolvedValueOnce(null)
+    await store.load(ws({ preview_at: '2026-01-02T00:00:00Z' }))
+    expect(store.urls[1]).toBe('blob:frame-1')
+    expect(revoked).not.toContain('blob:frame-1')
+  })
+
+  it('retries later if a 304 arrives with nothing already cached', async () => {
+    const store = usePreviewsStore()
+    vi.mocked(workspacesApi.preview).mockResolvedValueOnce(null)
+    await store.load(ws())
+    expect(store.urls[1]).toBeUndefined()
+    // The marker must not have been recorded, or the frame would never load.
+    await store.load(ws())
+    expect(workspacesApi.preview).toHaveBeenCalledTimes(2)
   })
 
   it('setLocal replaces the frame without any upload', async () => {

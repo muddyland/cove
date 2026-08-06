@@ -44,12 +44,22 @@ export const usePreviewsStore = defineStore('previews', () => {
     inFlight.add(ws.id)
     try {
       const blob = await workspacesApi.preview(ws.id)
-      put(ws.id, URL.createObjectURL(blob))
-      fetchedAt.value[ws.id] = ws.preview_at
-    } catch {
-      // 404 is the normal "no capture for this workspace" case (stopped, still
+      // null = 304, i.e. the frame we already hold is current. Only record the
+      // marker if we actually have something to show for it.
+      if (blob) {
+        put(ws.id, URL.createObjectURL(blob))
+        fetchedAt.value[ws.id] = ws.preview_at
+      } else if (urls.value[ws.id]) {
+        fetchedAt.value[ws.id] = ws.preview_at
+      }
+    } catch (e: any) {
+      // 404 is the ordinary "no capture for this workspace" case (stopped, still
       // booting, or an image whose stream we can't read) — the card just shows
-      // its logo. Nothing here is worth interrupting the user over.
+      // its logo, and that is not worth a word to the user. Anything else is a
+      // real fault and must not vanish silently the way it used to.
+      if (e?.status !== 404) {
+        console.warn(`[cove] preview fetch failed for workspace ${ws.id}:`, e)
+      }
     } finally {
       inFlight.delete(ws.id)
     }
