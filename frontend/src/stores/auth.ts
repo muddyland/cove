@@ -24,6 +24,13 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     token.value = null
     localStorage.removeItem('cove_token')
+    // Screen previews are pictures of the user's desktops — drop them (and
+    // revoke their object URLs) so nothing survives a logout or a session
+    // expiry on a shared machine. Imported lazily: this store is initialised
+    // before the previews store exists.
+    import('./previews')
+      .then(m => m.usePreviewsStore().clearAll())
+      .catch(() => {})
   }
 
   async function loadConfig() {

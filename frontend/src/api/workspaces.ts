@@ -76,6 +76,9 @@ export const workspacesApi = {
     api.get<TailscaleStatus>(`/workspaces/${id}/tailscale-status`),
   logs: (id: number, source: LogSource, tail = 200) =>
     api.get<ContainerLogs>(`/workspaces/${id}/logs?source=${source}&tail=${tail}`),
+  preview: (id: number) => api.getBlob(`/workspaces/${id}/preview.jpg`),
+  refreshPreview: (id: number) =>
+    api.post<{ captured: boolean; preview_at: string | null }>(`/workspaces/${id}/preview/refresh`),
   streamAuth: (id: number) => api.post<{ url: string }>(`/workspaces/${id}/stream-auth`),
   streamReady: (id: number) => api.get<{ ready: boolean }>(`/workspaces/${id}/stream-ready`),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),

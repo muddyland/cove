@@ -47,7 +47,7 @@ launch only needs a name and an image; everything else has a safe default. The
 | **LAN access** | off | Opt in to direct LAN egress. Only effective if the admin enabled LAN access and configured subnets. |
 | **Allow sudo** | off | Permit in-container `sudo`. Overridden if the admin force-disables sudo globally. |
 | **Inject SSH key** | on | Copy your account SSH key into `~/.ssh`. No-op if you have no key on file. |
-| **Wayland streaming** | on | Stream over Wayland. Turn off to force the X11 fallback (`PIXELFLUX_WAYLAND=false`). Required for GPU hardware encode. |
+| **Wayland streaming** | on | Stream over Wayland (`PIXELFLUX_WAYLAND=true`) — Smithay plus labwc. Turn off to force the X11/Xvfb fallback. Required for GPU hardware encode. |
 | **GPU acceleration** | off | Hardware VAAPI video encode on the host GPU. Requires the admin GPU toggle **and** Wayland streaming. See [GPU acceleration](#gpu-acceleration). |
 | **Docker (dev)** | off | Run `docker` inside the workspace via a privileged nested daemon. Desktops on the local zone only; requires the admin Docker toggle. |
 | **Install packages** | — | Distro packages installed at boot (via `universal-package-install`). |
@@ -140,12 +140,43 @@ limit), refreshed every few seconds. CPU is shown as the container's share of
 the whole host, on a 0-100% scale. Admins can also cap per-workspace CPU/memory
 in Administration → Settings.
 
+## Screen previews
+
+Cards in the workspace grid show a still of what's on that node's screen.
+
+The frame is captured **once, when the workspace comes up**, from the workspace's
+own Selkies stream — so it works the same for X11 and Wayland workspaces, and
+needs nothing installed in the image. It doubles as the readiness signal: a frame
+Cove can actually decode proves the stream, compositor and encode pipeline are all
+working, which an HTTP 200 from the container's web server does not.
+
+While you have a workspace **open**, your browser refreshes that card's thumbnail
+from the stream it is already showing. Those refreshed frames are **local to your
+browser and are never uploaded** — they live in memory for the life of the page.
+Reload and the card falls back to the frame taken at launch.
+
+Privacy and lifecycle:
+
+- The launch frame is stored on the server (in the database, so it inherits
+  at-rest encryption if `COVE_DB_ENCRYPTION_KEY` is set).
+- It is **deleted when the workspace halts, errors, or is purged** — a stopped
+  node never shows what was last on its screen. Booting it again takes a fresh one.
+- Previews are served with `private` caching only, and only to the workspace's
+  owner (or an admin).
+- Capturing **never disturbs a live session.** Cove takes a frame the stream is
+  already broadcasting; it only asks the stream to start when nobody is connected,
+  because becoming the stream's primary client would disconnect whoever is
+  watching. On-demand refreshes never do this at all.
+
+A workspace whose stream Cove can't read simply shows its project logo instead —
+it still launches normally.
+
 ## Lifecycle
 
 | Action | What happens |
 |---|---|
-| **Launch** | Row created as `creating`; the container starts on its own isolated network (`cove-ws-net-<id>`); flips to `running` once the GUI answers a readiness probe. Slow installs stay `creating` and are promoted later. |
-| **Halt / stop** | The container (and any sidecar/network/staged key) is **removed**. Status → `stopped`. Persistent `/config` is kept; ephemeral data is gone. |
+| **Launch** | Row created as `creating`; the container starts on its own isolated network (`cove-ws-net-<id>`); flips to `running` once the stream renders a frame Cove can decode (falling back to the plain HTTP probe if it can't). Slow installs stay `creating` and are promoted later. |
+| **Halt / stop** | The container (and any sidecar/network/staged key) is **removed**. Status → `stopped`. Persistent `/config` is kept; ephemeral data is gone. The stored screen preview is deleted. |
 | **Start** | Recreates the container reusing the persistent home. **Always pulls the latest image first** (falls back to the local copy if offline), so workspaces stay current. |
 | **Clone** | Copies a stopped workspace's entire `/config` into a new workspace (optionally on a different image). The source must be stopped so files are at rest. |
 | **Delete / Purge** | Removes the container and the record. With **purge storage**, the persistent home directory is deleted too; without it, the home is left on disk. |

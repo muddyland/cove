@@ -180,6 +180,16 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0036_workspace_shared_profile",
         "ALTER TABLE workspace ADD COLUMN shared_profile BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # workspace.preview_jpg / preview_at: still frame of the workspace screen,
+    # captured from its own Selkies stream at launch (see server.preview).
+    (
+        "0037_workspace_preview_jpg",
+        "ALTER TABLE workspace ADD COLUMN preview_jpg BLOB",
+    ),
+    (
+        "0038_workspace_preview_at",
+        "ALTER TABLE workspace ADD COLUMN preview_at DATETIME",
+    ),
 ]
 
 

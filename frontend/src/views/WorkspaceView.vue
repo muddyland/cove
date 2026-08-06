@@ -227,6 +227,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { workspacesApi } from '@/api/workspaces'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
+import { useLocalPreview } from '@/composables/useLocalPreview'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
@@ -255,6 +256,9 @@ const streamError = ref<string | null>(null)
 const frameWrap = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+// Refreshes this browser's grid thumbnail from the live stream. Purely local:
+// captures are held in memory for this tab and never sent to the server.
+const localPreview = useLocalPreview(() => wsId.value, () => streamUrl.value)
 
 // Quick-switch dropdown: jump between nodes (and boot stopped ones) without
 // going via the grid. Running nodes first, then booting, then the rest.
@@ -309,6 +313,7 @@ watch(wsId, async () => {
   streamUrl.value = null
   streamError.value = null
   connecting.value = false
+  localPreview.stop()
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (!ws.value) await store.fetch()
   startPollIfNeeded()
@@ -372,6 +377,9 @@ async function loadStreamUrl() {
     const { url } = await workspacesApi.streamAuth(id)
     if (id !== wsId.value) return
     streamUrl.value = url
+    // Keep this browser's grid thumbnail current from the stream we're already
+    // watching. Local only — never uploaded (see useLocalPreview).
+    localPreview.start()
   } catch (e: any) {
     if (id === wsId.value) streamError.value = e.message || 'Failed to open the stream'
   } finally {
@@ -384,6 +392,7 @@ async function loadStreamUrl() {
 function retryStream() {
   streamError.value = null
   streamUrl.value = null
+  localPreview.stop()
   loadStreamUrl()
 }
 

@@ -73,6 +73,10 @@ export interface Workspace {
   started_at: string | null
   stopped_at: string | null
   error_message: string | null
+  // When the server-side screen capture was taken (null if there is none). The
+  // image is fetched separately; this only says whether to ask, and changes when
+  // a newer frame exists.
+  preview_at: string | null
   use_tailscale: boolean
   use_gluetun: boolean
   ephemeral: boolean

@@ -84,6 +84,7 @@ python-jose for JWTs. Key modules:
 | `security.py` | Password hashing (bcrypt), JWT mint/verify, secret encryption (for Tailscale keys), username validation. |
 | `net.py` | Real-client-IP extraction from forwarded headers (for rate limiting / audit). |
 | `proot.py` | Lists the LinuxServer proot-apps catalog (GitHub contents API). |
+| `preview.py` | Workspace screen captures: pulls a frame off the workspace's own Selkies stream (via `docker exec`), reassembles the JPEG stripes with Pillow. Also the launch readiness signal. |
 | `deps.py` | FastAPI dependencies: `CurrentUser`, `AdminUser`, `DbSession`. |
 
 **Routers** (all under `/api`):
@@ -91,7 +92,7 @@ python-jose for JWTs. Key modules:
 | Prefix | Purpose |
 |---|---|
 | `/api/auth` | Local login/setup, logout, refresh, change-password, `/me`, OIDC login/callback, and `/forward` (Traefik ForwardAuth), stream-auth token minting. |
-| `/api/workspaces` | CRUD + start/stop, live `/stats` (CPU/mem + Tailscale IP), `/stream-auth`. |
+| `/api/workspaces` | CRUD + start/stop, live `/stats` (CPU/mem + Tailscale IP), `/stream-auth`, `/{id}/preview.jpg` (screen capture) + `/{id}/preview/refresh`. |
 | `/api/images` | Catalog list, admin create/update/delete, `/sync`, pull + pull-status, image-only vs entry+image delete. |
 | `/api/admin` | Users CRUD, app settings, env summary, audit log. Admin-gated. |
 | `/api/users` | Per-user Tailscale config. |
