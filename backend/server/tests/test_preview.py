@@ -8,7 +8,6 @@ behaviour.
 
 import io
 
-import pytest
 from PIL import Image
 
 from server.db import SessionLocal
