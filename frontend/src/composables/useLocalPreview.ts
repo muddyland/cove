@@ -146,7 +146,7 @@ export function useLocalPreview(wsId: () => number | null, streamUrl: () => stri
     active.value = true
     try {
       const blob = await grabFrame(url)
-      if (blob && wsId() === id) previews.setLocal(id, blob)
+      if (blob && wsId() === id) await previews.setLocal(id, blob)
     } catch {
       // Best-effort: a failed grab just leaves the launch frame in place.
     } finally {

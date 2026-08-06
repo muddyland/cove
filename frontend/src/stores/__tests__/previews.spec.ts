@@ -12,32 +12,26 @@ function ws(overrides: Partial<Workspace> = {}): Workspace {
   return { id: 1, status: 'running', preview_at: '2026-01-01T00:00:00Z', ...overrides } as Workspace
 }
 
-describe('previews store', () => {
-  let created: string[]
-  let revoked: string[]
+function jpegBlob(marker = 'a') {
+  return new Blob([marker], { type: 'image/jpeg' })
+}
 
+describe('previews store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    created = []
-    revoked = []
-    let n = 0
-    globalThis.URL.createObjectURL = vi.fn(() => {
-      const url = `blob:frame-${++n}`
-      created.push(url)
-      return url
-    })
-    globalThis.URL.revokeObjectURL = vi.fn((url: string) => {
-      revoked.push(url)
-    })
     vi.mocked(workspacesApi.preview).mockReset()
-    vi.mocked(workspacesApi.preview).mockResolvedValue(new Blob(['x']))
+    vi.mocked(workspacesApi.preview).mockResolvedValue(jpegBlob())
   })
 
-  it('fetches a frame and exposes it by workspace id', async () => {
+  it('exposes the frame as a data: URL, never blob:', async () => {
+    // Cove's CSP is `img-src 'self' data: https:` — a blob: URL is blocked
+    // outright and the image silently never paints. This is the regression that
+    // made every preview blank in the app while the raw endpoint worked fine.
     const store = usePreviewsStore()
     await store.load(ws())
     expect(workspacesApi.preview).toHaveBeenCalledWith(1)
-    expect(store.urls[1]).toBe('blob:frame-1')
+    expect(store.urls[1]).toMatch(/^data:image\/jpeg;base64,/)
+    expect(store.urls[1]).not.toMatch(/^blob:/)
   })
 
   it('does not refetch the same frame', async () => {
@@ -47,14 +41,14 @@ describe('previews store', () => {
     expect(workspacesApi.preview).toHaveBeenCalledTimes(1)
   })
 
-  it('refetches when a newer capture exists', async () => {
+  it('refetches and replaces when a newer capture exists', async () => {
     const store = usePreviewsStore()
     await store.load(ws())
+    const first = store.urls[1]
+    vi.mocked(workspacesApi.preview).mockResolvedValueOnce(jpegBlob('bbbb'))
     await store.load(ws({ preview_at: '2026-01-02T00:00:00Z' }))
     expect(workspacesApi.preview).toHaveBeenCalledTimes(2)
-    // The superseded object URL must be released, not leaked.
-    expect(revoked).toContain('blob:frame-1')
-    expect(store.urls[1]).toBe('blob:frame-2')
+    expect(store.urls[1]).not.toBe(first)
   })
 
   it('skips workspaces that have no capture', async () => {
@@ -91,15 +85,14 @@ describe('previews store', () => {
 
   it('keeps the existing frame when the server says 304', async () => {
     // getBlob resolves null on a revalidation. Treating that as a new frame
-    // would replace a good preview with an empty blob and blank the card.
+    // would replace a good preview with an empty image and blank the card.
     const store = usePreviewsStore()
     await store.load(ws())
-    expect(store.urls[1]).toBe('blob:frame-1')
+    const first = store.urls[1]
 
     vi.mocked(workspacesApi.preview).mockResolvedValueOnce(null)
     await store.load(ws({ preview_at: '2026-01-02T00:00:00Z' }))
-    expect(store.urls[1]).toBe('blob:frame-1')
-    expect(revoked).not.toContain('blob:frame-1')
+    expect(store.urls[1]).toBe(first)
   })
 
   it('retries later if a 304 arrives with nothing already cached', async () => {
@@ -112,12 +105,13 @@ describe('previews store', () => {
     expect(workspacesApi.preview).toHaveBeenCalledTimes(2)
   })
 
-  it('setLocal replaces the frame without any upload', async () => {
+  it('setLocal replaces the frame, as a data: URL, without any upload', async () => {
     const store = usePreviewsStore()
     await store.load(ws())
-    store.setLocal(1, new Blob(['local']))
-    expect(store.urls[1]).toBe('blob:frame-2')
-    expect(revoked).toContain('blob:frame-1')
+    const first = store.urls[1]
+    await store.setLocal(1, jpegBlob('local frame'))
+    expect(store.urls[1]).toMatch(/^data:image\/jpeg;base64,/)
+    expect(store.urls[1]).not.toBe(first)
     // Only the initial load ever talked to the server.
     expect(workspacesApi.preview).toHaveBeenCalledTimes(1)
   })
@@ -125,28 +119,25 @@ describe('previews store', () => {
   it('a locally-set frame can still be superseded by a newer server frame', async () => {
     const store = usePreviewsStore()
     await store.load(ws())
-    store.setLocal(1, new Blob(['local']))
+    await store.setLocal(1, jpegBlob('local'))
     await store.load(ws())
     expect(workspacesApi.preview).toHaveBeenCalledTimes(2)
   })
 
-  it('clear drops the frame and releases its url', async () => {
+  it('clear drops the frame and forces a refetch afterwards', async () => {
     const store = usePreviewsStore()
     await store.load(ws())
     store.clear(1)
     expect(store.urls[1]).toBeUndefined()
-    expect(revoked).toContain('blob:frame-1')
-    // Cleared, so a later load must fetch again rather than assume it is current.
     await store.load(ws())
     expect(workspacesApi.preview).toHaveBeenCalledTimes(2)
   })
 
-  it('clearAll releases every frame (logout / session expiry)', async () => {
+  it('clearAll drops every frame (logout / session expiry)', async () => {
     const store = usePreviewsStore()
     await store.load(ws({ id: 1 }))
     await store.load(ws({ id: 2 }))
     store.clearAll()
     expect(store.urls).toEqual({})
-    expect(revoked).toHaveLength(created.length)
   })
 })

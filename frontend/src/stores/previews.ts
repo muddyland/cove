@@ -19,22 +19,32 @@ import type { Workspace } from '@/types'
  * shows and go no further, which is why a reload falls back to the launch frame
  * rather than whatever the workspace looked like a moment ago.
  */
+/**
+ * Frames are held as `data:` URLs, NOT `blob:` object URLs.
+ *
+ * Cove's CSP is `img-src 'self' data: https:` (the cove-headers middleware in
+ * docker-compose.yml). It does not list `blob:`, so an <img> pointing at an
+ * object URL is blocked outright — the fetch succeeds, the URL is created, and
+ * the browser silently refuses to paint it. Encoding inline keeps previews
+ * working on every existing deployment without loosening the policy or
+ * requiring a Traefik redeploy. Base64 costs ~33% over the raw bytes, which on
+ * a ~3KB thumbnail is nothing.
+ */
+function toDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
 export const usePreviewsStore = defineStore('previews', () => {
-  // workspace id -> object URL of the frame currently displayed
+  // workspace id -> data URL of the frame currently displayed
   const urls = ref<Record<number, string>>({})
   // workspace id -> the preview_at we fetched, so we refetch only on a new frame
   const fetchedAt = ref<Record<number, string>>({})
   const inFlight = new Set<number>()
-
-  function revoke(id: number) {
-    const existing = urls.value[id]
-    if (existing) URL.revokeObjectURL(existing)
-  }
-
-  function put(id: number, url: string) {
-    revoke(id)
-    urls.value[id] = url
-  }
 
   /** Fetch the server-side capture, unless we already hold that exact frame. */
   async function load(ws: Workspace) {
@@ -47,7 +57,7 @@ export const usePreviewsStore = defineStore('previews', () => {
       // null = 304, i.e. the frame we already hold is current. Only record the
       // marker if we actually have something to show for it.
       if (blob) {
-        put(ws.id, URL.createObjectURL(blob))
+        urls.value[ws.id] = await toDataUrl(blob)
         fetchedAt.value[ws.id] = ws.preview_at
       } else if (urls.value[ws.id]) {
         fetchedAt.value[ws.id] = ws.preview_at
@@ -69,21 +79,19 @@ export const usePreviewsStore = defineStore('previews', () => {
    * Replace a workspace's preview with a frame grabbed from the live stream in
    * this browser. Local only — never sent to the server.
    */
-  function setLocal(id: number, blob: Blob) {
-    put(id, URL.createObjectURL(blob))
+  async function setLocal(id: number, blob: Blob) {
+    urls.value[id] = await toDataUrl(blob)
     // Clear the fetch marker so a genuinely newer server frame can still win.
     delete fetchedAt.value[id]
   }
 
   /** Drop a workspace's preview (halted, purged, or errored). */
   function clear(id: number) {
-    revoke(id)
     delete urls.value[id]
     delete fetchedAt.value[id]
   }
 
   function clearAll() {
-    for (const id of Object.keys(urls.value)) revoke(Number(id))
     urls.value = {}
     fetchedAt.value = {}
   }
