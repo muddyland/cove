@@ -85,6 +85,7 @@ python-jose for JWTs. Key modules:
 | `net.py` | Real-client-IP extraction from forwarded headers (for rate limiting / audit). |
 | `proot.py` | Lists the LinuxServer proot-apps catalog (GitHub contents API). |
 | `preview.py` | Workspace screen captures: pulls a frame off the workspace's own Selkies stream (via `docker exec`), reassembles the JPEG stripes with Pillow. Also the launch readiness signal. |
+| `favicons.py` | Site favicons for browser workspaces pinned to one URL: discovers icons from the page's `<link rel=icon>` tags (else `/favicon.ico`), fetches and normalizes them to PNG. Refuses loopback/link-local targets. |
 | `deps.py` | FastAPI dependencies: `CurrentUser`, `AdminUser`, `DbSession`. |
 
 **Routers** (all under `/api`):
@@ -92,7 +93,7 @@ python-jose for JWTs. Key modules:
 | Prefix | Purpose |
 |---|---|
 | `/api/auth` | Local login/setup, logout, refresh, change-password, `/me`, OIDC login/callback, and `/forward` (Traefik ForwardAuth), stream-auth token minting. |
-| `/api/workspaces` | CRUD + start/stop, live `/stats` (CPU/mem + Tailscale IP), `/stream-auth`, `/{id}/preview.jpg` (screen capture) + `/{id}/preview/refresh`. |
+| `/api/workspaces` | CRUD + start/stop, live `/stats` (CPU/mem + Tailscale IP), `/stream-auth`, `/{id}/preview.jpg` (screen capture) + `/{id}/preview/refresh`, `/{id}/favicon.png` (site icon). |
 | `/api/images` | Catalog list, admin create/update/delete, `/sync`, pull + pull-status, image-only vs entry+image delete. |
 | `/api/admin` | Users CRUD, app settings, env summary, audit log. Admin-gated. |
 | `/api/users` | Per-user Tailscale config. |

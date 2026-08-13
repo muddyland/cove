@@ -249,6 +249,16 @@ class Workspace(Base):
     preview_jpg: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     preview_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # The favicon of the site a browser workspace opens, fetched and normalized
+    # to a PNG by server.favicons — the workspace's icon everywhere it's drawn.
+    # NULL unless this workspace opens exactly one site whose icon we could
+    # decode; the card then falls back to the browser image's project logo.
+    # ``favicon_origin`` records which site the stored icon belongs to, so an
+    # edit that re-points the workspace refetches and an unchanged one doesn't.
+    favicon_png: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    favicon_origin: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    favicon_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     user: Mapped["User"] = relationship("User", back_populates="workspaces")
     image: Mapped["WorkspaceImage"] = relationship("WorkspaceImage", back_populates="workspaces")
     zone: Mapped[Optional["Zone"]] = relationship("Zone")

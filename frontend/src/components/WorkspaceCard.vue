@@ -21,11 +21,12 @@
     <div class="card-meta">
       <span class="image-name">
         <img
-          v-if="ws.image_logo"
-          :src="ws.image_logo"
+          v-if="iconUrl"
+          :key="iconUrl"
+          :src="iconUrl"
           class="image-logo"
           alt=""
-          @error="hideLogo"
+          @error="onIconError"
         />
         {{ ws.image_name }}
       </span>
@@ -146,6 +147,7 @@ import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
 import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2, MonitorPlay } from 'lucide-vue-next'
+import { workspaceIconUrl } from '@/utils/workspaceIcon'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
@@ -259,7 +261,22 @@ onUnmounted(() => {
   observer = null
 })
 
-function hideLogo(e: Event) {
+// The site favicon (browser workspaces on a single site) or the image's project
+// logo. A favicon that fails to load — an expired session, a row whose blob went
+// missing — falls back to the logo rather than leaving a gap; if that fails too,
+// the icon is dropped and the image name stands on its own.
+const faviconBroken = ref(false)
+const iconUrl = computed(() => {
+  if (faviconBroken.value) return props.ws.image_logo
+  return workspaceIconUrl(props.ws)
+})
+watch(() => props.ws.favicon_at, () => (faviconBroken.value = false))
+
+function onIconError(e: Event) {
+  if (!faviconBroken.value && props.ws.favicon_at && props.ws.image_logo) {
+    faviconBroken.value = true
+    return
+  }
   ;(e.target as HTMLImageElement).style.display = 'none'
 }
 

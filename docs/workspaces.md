@@ -171,6 +171,27 @@ Privacy and lifecycle:
 A workspace whose stream Cove can't read simply shows its project logo instead —
 it still launches normally.
 
+## Workspace icons
+
+A workspace is normally marked with the logo of the image it runs — the Chromium
+logo for a Chromium node, the Firefox one for Firefox.
+
+A **website workspace opening a single site** is marked with **that site's own
+favicon** instead, on its card, in the toolbar of the open node, and on the home
+screen when you install it as an app. A node that only ever opens Home Assistant
+reads as Home Assistant, which is how you think of it.
+
+- Cove fetches the icon itself, shortly after launch (and again whenever you
+  change the URL), so it works for plain-`http` sites on your LAN, which a
+  browser would refuse to load onto an `https` page.
+- The icon is stored with the workspace and served only to its owner.
+- **Several URLs → the browser logo.** With more than one site open, no single
+  site speaks for the workspace.
+- Anything Cove can't fetch or decode — a site that's down, or one whose only
+  favicon is an SVG — also falls back to the browser logo. Nothing else changes.
+- Cove won't fetch icons from loopback or link-local addresses; sites on private
+  LAN ranges are fine.
+
 ## Lifecycle
 
 | Action | What happens |

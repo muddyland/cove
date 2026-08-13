@@ -77,6 +77,10 @@ export interface Workspace {
   // image is fetched separately; this only says whether to ask, and changes when
   // a newer frame exists.
   preview_at: string | null
+  // When the site favicon was fetched, or null if this workspace has none (not a
+  // browser, several sites open, or nothing decodable at the site). The PNG is
+  // fetched separately; this says whether to ask, and changes when it's refetched.
+  favicon_at: string | null
   use_tailscale: boolean
   use_gluetun: boolean
   ephemeral: boolean

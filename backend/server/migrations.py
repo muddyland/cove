@@ -190,6 +190,20 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0038_workspace_preview_at",
         "ALTER TABLE workspace ADD COLUMN preview_at DATETIME",
     ),
+    # workspace.favicon_*: the icon of the site a browser workspace opens, so the
+    # card shows the site rather than the browser (see server.favicons).
+    (
+        "0039_workspace_favicon_png",
+        "ALTER TABLE workspace ADD COLUMN favicon_png BLOB",
+    ),
+    (
+        "0040_workspace_favicon_origin",
+        "ALTER TABLE workspace ADD COLUMN favicon_origin TEXT",
+    ),
+    (
+        "0041_workspace_favicon_at",
+        "ALTER TABLE workspace ADD COLUMN favicon_at DATETIME",
+    ),
 ]
 
 

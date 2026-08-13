@@ -272,6 +272,11 @@ class WorkspaceOut(BaseModel):
     # workspaces doesn't drag a JPEG per row through the JSON payload; this field
     # is what tells the card whether to request one, and busts its cache.
     preview_at: Optional[datetime]
+    # When this workspace's site favicon was fetched, or None if it has none (not
+    # a browser workspace, several sites open, or nothing decodable found). Same
+    # arrangement as preview_at: the PNG is served from GET /{id}/favicon.png and
+    # this field is what tells the UI to ask for it instead of the browser logo.
+    favicon_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
 
@@ -330,6 +335,7 @@ class WorkspaceOut(BaseModel):
             stopped_at=ws.stopped_at,
             error_message=ws.error_message,
             preview_at=ws.preview_at,
+            favicon_at=ws.favicon_at,
         )
 
 

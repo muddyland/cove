@@ -7,13 +7,13 @@
              per-workspace PWA is single-purpose, so no cross-node switching. -->
         <div v-if="lockedToWorkspace" class="ws-switcher">
           <span class="ws-name ws-name-locked">
-            <img v-if="ws" class="ws-icon" :src="ws.image_logo || '/favicon.svg'" alt="" />
+            <img v-if="ws" class="ws-icon" :src="iconUrl || '/favicon.svg'" alt="" />
             {{ ws?.name }}
           </span>
         </div>
         <div v-else class="ws-switcher">
           <button class="ws-switch-btn" :class="{ open: menuOpen }" @click.stop="menuOpen = !menuOpen">
-            <img v-if="ws" class="ws-icon" :src="ws.image_logo || '/favicon.svg'" alt="" />
+            <img v-if="ws" class="ws-icon" :src="iconUrl || '/favicon.svg'" alt="" />
             <span class="ws-name">{{ ws?.name }}</span>
             <ChevronDown :size="14" class="chev" />
           </button>
@@ -234,6 +234,7 @@ import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
 import WorkspaceMetricsModal from '@/components/WorkspaceMetricsModal.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
+import { workspaceIconUrl, type IconSource } from '@/utils/workspaceIcon'
 import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Pencil, CopyPlus, ArrowRightLeft, Trash2, PanelLeft, MousePointer2 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -243,6 +244,8 @@ const ui = useUiStore()
 
 const wsId = computed(() => Number(route.params.id))
 const ws = computed(() => store.items.find(w => w.id === wsId.value))
+// The site's favicon for a browser node pinned to one site, else the image logo.
+const iconUrl = computed(() => (ws.value ? workspaceIconUrl(ws.value) : null))
 const installing = computed(() => !!(ws.value?.install_packages || ws.value?.proot_apps))
 const stopping = ref(false)
 const showDiag = ref(false)
@@ -520,7 +523,7 @@ function headMeta(name: string): HTMLMetaElement {
   return el
 }
 
-function applyAppIdentity(w: { id: number; name: string; image_logo?: string | null }) {
+function applyAppIdentity(w: IconSource & { name: string }) {
   const manifest = headLink('manifest')
   if (savedManifestHref === null) {
     savedManifestHref = manifest.getAttribute('href') ?? ''
@@ -538,10 +541,11 @@ function applyAppIdentity(w: { id: number; name: string; image_logo?: string | n
   if (savedAppleTitle === null) savedAppleTitle = appleTitle.getAttribute('content')
   appleTitle.setAttribute('content', w.name)
 
-  // iOS uses apple-touch-icon (not manifest icons) for the home-screen icon.
+  // iOS uses apple-touch-icon (not manifest icons) for the home-screen icon, so
+  // it needs the same site-favicon-then-logo choice the manifest makes.
   const appleIcon = headLink('apple-touch-icon')
   if (savedAppleIcon === null) savedAppleIcon = appleIcon.getAttribute('href')
-  appleIcon.setAttribute('href', w.image_logo || '/apple-touch-icon.png')
+  appleIcon.setAttribute('href', workspaceIconUrl(w) || '/apple-touch-icon.png')
 }
 
 function restoreAppIdentity() {
@@ -572,7 +576,7 @@ function syncAppIdentity() {
   else restoreAppIdentity()
 }
 watch(
-  () => [ws.value?.id, ws.value?.name, ws.value?.image_logo, inAppRoute.value] as const,
+  () => [ws.value?.id, ws.value?.name, ws.value?.image_logo, ws.value?.favicon_at, inAppRoute.value] as const,
   syncAppIdentity,
   { immediate: true },
 )

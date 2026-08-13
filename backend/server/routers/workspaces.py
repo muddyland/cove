@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import ipaddress
 import json
@@ -13,6 +14,8 @@ from sqlalchemy import func, select
 
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
+from server.favicons import refresh_workspace_favicon
+from server.icons import bake_watermarked_icon
 from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
 from server.net import client_ip
 from server.schemas import (
@@ -325,6 +328,10 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
 
     from server.docker_manager import get_docker_manager
     bg.add_task(get_docker_manager(ws.zone_id).launch_workspace, ws.id)
+    if target_url:
+        # Third-party fetch: kept off the launch path entirely, so a slow site
+        # delays nothing. The card shows the browser logo until the icon lands.
+        bg.add_task(refresh_workspace_favicon, ws.id)
 
     return WorkspaceOut.from_workspace(ws)
 
@@ -424,6 +431,12 @@ def clone_workspace(
         workspace_type=image.image_type,
         image_id=image.id,
         target_url=target_url,
+        # Same site as the source, so its icon carries over and the clone has one
+        # from the first render. A clone onto a non-browser image drops the URL,
+        # and with it the icon.
+        favicon_png=src.favicon_png if target_url else None,
+        favicon_origin=src.favicon_origin if target_url else None,
+        favicon_at=src.favicon_at if target_url else None,
         kiosk=src.kiosk,
         kiosk_dark=src.kiosk_dark,
         kiosk_menu=src.kiosk_menu,
@@ -456,6 +469,10 @@ def clone_workspace(
 
     from server.docker_manager import get_docker_manager
     bg.add_task(get_docker_manager(clone.zone_id).clone_and_launch, src.id, clone.id)
+    if target_url:
+        # No-ops when the copied icon is already the right site's; picks one up
+        # when the source never got one (e.g. the site was down at launch).
+        bg.add_task(refresh_workspace_favicon, clone.id)
 
     return WorkspaceOut.from_workspace(clone)
 
@@ -586,17 +603,30 @@ def _png_size(data: bytes) -> "str | None":
 async def workspace_manifest(ws_id: int, user: CurrentUser, db: DbSession):
     """A per-workspace PWA manifest so each workspace installs as its own app.
 
-    Name = the workspace name, icon = the image's project logo, start_url = this
+    Name = the workspace name, icon = the site's favicon for a browser workspace
+    pinned to one site, else the image's project logo, start_url = this
     workspace's stream. Installing from the workspace page (the SPA swaps in this
     manifest) yields a home-screen app that launches straight into the node and
-    looks like the app it runs (e.g. a "Brave" icon that opens the Brave node).
+    looks like the app it runs (e.g. a "Brave" icon that opens the Brave node, or
+    the site's own icon for a node that only ever opens that site).
     """
     ws = _get_workspace_or_404(ws_id, user, db)
     name = ws.name or "Workspace"
 
     icons: list[dict] = []
     img = ws.image
-    if img and img.icon_png:
+    site_icon = None
+    if ws.favicon_png:
+        # Watermarked and fitted to 512 by the same baker the catalog images use:
+        # a favicon is stored at its native size (often 32-180px), which is under
+        # the 144px Chrome wants before it will offer to install at all.
+        site_icon = await asyncio.to_thread(bake_watermarked_icon, ws.favicon_png)
+    if site_icon:
+        b64 = base64.b64encode(site_icon).decode("ascii")
+        icons.append(
+            {"src": f"data:image/png;base64,{b64}", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+        )
+    elif img and img.icon_png:
         # Primary: the baked icon — the project logo with a Cove watermark,
         # composited at catalog-sync time (server.icons). A real raster PNG, so
         # it installs everywhere.
@@ -689,6 +719,33 @@ def workspace_preview(ws_id: int, user: CurrentUser, db: DbSession, request: Req
     return Response(
         content=ws.preview_jpg,
         media_type="image/jpeg",
+        headers={"ETag": etag, "Cache-Control": "private, no-cache"},
+    )
+
+
+@router.get("/{ws_id}/favicon.png")
+def workspace_favicon(ws_id: int, user: CurrentUser, db: DbSession, request: Request):
+    """The favicon of the site this workspace opens (see server.favicons).
+
+    404 whenever there isn't one — not a browser workspace, several sites open,
+    or nothing decodable at the site — and the UI falls back to the browser
+    image's logo, so a 404 here is an ordinary outcome rather than a fault.
+
+    ``private`` caching: which site someone runs a workspace on is theirs to
+    know, so a shared proxy must not hold this. The ETag still spares the grid a
+    re-download per card on every poll.
+    """
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if not ws.favicon_png:
+        raise HTTPException(status_code=404, detail="No favicon available")
+
+    stamp = ws.favicon_at.isoformat() if ws.favicon_at else "0"
+    etag = f'W/"fav{ws.id}-{stamp}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, no-cache"})
+    return Response(
+        content=ws.favicon_png,
+        media_type="image/png",
         headers={"ETag": etag, "Cache-Control": "private, no-cache"},
     )
 
@@ -817,7 +874,8 @@ async def stream_ready(ws_id: int, user: CurrentUser, db: DbSession):
 
 @router.patch("/{ws_id}", response_model=WorkspaceOut)
 def update_workspace(
-    ws_id: int, body: WorkspaceUpdate, user: CurrentUser, db: DbSession, request: Request
+    ws_id: int, body: WorkspaceUpdate, user: CurrentUser, db: DbSession,
+    bg: BackgroundTasks, request: Request,
 ):
     ws = _get_workspace_or_404(ws_id, user, db)
     # Config changes only take effect on the next launch, and applying them to a
@@ -856,6 +914,7 @@ def update_workspace(
     )
 
     nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "appimages", "dns_servers"}
+    prev_url = ws.target_url
     for key, value in data.items():
         if key == "name" and not (value or "").strip():
             continue  # never blank the name
@@ -864,8 +923,16 @@ def update_workspace(
         elif key in nullable_text and isinstance(value, str) and value.strip() == "":
             value = None
         setattr(ws, key, value)
+    if ws.target_url != prev_url:
+        # The stored icon belongs to the site that was there before, so drop it
+        # in the same transaction as the edit — showing the old site's mark on a
+        # workspace that now opens a different one is worse than showing none.
+        # The refetch runs after the response.
+        ws.favicon_png = ws.favicon_origin = ws.favicon_at = None
     db.commit()
     db.refresh(ws)
+    if ws.target_url != prev_url and ws.target_url:
+        bg.add_task(refresh_workspace_favicon, ws.id)
     _audit(db, "workspace.update", detail=ws.public_id, user=user, request=request)
     return WorkspaceOut.from_workspace(ws)
 
