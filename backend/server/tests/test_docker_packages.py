@@ -4,6 +4,8 @@ These are pure functions / static methods that build env, volumes, and
 hardening kwargs without ever touching a real Docker daemon.
 """
 
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 from server.docker_manager import (
@@ -469,6 +471,42 @@ def test_apply_docker_cli_sets_host_and_mount():
         "bind": "/custom-cont-init.d/96-install-docker-cli.sh",
         "mode": "ro",
     }
+
+
+# ── Core dump cleanup ─────────────────────────────────────────────────────────
+
+def test_apply_core_dump_cleanup_mounts_script():
+    volumes: dict = {}
+    DockerManager._apply_core_dump_cleanup(volumes)
+    key = _helper_script_path("prune-core-dumps.sh")
+    assert key.endswith("/.cove-scripts/prune-core-dumps.sh")
+    assert volumes[key] == {
+        "bind": "/custom-cont-init.d/02-prune-core-dumps.sh",
+        "mode": "ro",
+    }
+
+
+def test_prune_core_dumps_removes_only_real_dumps(tmp_path):
+    """The script must delete core.<pid> ELF dumps and nothing else."""
+    script = Path(__file__).resolve().parents[3] / "scripts" / "prune-core-dumps.sh"
+    # A minimal ELF header with e_type == ET_CORE (4) is all the script inspects.
+    dump = bytes([0x7F]) + b"ELF" + bytes(12) + b"\x04\x00" + bytes(64)
+    (tmp_path / "core.123").write_bytes(dump)
+    (tmp_path / "core.456").write_bytes(dump)
+    (tmp_path / "core.789").write_bytes(b"\x7fELF" + bytes(12) + b"\x02\x00")  # ET_EXEC, not a dump
+    (tmp_path / "core.log").write_text("log line")  # pid-shaped name, plain text
+    (tmp_path / "core.dir").mkdir()
+
+    body = script.read_text().replace("CONFIG=/config", f"CONFIG={tmp_path}", 1)
+    patched = tmp_path / "prune.sh"
+    patched.write_text(body)
+    patched.chmod(0o755)
+
+    out = subprocess.run(["bash", str(patched)], capture_output=True, text=True)
+    assert out.returncode == 0
+    assert "removed 2 core dump(s)" in out.stdout
+    survivors = sorted(p.name for p in tmp_path.iterdir() if p.name.startswith("core."))
+    assert survivors == ["core.789", "core.dir", "core.log"]
 
 
 def test_dind_names():

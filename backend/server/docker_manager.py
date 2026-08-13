@@ -51,6 +51,7 @@ _HELPER_SCRIPTS = (
     "clear-browser-lock.sh",
     "fix-mate-xsettings.sh",
     "install-docker-cli.sh",
+    "prune-core-dumps.sh",
 )
 
 
@@ -1269,6 +1270,7 @@ class DockerManager:
             self._apply_proot_apps(env, volumes, ws.proot_apps)
             self._apply_appimages(env, volumes, ws.appimages)
             self._apply_ssh_key(ws, volumes)
+            self._apply_core_dump_cleanup(volumes)
             self._apply_cove_theme(volumes)
             self._apply_mate_theme_fix(volumes)
             self._apply_browser_lock_cleanup(ws, volumes)
@@ -2460,6 +2462,23 @@ class DockerManager:
             return
         volumes[_helper_script_path("clear-browser-lock.sh")] = {
             "bind": "/custom-cont-init.d/95-clear-browser-lock.sh",
+            "mode": "ro",
+        }
+
+    @staticmethod
+    def _apply_core_dump_cleanup(volumes: dict) -> None:
+        """Delete core dumps crashed desktop apps left in the persistent /config.
+
+        The host's kernel.core_pattern (not namespaced, so not ours to change)
+        usually writes dumps to the crashing process's cwd — /config for a
+        LinuxServer desktop. Chromium/Electron crashes drop ~1 GB each and
+        nothing in the image cleans them up, so they accumulate on the volume.
+        Mounted unconditionally: the script only ever removes files matching
+        /config/core.<pid> that are really ELF core dumps, so it's a harmless
+        no-op on a workspace that has none. Mutates ``volumes`` in place.
+        """
+        volumes[_helper_script_path("prune-core-dumps.sh")] = {
+            "bind": "/custom-cont-init.d/02-prune-core-dumps.sh",
             "mode": "ro",
         }
 
