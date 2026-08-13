@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { api, ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import { useConnectionStore } from '@/stores/connection'
 
 // Build a minimal Response-like object for our fetch mock.
 function jsonResponse(status: number, body: unknown = {}): Response {
@@ -237,5 +238,36 @@ describe('api client error formatting', () => {
   it('a genuine error status still rejects', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(404, { detail: 'No preview available' }))
     await expect(api.getBlob('/workspaces/1/preview.jpg')).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('a fetch that never gets a response marks the connection offline', async () => {
+    // No status at all — DNS/TCP/TLS failure or the server is down. This is the
+    // one case the offline takeover is for, so it must not look like an HTTP
+    // error to callers either: status 0 says "never answered".
+    const conn = useConnectionStore()
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await expect(api.get('/workspaces')).rejects.toMatchObject({ status: 0 })
+    expect(conn.offline).toBe(true)
+  })
+
+  it('an HTTP error status leaves the connection online', async () => {
+    // The backend answering with a 500 proves it is up; taking over the screen
+    // for it would hide the actual error.
+    const conn = useConnectionStore()
+    fetchMock.mockResolvedValueOnce(jsonResponse(500, { detail: 'boom' }))
+
+    await expect(api.get('/workspaces')).rejects.toMatchObject({ status: 500 })
+    expect(conn.offline).toBe(false)
+  })
+
+  it('a successful response clears an offline flag', async () => {
+    const conn = useConnectionStore()
+    conn.markOffline()
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { ok: true }))
+
+    await api.get('/workspaces')
+
+    expect(conn.offline).toBe(false)
   })
 })

@@ -1,7 +1,10 @@
 import { useAuthStore } from '@/stores/auth'
+import { useConnectionStore } from '@/stores/connection'
 
 const BASE = '/api'
 
+/** A failed request. `status` is the HTTP status, or 0 when the server never
+ *  answered — see the fetch below. */
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -71,7 +74,20 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${auth.token}`
   }
 
-  const resp = await fetch(BASE + path, { ...init, headers, credentials: 'include' })
+  let resp: Response
+  try {
+    resp = await fetch(BASE + path, { ...init, headers, credentials: 'include' })
+  } catch {
+    // No response at all: DNS/TCP/TLS failure, or the server is simply down.
+    // Distinct from every HTTP status, each of which proves the backend answered.
+    // Raise the flag (App.vue takes over the screen with the offline page, and
+    // the store polls until the server is back) and surface a typed error so
+    // callers can tell "unreachable" from "refused".
+    useConnectionStore().markOffline()
+    throw new ApiError(0, 'Cannot reach the Cove server')
+  }
+  // Any answer at all means it's up — including the error statuses below.
+  useConnectionStore().markOnline()
 
   if (resp.status === 401) {
     const hadToken = !!auth.token

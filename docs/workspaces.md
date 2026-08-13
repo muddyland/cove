@@ -192,6 +192,17 @@ reads as Home Assistant, which is how you think of it.
 - Cove won't fetch icons from loopback or link-local addresses; sites on private
   LAN ranges are fine.
 
+## When the server is unreachable
+
+If the interface can't reach Cove's backend at all — it's restarting, the machine
+is down, or your connection to it dropped — the page is taken over by an
+**offline** screen rather than leaving you with buttons that do nothing.
+
+It retries on its own (quickly at first, then backing off) and clears itself as
+soon as the server answers, so a restart resolves without you doing anything.
+There's a **Retry** button if you'd rather not wait. This is about reaching the
+server: an error *from* the server shows as an ordinary message instead.
+
 ## Lifecycle
 
 | Action | What happens |
