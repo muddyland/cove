@@ -10,6 +10,8 @@ from types import SimpleNamespace
 
 from server.docker_manager import (
     DockerManager,
+    _DIND_BIP,
+    _DIND_POOL_BASE,
     _build_browser_cli,
     _dns_list,
     _helper_script_path,
@@ -347,6 +349,24 @@ def test_egress_rules_tailscale_allows_tailnet_interface_first():
     assert "-d 172.16.0.0/12 -j DROP" in script
 
 
+def test_egress_rules_reach_nested_containers_only_with_docker():
+    """The desktop should be able to curl a container it just started by IP, not
+    only through a published port — but nothing else about the policy moves."""
+    from server.docker_manager import _DIND_SUBNETS
+
+    plain = DockerManager._build_egress_rules(tailscale=False, lan_subnets=[])
+    with_docker = DockerManager._build_egress_rules(
+        tailscale=False, lan_subnets=[], docker=True
+    )
+    for cidr in _DIND_SUBNETS:
+        assert f"-d {cidr} -j ACCEPT" not in plain
+        assert f"-d {cidr} -j ACCEPT" in with_docker
+        # Ahead of the 10/8 drop that would otherwise swallow the nested bridge.
+        assert with_docker.index(cidr) < with_docker.index("-d 10.0.0.0/8 -j DROP")
+    # The protected ranges are still dropped first, so this can't re-open them.
+    assert with_docker.index("172.16.0.0/12") < with_docker.index(_DIND_SUBNETS[0])
+
+
 def test_egress_rules_lan_subnets_accepted_before_lan_block():
     script = DockerManager._build_egress_rules(
         tailscale=True, lan_subnets=["10.12.0.0/24"]
@@ -425,6 +445,23 @@ def test_gluetun_env_openvpn_with_overrides():
     assert env["FIREWALL_INPUT_PORTS"] == "3000"
     assert env["FIREWALL_OUTBOUND_SUBNETS"] == "172.20.0.0/16"
     assert "WIREGUARD_PRIVATE_KEY" not in env
+
+
+def test_gluetun_env_allows_nested_docker_subnets():
+    """gluetun owns the netns the nested bridges live in, and its killswitch drops
+    what isn't listed — including the desktop's own traffic to a container it just
+    started."""
+    from server.docker_manager import _DIND_SUBNETS
+
+    env = DockerManager._build_gluetun_env("wireguard", 3000, "172.20.0.0/16", docker=True)
+    allowed = env["FIREWALL_OUTBOUND_SUBNETS"].split(",")
+    assert allowed[0] == "172.20.0.0/16"  # Traefik reachability still first
+    assert all(cidr in allowed for cidr in _DIND_SUBNETS)
+
+
+def test_gluetun_env_without_docker_lists_only_the_bridge():
+    env = DockerManager._build_gluetun_env("wireguard", 3000, "172.20.0.0/16")
+    assert env["FIREWALL_OUTBOUND_SUBNETS"] == "172.20.0.0/16"
 
 
 def test_gluetun_env_wireguard_override_and_no_ovpn_keys():
@@ -584,6 +621,35 @@ def test_launch_dind_sidecar_privileged_loopback_and_volume():
     # State volume mounted at the daemon's data dir + created.
     assert kwargs["volumes"] == {"cove-dind-state-7": {"bind": "/var/lib/docker", "mode": "rw"}}
     assert "cove-dind-state-7" in dm._client.volumes.created
+    # Nested networks pinned away from the 172.16/12 range the guards drop, so a
+    # nested container is distinguishable from the host's own Docker networks.
+    assert f"--bip={_DIND_BIP}" in kwargs["command"]
+    assert f"--default-address-pool=base={_DIND_POOL_BASE},size=24" in kwargs["command"]
+
+
+def test_launch_dind_sidecar_shares_the_workspace_config_at_the_same_path():
+    """Bind mounts are resolved by the daemon in its own filesystem, so the
+    workspace's /config has to be the same directory at the same path here —
+    otherwise `docker run -v /config/project:/app` silently mounts an empty dir."""
+    dm = _dm_fake()
+    dm._launch_dind_sidecar(
+        SimpleNamespace(id=7), "cove-ws-7", "docker:dind",
+        config_source="/storage/bob/workspace-dev",
+    )
+    _, kwargs = dm._client.containers.run_calls[0]
+    assert kwargs["volumes"]["/storage/bob/workspace-dev"] == {
+        "bind": "/config",
+        "mode": "rw",
+    }
+
+
+def test_launch_dind_sidecar_without_a_home_mounts_only_state():
+    """An ephemeral workspace has no host directory to share — the daemon still
+    runs, it just can't bind-mount the workspace's /config."""
+    dm = _dm_fake()
+    dm._launch_dind_sidecar(SimpleNamespace(id=7), "cove-ws-7", "docker:dind")
+    _, kwargs = dm._client.containers.run_calls[0]
+    assert list(kwargs["volumes"]) == ["cove-dind-state-7"]
 
 
 def test_dind_guard_script_blocks_internal_ranges():
@@ -597,6 +663,21 @@ def test_dind_guard_script_blocks_internal_ranges():
     assert "DOCKER-USER" in script and "date +%s" in script
     # Probes each backend and uses the one whose FORWARD jumps to DOCKER-USER.
     assert "iptables-legacy iptables-nft iptables" in script
+
+
+def test_dind_guard_script_lets_nested_containers_reach_each_other():
+    """Nested containers talk over the FORWARD path this chain filters. Without a
+    carve-out the 10/8 drop swallows the nested bridge, and a compose stack's app
+    can't reach its own database."""
+    from server.docker_manager import _DIND_SUBNETS
+
+    script = DockerManager._build_dind_guard_script(_dm_fake(), [])
+    for cidr in _DIND_SUBNETS:
+        assert f"$IPT -A DOCKER-USER -d {cidr} -j ACCEPT" in script
+        assert script.index(cidr) < script.index("-d 10.0.0.0/8 -j DROP")
+    # The host's own Docker networks stay blocked — that carve-out is only for
+    # the pools the nested daemon was pinned to.
+    assert "$IPT -A DOCKER-USER -d 172.16.0.0/12 -j DROP" in script
 
 
 def test_dind_guard_script_honours_granted_subnets():

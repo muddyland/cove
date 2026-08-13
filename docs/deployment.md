@@ -148,10 +148,58 @@ Tailscale/Gluetun sidecar pattern):
   they inherit the same block on cloud metadata, the Docker-internal range (Cove
   backend, proxies, other workspaces), and un-granted LAN.
 - The workspace gets the `docker` CLI auto-installed and `DOCKER_HOST` preset.
+- The workspace's persistent home is mounted into the sidecar **at the same
+  path**, so bind mounts work (see below).
+- Nested networks are pinned to `10.222.0.0/16` (the nested `docker0`) and
+  `10.223.0.0/16` (Compose and other user-defined networks), and those two ranges
+  are carved out of the egress guards. Every other private range stays blocked.
 
 A breakout from the nested daemon lands the attacker in the **privileged
 sidecar**, confined to that one workspace's isolated netns — not the host daemon
 and not other workspaces.
+
+### Bind mounts
+
+`docker run -v /config/project:/app …` works, and mounts the files you see in the
+workspace.
+
+This needs saying because the obvious expectation is wrong in a subtle way: bind
+mounts are resolved **by the daemon, in the daemon's own filesystem**, not by the
+`docker` client. The nested daemon lives in the sidecar, so unless it has the
+same directory at the same path, Docker's response to a missing bind source is to
+create an empty one — the mount succeeds and the files simply aren't there. Cove
+therefore mounts the workspace's `/config` into the sidecar at `/config`.
+
+The consequences worth knowing:
+
+- **Only `/config` is shared.** A path outside it (say `/tmp/x`) resolves inside
+  the sidecar, where it is empty or absent. Keep the things you mount under
+  `/config` — which is also the only directory that persists.
+- **Ephemeral workspaces can't do this.** Their `/config` is the container's own
+  writable layer, which no other container can be given a view of, so nested bind
+  mounts of it come up empty. Everything else about Docker works; the launch log
+  says so explicitly. Turn ephemeral off if you need bind mounts.
+- A nested container can read and write anything under `/config` — your own
+  workspace home, no more.
+
+### Networking
+
+The sidecar joins the workspace's network namespace, so it is on the workspace's
+network by construction — there is no second attachment, and no daemon port is
+exposed anywhere else:
+
+- **From the workspace**, containers are reachable at `localhost:<published
+  port>` and directly at their `10.222/16` / `10.223/16` addresses.
+- **Between nested containers** — a Compose app reaching its own database —
+  works, which is why those pools are pinned: on Docker's defaults (`172.17.0.0/16`
+  upward) they land inside the `172.16/12` range the egress guard drops as
+  "Cove's own backend and other workspaces", and there'd be no way to tell one
+  from the other.
+- **Publishing a port** binds it in the shared namespace, so avoid the
+  workspace's own stream port (usually 3000) — publishing onto it shadows the
+  desktop's stream.
+- **Traefik can't reach nested containers**, published or not. They're behind the
+  workspace's namespace, same as the daemon.
 
 ### Residual risk
 
@@ -169,8 +217,29 @@ isolation, run the daemon rootless (`docker:dind-rootless`) or use the
    works on x86_64 and arm64).
 2. Per workspace, tick **"Docker (dev)"** when launching or editing it.
 
-It composes with Tailscale/Gluetun routing (nested containers egress through the
-tunnel) and needs no host changes.
+It composes with Tailscale/Gluetun routing and needs no host changes.
+
+### With a VPN or Tailscale
+
+When a workspace routes through Gluetun or Tailscale, the **routing sidecar owns
+the network namespace** and the DinD sidecar joins *that* — so the nested daemon
+and everything it runs sit behind the tunnel exactly as the desktop does. A
+`docker build` pulling from a registry goes out over the VPN.
+
+Two details Cove handles for you, both of which would otherwise look like "Docker
+is broken" rather than "the firewall did its job":
+
+- **Gluetun's killswitch drops what isn't listed.** The nested pools are added to
+  its outbound allow-list, so the desktop can reach a container it just started.
+  This doesn't widen the tunnel: those addresses exist only inside the workspace's
+  own namespace.
+- **Tailscale MagicDNS** (`100.100.100.100`) is allowed out `tailscale0` ahead of
+  the CGNAT block, so nested `docker build` / `apt` can resolve names at all.
+
+One caveat: the nested daemon's containers egress through the kernel's forwarding
+path, which Gluetun's killswitch — an output filter — does not see. If the tunnel
+drops, the workspace itself is cut off as designed, but treat nested containers as
+covered by routing rather than by the killswitch.
 
 **Local zone only.** DinD is available for workspaces on the **local
 control-plane zone**. Remote zone agents deliberately refuse privileged container

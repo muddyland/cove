@@ -138,6 +138,25 @@ _LAN_BLOCK = [
 # (172.16/12 + link-local are in _ALWAYS_BLOCK, never auto-allowed.)
 _LAN_BLOCK_NETS = [ipaddress.ip_network(c) for c in _LAN_BLOCK]
 
+# Address pools pinned for the nested (Docker-in-Docker) daemon, rather than
+# taking dockerd's defaults. Two reasons:
+#
+#  1. The defaults (172.17.0.0/16 upward) sit inside the 172.16/12 range every
+#     egress guard drops — that range is the HOST's Docker networks, which a
+#     workspace must never reach. Left on the defaults, the guards can't tell a
+#     nested container apart from the backend's own bridge, so a `docker compose`
+#     stack couldn't talk to itself.
+#  2. The nested bridges live in the workspace's own netns, whose routing table
+#     already carries the host network it is attached to. Distinct pools keep a
+#     nested bridge from shadowing the route the workspace reaches Traefik by.
+#
+# These are carved out of the drops as an explicit ACCEPT ahead of them. They
+# only ever exist inside one workspace's netns, so allowing them grants nothing
+# beyond that workspace's own nested containers.
+_DIND_BIP = "10.222.0.1/16"  # nested default bridge (docker0)
+_DIND_POOL_BASE = "10.223.0.0/16"  # nested user-defined networks (compose)
+_DIND_SUBNETS = ["10.222.0.0/16", "10.223.0.0/16"]
+
 
 def _one_url_lan_ips(url: str) -> list[str]:
     host = urlparse(url).hostname
@@ -1254,6 +1273,18 @@ class DockerManager:
             # DinD sidecar and install the docker client; the sidecar itself is
             # started after the container is up (it needs to join its netns).
             docker_enabled = ws.use_docker and get_workspace_docker(db)
+            if docker_enabled and not mount_source:
+                # Ephemeral: /config is the container's own writable layer, which
+                # no other container can be given. The nested daemon therefore
+                # can't resolve a bind mount from it — `docker run -v /config/x`
+                # silently gets an empty directory. Everything else about DinD
+                # works; say so once at launch rather than leaving it to be
+                # discovered as mysteriously empty mounts.
+                logger.warning(
+                    "Workspace %s is ephemeral: nested containers cannot bind-mount "
+                    "its /config (no host directory to share with the DinD daemon)",
+                    ws.id,
+                )
 
             volumes = {}
             if mount_source:
@@ -1339,6 +1370,7 @@ class DockerManager:
                         tailscale=True,
                         lan_subnets=lan_subnets,
                         target=self._ts_sidecar_name(ws.id),
+                        docker=docker_enabled,
                     )
                     # The workspace container shares the sidecar's netns. No own
                     # network, no traefik labels (the sidecar carries routing).
@@ -1369,6 +1401,7 @@ class DockerManager:
                     self._launch_gluetun_sidecar(
                         ws, image, net_name, labels, g_cfg,
                         get_gluetun_image(db), self._ws_network_subnet(net_name),
+                        docker=docker_enabled,
                     )
                     # gluetun's killswitch is the egress control; the workspace
                     # joins its netns and inherits the VPN tunnel.
@@ -1423,7 +1456,9 @@ class DockerManager:
                 # gluetun's own killswitch firewall (adding our OUTPUT drops would
                 # fight it), so both are skipped here.
                 if not ws.use_tailscale and not ws.use_gluetun:
-                    self._apply_egress_guard(ws.id, lan_subnets=lan_subnets)
+                    self._apply_egress_guard(
+                        ws.id, lan_subnets=lan_subnets, docker=docker_enabled
+                    )
 
                 # DinD sidecar: launched now that the netns owner (the workspace
                 # container, or its routing sidecar) is running and the egress
@@ -1438,7 +1473,10 @@ class DockerManager:
                         else container_name
                     )
                     try:
-                        self._launch_dind_sidecar(ws, netns_owner, get_dind_image(db))
+                        self._launch_dind_sidecar(
+                            ws, netns_owner, get_dind_image(db),
+                            config_source=mount_source,
+                        )
                         self._apply_dind_egress_guard(
                             ws.id, lan_subnets, tailscale=ws.use_tailscale
                         )
@@ -1957,7 +1995,9 @@ class DockerManager:
                 logger.warning("Auto-stop of workspace %s failed: %s", ws_id, exc)
 
     @staticmethod
-    def _build_egress_rules(tailscale: bool, lan_subnets: list[str]) -> str:
+    def _build_egress_rules(
+        tailscale: bool, lan_subnets: list[str], docker: bool = False
+    ) -> str:
         """Build the iptables OUTPUT script for a workspace netns.
 
         Filtering is by DESTINATION on OUTPUT, so the WAN stays reachable through
@@ -1971,9 +2011,12 @@ class DockerManager:
              nodes, and subnet-router-advertised LAN — all before any DROP.
           3. _ALWAYS_BLOCK (metadata + Docker-internal) → DROP. Applied to every
              workspace so container/backend isolation holds regardless of mode.
-          4. Admin-granted LAN subnets → ACCEPT (raw-bridge direct LAN).
-          5. _LAN_BLOCK (remaining private + CGNAT) → DROP.
-          6. Default policy ACCEPT → WAN.
+          4. (Docker only) the nested daemon's own pools → ACCEPT, so the desktop
+             can reach a container it just started by IP and not only through a
+             published port. Those subnets live in this netns alone.
+          5. Admin-granted LAN subnets → ACCEPT (raw-bridge direct LAN).
+          6. _LAN_BLOCK (remaining private + CGNAT) → DROP.
+          7. Default policy ACCEPT → WAN.
         """
         rules = [
             "iptables -P OUTPUT ACCEPT",
@@ -1989,6 +2032,9 @@ class DockerManager:
         ]
         for cidr in _ALWAYS_BLOCK:
             rules.append(f"iptables -A OUTPUT -d {cidr} -j DROP")
+        if docker:
+            for cidr in _DIND_SUBNETS:
+                rules.append(f"iptables -A OUTPUT -d {cidr} -j ACCEPT")
         for cidr in lan_subnets:
             rules.append(f"iptables -A OUTPUT -d {cidr} -j ACCEPT")
         for cidr in _LAN_BLOCK:
@@ -2002,6 +2048,7 @@ class DockerManager:
         tailscale: bool = False,
         lan_subnets: list[str] | None = None,
         target: str | None = None,
+        docker: bool = False,
     ) -> None:
         """Install the egress firewall in a workspace's network namespace.
 
@@ -2018,7 +2065,7 @@ class DockerManager:
         rules are in place before the workload can emit any traffic.
         """
         target = target or f"cove-ws-{ws_id}"
-        script = self._build_egress_rules(tailscale, lan_subnets or [])
+        script = self._build_egress_rules(tailscale, lan_subnets or [], docker=docker)
 
         try:
             self._pull_image(EGRESS_GUARD_IMAGE)
@@ -2127,18 +2174,27 @@ class DockerManager:
         openvpn_user: "str | None" = None,
         openvpn_password: "str | None" = None,
         wireguard_private_key: "str | None" = None,
+        docker: bool = False,
     ) -> dict:
         """Env for a custom-provider gluetun sidecar. FIREWALL_INPUT_PORTS +
         FIREWALL_OUTBOUND_SUBNETS let Traefik (on the local docker bridge) reach the
         workspace's port through gluetun's killswitch. Direct secrets override the
-        values inside the mounted config file."""
+        values inside the mounted config file.
+
+        With Docker-in-Docker on, the nested daemon's pools go in that same
+        outbound list. gluetun owns the netns the nested bridges are created in,
+        and its killswitch drops anything not explicitly allowed — including the
+        desktop's own traffic to a container it just started. Allowing them
+        doesn't widen the tunnel: they are addresses inside this netns, and the
+        VPN still carries everything actually leaving the workspace."""
         env = {
             "VPN_SERVICE_PROVIDER": "custom",
             "VPN_TYPE": vpn_type,
             "FIREWALL_INPUT_PORTS": str(image_port),
         }
-        if subnet:
-            env["FIREWALL_OUTBOUND_SUBNETS"] = subnet
+        outbound = ([subnet] if subnet else []) + (list(_DIND_SUBNETS) if docker else [])
+        if outbound:
+            env["FIREWALL_OUTBOUND_SUBNETS"] = ",".join(outbound)
         if vpn_type == "wireguard":
             if wireguard_private_key:
                 env["WIREGUARD_PRIVATE_KEY"] = wireguard_private_key
@@ -2159,6 +2215,7 @@ class DockerManager:
         g_cfg: "UserGluetun",
         gluetun_image: str,
         subnet: "str | None",
+        docker: bool = False,
     ) -> None:
         """Launch the Gluetun VPN sidecar that carries this workspace's netns.
 
@@ -2186,6 +2243,7 @@ class DockerManager:
             openvpn_user=decrypt_secret(g_cfg.openvpn_user),
             openvpn_password=decrypt_secret(g_cfg.openvpn_password),
             wireguard_private_key=decrypt_secret(g_cfg.wireguard_private_key),
+            docker=docker,
         )
         volumes = {host_path: {"bind": self._gluetun_mount_target(vpn_type), "mode": "ro"}}
 
@@ -2217,7 +2275,13 @@ class DockerManager:
             "mode": "ro",
         }
 
-    def _launch_dind_sidecar(self, ws: Workspace, netns_owner: str, dind_image: str) -> None:
+    def _launch_dind_sidecar(
+        self,
+        ws: Workspace,
+        netns_owner: str,
+        dind_image: str,
+        config_source: "str | None" = None,
+    ) -> None:
         """Launch the per-workspace Docker-in-Docker daemon sidecar.
 
         The sidecar runs a PRIVILEGED nested ``dockerd`` and joins the workspace's
@@ -2226,6 +2290,19 @@ class DockerManager:
         Traefik and other containers can't reach it, and TLS is unnecessary. The
         host Docker socket is never mounted; a breakout stays confined to this
         throwaway sidecar. State lives in a per-workspace volume discarded on halt.
+
+        ``config_source`` is the workspace's persistent home, mounted here at the
+        SAME path (/config) it has in the workspace. Bind mounts are resolved by
+        the daemon, in the daemon's own filesystem — so without this, a perfectly
+        ordinary ``docker run -v /config/project:/app`` inside the workspace hands
+        the nested daemon a path it doesn't have, and Docker's answer to a missing
+        bind source is to create an empty directory. The mount is the difference
+        between that silent empty directory and the files the user meant. None for
+        an ephemeral workspace, which has no host directory to share (see the
+        caller's warning).
+
+        Nested networks are pinned to :data:`_DIND_SUBNETS` so the egress guards
+        can tell a nested container from the host's Docker networks.
         """
         sidecar_name = self._dind_sidecar_name(ws.id)
         volume_name = self._dind_volume_name(ws.id)
@@ -2238,6 +2315,13 @@ class DockerManager:
             pass
 
         self._ensure_named_volume(volume_name)
+
+        volumes: dict = {volume_name: {"bind": "/var/lib/docker", "mode": "rw"}}
+        if config_source:
+            # Same source, same path, both containers — see the docstring. rw
+            # because writing to a bind-mounted project directory is the whole
+            # point; it is the user's own home either way.
+            volumes[config_source] = {"bind": "/config", "mode": "rw"}
 
         self._pull_image(dind_image)
         self._client.containers.run(
@@ -2261,11 +2345,16 @@ class DockerManager:
                 "--host=tcp://127.0.0.1:2375",
                 "--tls=false",
                 "--storage-driver=overlay2",
+                f"--bip={_DIND_BIP}",
+                f"--default-address-pool=base={_DIND_POOL_BASE},size=24",
             ],
-            volumes={volume_name: {"bind": "/var/lib/docker", "mode": "rw"}},
+            volumes=volumes,
             shm_size="1g",
         )
-        logger.info("Started DinD sidecar %s for workspace %s", sidecar_name, ws.id)
+        logger.info(
+            "Started DinD sidecar %s for workspace %s (/config shared: %s)",
+            sidecar_name, ws.id, bool(config_source),
+        )
 
     def _build_dind_guard_script(
         self, lan_subnets: list[str] | None, tailscale: bool = False
@@ -2284,9 +2373,16 @@ class DockerManager:
         ``100.64.0.0/10`` DROP would swallow nested containers' queries to Tailscale
         MagicDNS (``100.100.100.100``, routed out ``tailscale0``), which the
         workspace's Tailscale-generated ``resolv.conf`` hands them — so nested
-        ``docker build`` / ``apt`` would fail to resolve any mirror."""
+        ``docker build`` / ``apt`` would fail to resolve any mirror.
+
+        The nested daemon's own pools are accepted ahead of the DROPs too: nested
+        containers reach each other over the very FORWARD path this chain filters,
+        so without that a ``docker compose`` stack's app could not reach its own
+        database — the 10/8 drop would swallow the nested bridge. Those addresses
+        exist only inside this workspace's netns, so it grants nothing outside it.
+        """
         blocked = list(_ALWAYS_BLOCK)
-        allowed = lan_subnets or []
+        allowed = list(_DIND_SUBNETS) + (lan_subnets or [])
         lan_block = [c for c in _LAN_BLOCK if c not in allowed]
         parts = [
             'end=$(($(date +%s)+30)); IPT=""',
