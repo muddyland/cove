@@ -451,6 +451,16 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):
+            # An unmatched API path is a client error, not a deep link. Falling
+            # through to the SPA shell would answer a bad API request with
+            # "200 + text/html", so a caller checking the status code sees
+            # success and then fails parsing HTML as JSON — and a request that
+            # never reached a router (e.g. a slug with encoded slashes, which
+            # ASGI decodes into extra path segments) looks like it was served.
+            # Every API router is mounted under one of these prefixes, so a real
+            # endpoint has already matched by the time we get here.
+            if full_path.split("/", 1)[0] in ("api", "agent"):
+                return JSONResponse(status_code=404, content={"detail": "not found"})
             # Serve real root-level static files (favicon.svg, manifest, etc.)
             # when they exist; otherwise fall back to the SPA entrypoint.
             if full_path:
