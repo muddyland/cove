@@ -9,9 +9,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from server.docker_manager import (
-    DockerManager,
     _DIND_BIP,
     _DIND_POOL_BASE,
+    DockerManager,
     _build_browser_cli,
     _dns_list,
     _helper_script_path,
