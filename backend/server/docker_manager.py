@@ -1370,7 +1370,7 @@ class DockerManager:
                         tailscale=True,
                         lan_subnets=lan_subnets,
                         target=self._ts_sidecar_name(ws.id),
-                        docker=docker_enabled,
+                        dind=docker_enabled,
                     )
                     # The workspace container shares the sidecar's netns. No own
                     # network, no traefik labels (the sidecar carries routing).
@@ -1401,7 +1401,7 @@ class DockerManager:
                     self._launch_gluetun_sidecar(
                         ws, image, net_name, labels, g_cfg,
                         get_gluetun_image(db), self._ws_network_subnet(net_name),
-                        docker=docker_enabled,
+                        dind=docker_enabled,
                     )
                     # gluetun's killswitch is the egress control; the workspace
                     # joins its netns and inherits the VPN tunnel.
@@ -1457,7 +1457,7 @@ class DockerManager:
                 # fight it), so both are skipped here.
                 if not ws.use_tailscale and not ws.use_gluetun:
                     self._apply_egress_guard(
-                        ws.id, lan_subnets=lan_subnets, docker=docker_enabled
+                        ws.id, lan_subnets=lan_subnets, dind=docker_enabled
                     )
 
                 # DinD sidecar: launched now that the netns owner (the workspace
@@ -1996,7 +1996,7 @@ class DockerManager:
 
     @staticmethod
     def _build_egress_rules(
-        tailscale: bool, lan_subnets: list[str], docker: bool = False
+        tailscale: bool, lan_subnets: list[str], dind: bool = False
     ) -> str:
         """Build the iptables OUTPUT script for a workspace netns.
 
@@ -2032,7 +2032,7 @@ class DockerManager:
         ]
         for cidr in _ALWAYS_BLOCK:
             rules.append(f"iptables -A OUTPUT -d {cidr} -j DROP")
-        if docker:
+        if dind:
             for cidr in _DIND_SUBNETS:
                 rules.append(f"iptables -A OUTPUT -d {cidr} -j ACCEPT")
         for cidr in lan_subnets:
@@ -2048,7 +2048,7 @@ class DockerManager:
         tailscale: bool = False,
         lan_subnets: list[str] | None = None,
         target: str | None = None,
-        docker: bool = False,
+        dind: bool = False,
     ) -> None:
         """Install the egress firewall in a workspace's network namespace.
 
@@ -2065,7 +2065,7 @@ class DockerManager:
         rules are in place before the workload can emit any traffic.
         """
         target = target or f"cove-ws-{ws_id}"
-        script = self._build_egress_rules(tailscale, lan_subnets or [], docker=docker)
+        script = self._build_egress_rules(tailscale, lan_subnets or [], dind=dind)
 
         try:
             self._pull_image(EGRESS_GUARD_IMAGE)
@@ -2174,7 +2174,7 @@ class DockerManager:
         openvpn_user: "str | None" = None,
         openvpn_password: "str | None" = None,
         wireguard_private_key: "str | None" = None,
-        docker: bool = False,
+        dind: bool = False,
     ) -> dict:
         """Env for a custom-provider gluetun sidecar. FIREWALL_INPUT_PORTS +
         FIREWALL_OUTBOUND_SUBNETS let Traefik (on the local docker bridge) reach the
@@ -2192,7 +2192,7 @@ class DockerManager:
             "VPN_TYPE": vpn_type,
             "FIREWALL_INPUT_PORTS": str(image_port),
         }
-        outbound = ([subnet] if subnet else []) + (list(_DIND_SUBNETS) if docker else [])
+        outbound = ([subnet] if subnet else []) + (list(_DIND_SUBNETS) if dind else [])
         if outbound:
             env["FIREWALL_OUTBOUND_SUBNETS"] = ",".join(outbound)
         if vpn_type == "wireguard":
@@ -2215,7 +2215,7 @@ class DockerManager:
         g_cfg: "UserGluetun",
         gluetun_image: str,
         subnet: "str | None",
-        docker: bool = False,
+        dind: bool = False,
     ) -> None:
         """Launch the Gluetun VPN sidecar that carries this workspace's netns.
 
@@ -2243,7 +2243,7 @@ class DockerManager:
             openvpn_user=decrypt_secret(g_cfg.openvpn_user),
             openvpn_password=decrypt_secret(g_cfg.openvpn_password),
             wireguard_private_key=decrypt_secret(g_cfg.wireguard_private_key),
-            docker=docker,
+            dind=dind,
         )
         volumes = {host_path: {"bind": self._gluetun_mount_target(vpn_type), "mode": "ro"}}
 

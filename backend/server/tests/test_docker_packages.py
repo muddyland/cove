@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from server.docker_manager import (
     _DIND_BIP,
     _DIND_POOL_BASE,
+    _DIND_SUBNETS,
     DockerManager,
     _build_browser_cli,
     _dns_list,
@@ -356,7 +357,7 @@ def test_egress_rules_reach_nested_containers_only_with_docker():
 
     plain = DockerManager._build_egress_rules(tailscale=False, lan_subnets=[])
     with_docker = DockerManager._build_egress_rules(
-        tailscale=False, lan_subnets=[], docker=True
+        tailscale=False, lan_subnets=[], dind=True
     )
     for cidr in _DIND_SUBNETS:
         assert f"-d {cidr} -j ACCEPT" not in plain
@@ -453,7 +454,7 @@ def test_gluetun_env_allows_nested_docker_subnets():
     started."""
     from server.docker_manager import _DIND_SUBNETS
 
-    env = DockerManager._build_gluetun_env("wireguard", 3000, "172.20.0.0/16", docker=True)
+    env = DockerManager._build_gluetun_env("wireguard", 3000, "172.20.0.0/16", dind=True)
     allowed = env["FIREWALL_OUTBOUND_SUBNETS"].split(",")
     assert allowed[0] == "172.20.0.0/16"  # Traefik reachability still first
     assert all(cidr in allowed for cidr in _DIND_SUBNETS)
@@ -663,6 +664,64 @@ def test_dind_guard_script_blocks_internal_ranges():
     assert "DOCKER-USER" in script and "date +%s" in script
     # Probes each backend and uses the one whose FORWARD jumps to DOCKER-USER.
     assert "iptables-legacy iptables-nft iptables" in script
+
+
+def test_launch_gluetun_sidecar_runs_when_there_is_no_stale_sidecar(monkeypatch, tmp_path):
+    """The no-stale-sidecar path — i.e. every ordinary launch.
+
+    ``containers.get`` raises NotFound here, so the ``except docker.errors...``
+    clause is evaluated. A parameter named ``docker`` once shadowed the module in
+    this scope, which turned that clause into "'bool' object has no attribute
+    'errors'" and broke every VPN workspace launch. The unit tests covered the env
+    builder but never called the launcher, so nothing caught it.
+    """
+    from server import docker_manager
+
+    dm = _dm_fake()
+    monkeypatch.setattr(docker_manager, "decrypt_secret", lambda v: v)
+    monkeypatch.setattr(
+        docker_manager, "_stage_gluetun_config", lambda ws_id, cfg: str(tmp_path / "wg.conf")
+    )
+    g_cfg = SimpleNamespace(
+        vpn_type="wireguard",
+        config_file="[Interface]",
+        openvpn_user=None,
+        openvpn_password=None,
+        wireguard_private_key="KEY",
+    )
+
+    dm._launch_gluetun_sidecar(
+        SimpleNamespace(id=7),
+        SimpleNamespace(internal_port=3000),
+        "cove-ws-net-7",
+        {"traefik.enable": "true"},
+        g_cfg,
+        "qmcgaw/gluetun",
+        "172.20.0.0/16",
+        dind=True,
+    )
+
+    image, kwargs = dm._client.containers.run_calls[0]
+    assert image == "qmcgaw/gluetun"
+    assert kwargs["name"] == "cove-gluetun-7"
+    # The nested pools reached the killswitch's allow-list.
+    for cidr in _DIND_SUBNETS:
+        assert cidr in kwargs["environment"]["FIREWALL_OUTBOUND_SUBNETS"]
+
+
+def test_launch_gluetun_sidecar_replaces_a_stale_sidecar():
+    dm = _dm_fake()
+    removed = []
+    dm._client.containers.existing["cove-gluetun-7"] = SimpleNamespace(
+        remove=lambda force=False: removed.append("cove-gluetun-7")
+    )
+    with __import__("pytest").raises(RuntimeError, match="config file is not set"):
+        # Stops right after the removal — enough to prove the stale sidecar goes.
+        dm._launch_gluetun_sidecar(
+            SimpleNamespace(id=7), SimpleNamespace(internal_port=3000),
+            "cove-ws-net-7", {}, None, "qmcgaw/gluetun", None,
+        )
+    assert removed == ["cove-gluetun-7"]
 
 
 def test_dind_guard_script_lets_nested_containers_reach_each_other():
