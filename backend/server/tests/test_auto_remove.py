@@ -7,8 +7,6 @@ actually goes away.
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from server.db import SessionLocal
 from server.models import Workspace
 from server.tests.helpers import add_image, set_workspace_status, setup_admin
