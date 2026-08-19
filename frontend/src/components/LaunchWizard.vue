@@ -94,6 +94,10 @@
         <p v-if="form.ephemeral" class="hint ts-field">
           Cookies, history, and downloads live only in the container and are discarded on halt.
         </p>
+        <label v-if="form.ephemeral" class="checkbox-row ts-field"><input type="checkbox" v-model="form.auto_remove" /><span>Discard when stopped (like <code>docker run --rm</code>)</span></label>
+        <p v-if="form.ephemeral && form.auto_remove" class="hint ts-field">
+          The node disappears from the grid when it halts, instead of leaving a card that can only start blank.
+        </p>
       </template>
 
       <p v-if="!urlCapable" class="hint ready-note">Ready to launch — or customize networking &amp; apps below.</p>
@@ -178,7 +182,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
 import NetworkFields from './NetworkFields.vue'
@@ -258,6 +262,7 @@ const form = reactive({
   use_tailscale: false,
   use_gluetun: false,
   ephemeral: false,
+  auto_remove: false,
   lan_access: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -403,13 +408,21 @@ function resetForm() {
   Object.assign(form, {
     name: '', image_id: '', zone_id: 0, target_url: '',
     kiosk: false, kiosk_dark: false, kiosk_menu: false,
-    use_tailscale: false, use_gluetun: false, ephemeral: false, lan_access: false,
+    use_tailscale: false, use_gluetun: false, ephemeral: false, auto_remove: false, lan_access: false,
     ts_exit_node: '', ts_accept_routes: true, ts_accept_dns: true,
     custom_dns: false, dns_servers: '', allow_sudo: false, inject_ssh_key: true,
     pixelflux_wayland: true, clear_browser_lock: false, gpu_accel: false,
     use_docker: false, shared_profile: false, install_packages: '', proot_apps: [], appimages: '',
   })
 }
+
+
+// "Discard when stopped" only exists for ephemeral nodes — the API refuses the
+// pair otherwise, since a persistent home would be destroyed on an ordinary
+// halt. The checkbox is hidden when ephemeral is off, so clear the value too:
+// a hidden-but-set flag would fail the launch with an error about a control the
+// user cannot see.
+watch(() => form.ephemeral, (on) => { if (!on) form.auto_remove = false })
 
 async function launch() {
   submitted.value = true

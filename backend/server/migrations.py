@@ -204,6 +204,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0041_workspace_favicon_at",
         "ALTER TABLE workspace ADD COLUMN favicon_at DATETIME",
     ),
+    # Delete the workspace record when its container stops (ephemeral only).
+    (
+        "0042_workspace_auto_remove",
+        "ALTER TABLE workspace ADD COLUMN auto_remove BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

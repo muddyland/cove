@@ -84,6 +84,7 @@ export interface Workspace {
   use_tailscale: boolean
   use_gluetun: boolean
   ephemeral: boolean
+  auto_remove: boolean
   lan_access: boolean
   ts_exit_node: string | null
   ts_accept_routes: boolean

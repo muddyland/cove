@@ -62,6 +62,7 @@ const desktopWs: Workspace = {
   use_tailscale: false,
   use_gluetun: false,
   ephemeral: false,
+  auto_remove: false,
   lan_access: false,
   ts_exit_node: null,
   ts_accept_routes: true,
@@ -111,5 +112,40 @@ describe('EditWorkspaceModal', () => {
     expect(payload.use_tailscale).toBe(false)
     expect(payload).not.toHaveProperty('ts_exit_node')
     expect(toastMock).toHaveBeenCalledWith('Workspace updated', 'success')
+  })
+})
+
+describe('auto_remove ("discard when stopped")', () => {
+  const browserWs: Workspace = {
+    ...desktopWs,
+    workspace_type: 'browser',
+    target_url: 'https://example.com',
+    ephemeral: true,
+    auto_remove: true,
+  }
+
+  beforeEach(() => {
+    vi.mocked(prootApi.list).mockResolvedValue({ apps: [] })
+    vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] } as never)
+    vi.mocked(workspacesApi.gpuPolicy).mockResolvedValue({ enabled: false, available: false } as never)
+    vi.mocked(workspacesApi.dockerPolicy).mockResolvedValue({ enabled: false } as never)
+  })
+
+  it('is cleared when ephemeral is switched off', async () => {
+    // The checkbox is hidden once ephemeral is off, so a value left set would
+    // fail the save with an error about a control the user cannot see.
+    const wrapper = mount(EditWorkspaceModal, {
+      props: { modelValue: true, ws: browserWs },
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as { form: { ephemeral: boolean; auto_remove: boolean } }
+    expect(vm.form.auto_remove).toBe(true)
+
+    vm.form.ephemeral = false
+    await flushPromises()
+
+    expect(vm.form.auto_remove).toBe(false)
   })
 })
