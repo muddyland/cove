@@ -32,6 +32,10 @@
         <input type="checkbox" v-model="form.ephemeral" />
         <span>Ephemeral (no saved data — wiped when halted)</span>
       </label>
+      <label v-if="urlCapable && form.ephemeral" class="checkbox-row ts-field">
+        <input type="checkbox" v-model="form.auto_remove" />
+        <span>Discard when stopped (like <code>docker run --rm</code>)</span>
+      </label>
 
       <div class="section-head">Network</div>
       <NetworkFields
@@ -111,6 +115,7 @@ const form = reactive({
   kiosk_dark: false,
   kiosk_menu: false,
   ephemeral: false,
+  auto_remove: false,
   use_tailscale: false,
   use_gluetun: false,
   lan_access: false,
@@ -143,6 +148,7 @@ function resetFromWs() {
   form.kiosk_dark = props.ws.kiosk_dark
   form.kiosk_menu = props.ws.kiosk_menu
   form.ephemeral = props.ws.ephemeral
+  form.auto_remove = props.ws.auto_remove
   form.use_tailscale = props.ws.use_tailscale
   form.use_gluetun = props.ws.use_gluetun
   form.lan_access = props.ws.lan_access
@@ -162,6 +168,14 @@ function resetFromWs() {
   form.proot_apps = parseProotApps(props.ws.proot_apps)
   form.appimages = props.ws.appimages ?? ''
 }
+
+
+// "Discard when stopped" only exists for ephemeral nodes — the API refuses the
+// pair otherwise, since a persistent home would be destroyed on an ordinary
+// halt. The checkbox is hidden when ephemeral is off, so clear the value too:
+// a hidden-but-set flag would fail the launch with an error about a control the
+// user cannot see.
+watch(() => form.ephemeral, (on) => { if (!on) form.auto_remove = false })
 
 async function loadLanPolicy() {
   try {

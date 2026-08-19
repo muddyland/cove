@@ -138,6 +138,13 @@ class Workspace(Base):
     ephemeral: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # `docker run --rm` for a workspace: delete the record once its container
+    # stops, rather than leaving a card in the grid that can only ever start
+    # blank. Gated on ephemeral — on a persistent workspace this would throw
+    # away saved data, which is what Purge is for and asks about explicitly.
+    auto_remove: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     # Opt-in for direct (raw-bridge) egress to the admin-configured LAN subnets.
     # Only takes effect when the admin master toggle + LAN subnets are also set;
     # tailnet-routed LAN access is independent of this flag.

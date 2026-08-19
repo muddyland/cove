@@ -1723,6 +1723,21 @@ class DockerManager:
             except Exception as exc:
                 logger.warning("Stop cleanup failed for workspace %s: %s", ws.id, exc)
 
+            if ws.auto_remove:
+                # `--rm`: the container is already gone, and so are its network,
+                # sidecars and key (above). An auto-remove workspace is always
+                # ephemeral — the API refuses the combination otherwise — so it
+                # owns no persistent storage to purge. Dropping the row is all
+                # that is left, and it is what keeps a workspace opened for one
+                # link from becoming a card that can only ever start blank.
+                #
+                # This covers the admin runtime cap too: enforce_runtime_limits
+                # stops workspaces through this same path.
+                logger.info("Workspace %s is auto-remove; deleting record after stop", ws.id)
+                db.delete(ws)
+                db.commit()
+                return
+
             ws.status = "stopped"
             ws.stopped_at = datetime.now(timezone.utc)
             # Drop the screen capture with the container. A halted workspace must

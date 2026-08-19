@@ -154,6 +154,21 @@ def _validate_routing(db, user_id: int, use_tailscale: bool, use_gluetun: bool) 
             )
 
 
+def _validate_auto_remove(auto_remove: bool, ephemeral: bool) -> None:
+    """Reject ``--rm`` on a workspace that has data to lose.
+
+    auto_remove deletes the record — and with it the storage — the moment the
+    container stops. On an ephemeral workspace there is nothing to lose, which
+    is the whole point. On a persistent one it would silently destroy a saved
+    home on an ordinary Halt; deleting that is Purge's job, and Purge asks.
+    """
+    if auto_remove and not ephemeral:
+        raise HTTPException(
+            status_code=400,
+            detail="“Discard when stopped” requires an ephemeral workspace — a persistent home would be lost on halt.",
+        )
+
+
 def _validate_docker(db, use_docker: bool, zone_id: int) -> None:
     """Reject Docker-in-Docker unless the admin master toggle is on and the
     workspace runs on the local zone.
@@ -279,6 +294,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
 
     _validate_app_fields(body.install_packages, body.proot_apps, body.appimages)
 
+    _validate_auto_remove(body.auto_remove, body.ephemeral)
     _validate_routing(db, user.id, body.use_tailscale, body.use_gluetun)
     if body.use_gluetun:
         _check_gluetun_single_connection(db, user.id)
@@ -301,6 +317,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         use_tailscale=body.use_tailscale,
         use_gluetun=body.use_gluetun,
         ephemeral=body.ephemeral,
+        auto_remove=body.auto_remove,
         lan_access=body.lan_access,
         ts_exit_node=body.ts_exit_node or None,
         ts_accept_routes=body.ts_accept_routes,
@@ -906,6 +923,9 @@ def update_workspace(
         ws.user_id,
         data.get("use_tailscale", ws.use_tailscale),
         data.get("use_gluetun", ws.use_gluetun),
+    )
+    _validate_auto_remove(
+        data.get("auto_remove", ws.auto_remove), data.get("ephemeral", ws.ephemeral)
     )
     _validate_docker(db, data.get("use_docker", ws.use_docker), ws.zone_id)
     _validate_gpu(
