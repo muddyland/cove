@@ -62,6 +62,72 @@ build:frontend:
     paths: [frontend/dist]
     expire_in: 14 days
 
+# ── Audit ─────────────────────────────────────────────────────────────────
+
+# CVE gate over both lockfiles, scanned against a private package registry using
+# the same OSV data that registry blocks installs with — so an audit that passes
+# and an install that succeeds agree with each other. This catches what
+# `npm audit` does not: advisories absent from npm's own database still show up
+# here (CVE-2026-67213 in nanoid was invisible to `npm audit`).
+#
+# Opt-in, and off unless three CI/CD variables are set: MINIREG_AUDIT=true to
+# select the job at all, plus MINIREG_URL and MINIREG_TOKEN (mask the token).
+# The registry is reachable only from our own network, so a fork or any pipeline
+# without those variables skips this job entirely rather than failing on a host
+# it cannot resolve. Keeping the URL in a variable is also what keeps an internal
+# hostname out of this file.
+audit:packages:
+  stage: test
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/python:3.12-slim
+  tags: [saas-linux-small-amd64]
+  rules:
+    - if: '$MINIREG_AUDIT == "true"'
+  variables:
+    # Installed here rather than ~/.local/bin so it lands on PATH as-is.
+    MINIREG_BIN_DIR: /usr/local/bin
+    # nanoid's CVE-2026-67213 scored 5.9, so `high` would have let it through.
+    MINIREG_FAIL_ON: medium
+  before_script:
+    # Named individually: "which variable is missing" is the only useful thing
+    # this check can tell you.
+    - |
+      if [ -z "${MINIREG_URL:-}" ]; then
+        echo "MINIREG_URL is not set — add it as a CI/CD variable." >&2
+        exit 1
+      fi
+      if [ -z "${MINIREG_TOKEN:-}" ]; then
+        echo "MINIREG_TOKEN is not set — add it as a masked CI/CD variable." >&2
+        exit 1
+      fi
+    # The install script is a curl-pipe by design, and python:3.12-slim ships
+    # neither curl nor wget. The CLI itself is stdlib-only once installed.
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends curl
+    - curl -fsSL "$MINIREG_URL/api/cli/install.sh" | sh
+  script:
+    # Audit both ecosystems in one job. `audit` reads the manifests in the given
+    # directory and does not recurse, so each is named explicitly: frontend has
+    # package-lock.json, backend has a fully pinned requirements.txt.
+    #
+    # Run both even if the first fails — otherwise backend findings stay hidden
+    # behind a frontend failure until someone fixes it. Exit 2 is a real finding,
+    # exit 1 means the audit could not run at all; keep them distinct so a broken
+    # pipeline is never mistaken for a clean tree.
+    - |
+      status=0
+      for dir in frontend backend; do
+        echo ""
+        echo "── auditing $dir ──"
+        rc=0
+        minireg audit "$dir" --fail-on "$MINIREG_FAIL_ON" || rc=$?
+        case "$rc" in
+          0) ;;
+          2) echo "✗ $dir: findings at or above '$MINIREG_FAIL_ON'" >&2; status=2 ;;
+          *) echo "✗ $dir: audit could not run (exit $rc) — registry unreachable or token rejected" >&2
+             [ "$status" -eq 2 ] || status=1 ;;
+        esac
+      done
+      exit $status
+
 # ── Build ─────────────────────────────────────────────────────────────────
 
 build:image:
