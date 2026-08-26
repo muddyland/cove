@@ -89,4 +89,3 @@ OIDC settings) on the server and restart. The local login form returns.
 Each user manages their own secrets under **Preferences** — password (local
 accounts only), SSH key, Tailscale, and Gluetun. See
 [User guide → Preferences](user-guide.md#preferences).
-</content>

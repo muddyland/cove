@@ -264,4 +264,3 @@ which is used for rate limiting and the audit log.
 
 If certificates don't issue or workspaces 404, see
 [Troubleshooting](troubleshooting.md).
-</content>

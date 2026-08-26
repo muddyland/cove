@@ -13,7 +13,7 @@ always present.
 
 > **Status:** the agent stack is generated and validated by construction. The
 > agent-side Traefik mTLS termination and the end-to-end stream path should be
-> smoke-tested on your first real zone (see [Verifying](#verifying)).
+> smoke-tested on your first real zone (see [Verifying](#10-verifying)).
 
 ---
 

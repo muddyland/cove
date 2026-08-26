@@ -170,5 +170,3 @@ on it. Contributions are welcome regardless of how they're authored.
 Cove is licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
 This follows the licensing of the upstream [LinuxServer.io](https://www.linuxserver.io/)
 images Cove builds on. LinuxServer.io is not affiliated with this project.
-</content>
-</invoke>

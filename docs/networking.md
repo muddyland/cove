@@ -86,4 +86,3 @@ exclusive on a single workspace. The sidecar image is pinned by the admin
 Independent of egress, you can isolate each workspace's **inbound** origin so it
 can't read the SPA's token — see
 [Deployment → Subdomain isolation](deployment.md#per-workspace-subdomain-isolation).
-</content>

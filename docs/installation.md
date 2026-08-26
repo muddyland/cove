@@ -90,4 +90,3 @@ For HTTPS, OIDC, subdomain isolation, and DNS-01, continue to
 **[Deployment & HTTPS](deployment.md)**. If you hit problems, see
 **[Troubleshooting](troubleshooting.md)** — in particular the Docker daemon
 `client version 1.24 is too old` fix that affects newer Docker Engine releases.
-</content>
