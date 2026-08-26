@@ -17,7 +17,7 @@
             <span class="modal-title">{{ title }}</span>
             <button class="close-btn" @click="close" aria-label="Close"><X :size="16" /></button>
           </div>
-          <div class="modal-body">
+          <div class="modal-body" :class="{ flush }">
             <slot />
           </div>
         </div>
@@ -30,7 +30,9 @@
 import { ref, watch, nextTick } from 'vue'
 import { X } from 'lucide-vue-next'
 
-const props = defineProps<{ modelValue: boolean; title: string; width?: string }>()
+// `flush` drops the body's padding and lets the slot own the scrolling — for
+// modals that render their own panes (the docs reader) rather than a form.
+const props = defineProps<{ modelValue: boolean; title: string; width?: string; flush?: boolean }>()
 const emit = defineEmits(['update:modelValue'])
 
 const modalEl = ref<HTMLElement | null>(null)
@@ -147,6 +149,8 @@ watch(
 }
 .close-btn:hover { color: var(--red); text-shadow: 0 0 8px var(--red); }
 .modal-body { padding: 20px; overflow-y: auto; }
+/* min-height:0 lets an inner flex child scroll instead of blowing out the modal. */
+.modal-body.flush { padding: 0; overflow: hidden; display: flex; min-height: 0; }
 
 .modal-enter-active, .modal-leave-active { transition: all 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; transform: scale(0.95) translateY(-12px); }
