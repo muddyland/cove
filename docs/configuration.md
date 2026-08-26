@@ -182,4 +182,3 @@ The same page shows a **read-only summary** of the env-configured settings above
 (domain, cookie-secure, token lifetimes, OIDC status, DB-encryption status, …) so
 you can confirm what the running process picked up. Secrets are never shown — only
 whether they are present.
-</content>

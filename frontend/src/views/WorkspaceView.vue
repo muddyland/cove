@@ -109,65 +109,7 @@
     <DiagnosticsModal v-if="ws" v-model="showDiag" :ws="ws" />
     <WorkspaceMetricsModal v-if="ws" v-model="showMetrics" :ws-id="ws.id" :name="ws.name" />
 
-    <BaseModal v-model="showHelp" title="Workspace Help" width="520px">
-      <p class="help-intro">Common actions for working with a workspace node.</p>
-
-      <h4 class="help-h">On this screen</h4>
-      <ul class="help-list">
-        <li>
-          <span class="help-ic"><PanelLeft :size="15" /></span>
-          <div><strong>Desktop menu</strong><p>The streamed desktop has its own controls behind the thin vertical bar on the <em>left edge</em> of the stream — click it to slide out the Selkies panel: video quality, clipboard sync, audio, gamepad, and fullscreen.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><MousePointer2 :size="15" /></span>
-          <div><strong>Give focus back</strong><p>The desktop captures your mouse &amp; keyboard while you work in it. If the buttons up here don't respond, press <kbd>Esc</kbd> (or click this bar) to release focus back to Cove.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><Square :size="15" /></span>
-          <div><strong>Halt</strong><p>Stop the running container. Your files persist (unless the node is ephemeral) — boot it again anytime.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><ScanLine :size="15" /></span>
-          <div><strong>CRT effect</strong><p>Toggle the retro scanline overlay on the stream. Purely visual; remembered per browser.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><Maximize :size="15" /></span>
-          <div><strong>Fullscreen</strong><p>Expand the stream to fill the screen. Press again — or Esc — to exit.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><Activity :size="15" /></span>
-          <div><strong>Logs</strong><p>Open diagnostics: container logs, plus connection status for VPN / Tailscale nodes.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><Download :size="15" /></span>
-          <div><strong>Install as app</strong><p>Add this node to your device as its own app (APP) that launches straight into it.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><ChevronDown :size="15" /></span>
-          <div><strong>Switch nodes</strong><p>Use the name dropdown at the top-left to jump between nodes — and boot a stopped one.</p></div>
-        </li>
-      </ul>
-
-      <h4 class="help-h">From the grid (←)</h4>
-      <ul class="help-list">
-        <li>
-          <span class="help-ic"><Pencil :size="15" /></span>
-          <div><strong>Edit</strong><p>Change a node's settings (packages, VPN, DNS…). Stop it first — changes apply on the next boot.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><CopyPlus :size="15" /></span>
-          <div><strong>Clone</strong><p>Duplicate a stopped node with a copy of its home — handy for trying a different distro.</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><ArrowRightLeft :size="15" /></span>
-          <div><strong>Migrate</strong><p>Move a stopped node's storage to another zone (remote host).</p></div>
-        </li>
-        <li>
-          <span class="help-ic"><Trash2 :size="15" /></span>
-          <div><strong>Purge</strong><p>Destroy the container, optionally deleting its saved home too. Can't be undone.</p></div>
-        </li>
-      </ul>
-    </BaseModal>
+    <DocsModal v-model="showHelp" initial="__quick" />
 
     <!-- Halted takeover for a per-workspace PWA: it's a single-purpose app, so on
          halt there's nowhere to go back to — just confirm it's safe to close. -->
@@ -232,10 +174,10 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
 import WorkspaceMetricsModal from '@/components/WorkspaceMetricsModal.vue'
-import BaseModal from '@/components/BaseModal.vue'
+import DocsModal from '@/components/DocsModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
 import { workspaceIconUrl, type IconSource } from '@/utils/workspaceIcon'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Pencil, CopyPlus, ArrowRightLeft, Trash2, PanelLeft, MousePointer2 } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -817,35 +759,9 @@ async function handleStop() {
 .menu-state { margin-left: auto; font-size: 10px; color: var(--text-muted); letter-spacing: 1px; }
 .menu-item.active .menu-state { color: var(--accent-2); }
 
-/* Help (?) button + modal content. */
+/* Help (?) button — content now lives in the shared docs modal. */
 .help-btn { padding: 5px 8px; }
 .help-btn:hover { color: var(--accent); border-color: var(--accent); }
-.help-intro {
-  font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
-  color: var(--text-muted); margin: 0 0 16px;
-}
-.help-h {
-  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px;
-  text-transform: uppercase; color: var(--accent);
-  margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
-}
-.help-h:first-of-type { margin-top: 0; }
-.help-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-.help-list li { display: flex; align-items: flex-start; gap: 12px; }
-.help-ic {
-  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: var(--radius-sm);
-  background: var(--accent-dim); color: var(--accent);
-}
-.help-list strong { display: block; font-size: 13px; color: var(--text); margin-bottom: 2px; }
-.help-list p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
-.help-list em { color: var(--accent); font-style: normal; }
-.help-list kbd {
-  font-family: var(--font-mono); font-size: 10px; color: var(--text);
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: 3px; padding: 1px 5px; margin: 0 1px;
-}
-
 .frame-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; }
 .workspace-frame { width: 100%; height: 100%; border: none; display: block; }
 

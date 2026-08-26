@@ -43,14 +43,16 @@
         </nav>
 
         <div class="nav-right">
-          <RouterLink
-            to="/app/docs"
+          <button
+            type="button"
             class="icon-link"
-            :class="{ active: $route.path.startsWith('/app/docs') }"
+            :class="{ active: docsOpen }"
             title="Documentation"
+            aria-label="Documentation"
+            @click="docsOpen = true"
           >
             <HelpCircle :size="18" />
-          </RouterLink>
+          </button>
 
           <div ref="userDropdown" class="user-dropdown" :class="{ open: userOpen }">
             <button
@@ -80,6 +82,8 @@
     <main class="content">
       <slot />
     </main>
+
+    <DocsModal v-model="docsOpen" />
   </div>
 </template>
 
@@ -87,6 +91,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
+import DocsModal from '@/components/DocsModal.vue'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
   ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle, HardDrive,
@@ -107,6 +112,7 @@ const adminItems = [
 ]
 
 const mobileOpen = ref(false)
+const docsOpen = ref(false)
 const adminOpen = ref(false)
 const adminDropdown = ref<HTMLElement | null>(null)
 const userOpen = ref(false)
@@ -301,6 +307,8 @@ async function handleLogout() {
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   background: var(--surface-2);
+  padding: 0;
+  cursor: pointer;
   transition: all 0.15s;
 }
 .icon-link:hover { color: var(--accent); border-color: var(--accent); }

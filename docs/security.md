@@ -39,4 +39,3 @@ assumes about its environment. For the deep architecture, see
 - Always serve **HTTPS** and set **`COVE_COOKIE_SECURE=true`** when reachable beyond `localhost` — otherwise the session cookie travels in cleartext.
 - Keep the signing secret (`./data/secret.key`) and any DB-encryption key safe and backed up; losing the DB-encryption key means losing the database.
 - Restrict who can reach the host and the Docker daemon.
-</content>

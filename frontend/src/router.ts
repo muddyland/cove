@@ -13,8 +13,10 @@ const router = createRouter({
     { path: '/app', component: () => import('@/views/DashboardView.vue') },
     { path: '/app/files', component: () => import('@/views/FilesView.vue') },
     { path: '/app/preferences', component: () => import('@/views/PreferencesView.vue') },
-    { path: '/app/docs', component: () => import('@/views/DocsView.vue') },
-    { path: '/app/docs/:slug', component: () => import('@/views/DocsView.vue') },
+    // Docs are a modal now (the ? in the top bar). Old deep links land on the
+    // dashboard rather than 404ing.
+    { path: '/app/docs', redirect: '/app' },
+    { path: '/app/docs/:slug(.*)', redirect: '/app' },
     { path: '/app/admin/users', component: () => import('@/views/AdminUsersView.vue'), meta: { admin: true } },
     { path: '/app/admin/sessions', component: () => import('@/views/AdminSessionsView.vue'), meta: { admin: true } },
     { path: '/app/admin/images', component: () => import('@/views/AdminImagesView.vue'), meta: { admin: true } },

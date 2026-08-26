@@ -27,6 +27,27 @@ Two launch buttons sit at the top:
 - **Deploy Node** — launch a desktop or browser workspace (opens the Launch modal).
 - **Open Website** — the quick "open a URL in a browser" flow.
 
+## Screen previews
+
+Every **running** card shows a still of what's actually on that node's screen, so
+you can tell your workspaces apart at a glance without opening them.
+
+- The frame is captured from the workspace's **own stream**, so it works the same
+  for every image and needs nothing installed inside it.
+- It doubles as the **readiness check**: a workspace isn't marked running until
+  Cove can decode a real frame from its stream.
+- Previews are **dropped the moment a workspace halts** — a stopped card never
+  shows what was last on its screen. Booting it again takes a fresh one.
+- While you have a workspace **open**, its card is refreshed from the stream
+  you're already watching. Those refreshes **stay in your browser and are never
+  uploaded**; reload the page and the card falls back to the frame taken at
+  launch.
+- A stream Cove can't read simply leaves the card with a placeholder. The
+  workspace still launches normally.
+
+Previews are served only to you (or an admin). See
+[Workspaces → Screen previews](workspaces.md#screen-previews) for the details.
+
 ## Launching a desktop
 
 1. Click **Deploy Node**.
@@ -65,10 +86,52 @@ While viewing a running workspace, a top bar provides:
 
 ## The file browser
 
-**Files** lets you browse, upload, download, and delete files within **your own**
-storage area (`<storage>/<your-username>/…`, which holds your workspaces' `/config`
-homes). Access is confined to your directory — path traversal is rejected — and a
-single upload may be up to `COVE_MAX_UPLOAD_MB` (default **1024 MiB**).
+**Files** lets you browse, upload, download, organize, and delete files within
+**your own** storage area (`<storage>/<your-username>/…`, which holds your
+workspaces' `/config` homes). Access is confined to your directory — path
+traversal is rejected — and a single upload may be up to `COVE_MAX_UPLOAD_MB`
+(default **1024 MiB**). It has two tabs: **Files** and **Trash**.
+
+### Getting files in
+
+- **Upload** — pick one or more files; they land in the folder you're viewing.
+- **Folder** — pick a whole folder; its sub-folders are recreated as the files upload.
+- **Drag and drop** files or folders from your desktop onto the file list.
+
+There is no separate "new folder" action — folders appear when you upload one.
+
+### Moving and copying
+
+Click a row's **Copy** or **Cut**, navigate to the destination, then **Paste**
+(the button appears in the header once something is on the clipboard). Or **drag a
+row onto a folder** — or onto **root** in the breadcrumb — to move it there. A name
+collision doesn't overwrite: the arriving item is given a suffix.
+
+### Downloading
+
+**Download** on a file sends the file. **Download** on a folder sends it as a
+streamed **zip**, so there's no need to fetch a directory tree file by file.
+
+### Trash
+
+Deleting is a **soft delete** by default:
+
+- **Move to trash** (the bin icon) moves the item into your trash and out of the
+  listing. Nothing is destroyed.
+- The **Trash** tab lists what's in there with each item's original location,
+  size, when it was deleted, and when it **expires**.
+- **Restore** puts an item back where it came from, recreating the folder if it's
+  gone. If something with that name is already there, the restored copy is
+  suffixed rather than overwriting it.
+- **Delete** on a trash row, or **Empty trash**, destroys the bytes immediately.
+- **Delete permanently** (the ✕ on a normal row) **skips the trash** entirely.
+  Both ask for confirmation and can't be undone.
+
+Trash expires on its own: the admin's **trash retention** setting (default **30
+days**) decides how long an item is kept before Cove purges it automatically, and
+the Trash tab shows the countdown per item. Set to `0`, nothing auto-expires and
+the trash is kept until you empty it — see
+[Administration → Settings](administration.md#settings).
 
 ## Preferences
 
@@ -81,4 +144,3 @@ Manage your own account and routing under **Preferences**:
 
 See [Networking & routing](networking.md) for how Tailscale and Gluetun apply to
 a workspace's traffic.
-</content>
