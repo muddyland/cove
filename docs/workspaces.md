@@ -41,6 +41,8 @@ launch only needs a name and an image; everything else has a safe default. The
 | **Dark mode** | off | Kiosk only: forces page dark mode. |
 | **Allow right-click / refresh menu** | off | Kiosk only: uses `--start-fullscreen` instead of a hard `--kiosk` lock. |
 | **Ephemeral** | off | No persistent `/config` mount; all data wiped on halt. (Offered for URL-capable images.) |
+| **Discard when stopped** | off | `docker run --rm` semantics: the workspace *record* is deleted once its container stops, so the card leaves the grid instead of lingering as one that can only ever start blank. **Requires Ephemeral** — it is rejected on a persistent workspace, whose saved home would be destroyed by an ordinary Halt (that is Purge's job, and Purge asks). Applies to the admin **max runtime** auto-stop too. |
+| **Shared profile** | off | Mount one per-user home — `{COVE_STORAGE_PATH}/{username}/_profile/` — as `/config` on *every* one of your shared-profile workspaces, so dotfiles, proot-apps, browser profiles and VSCodium workspaces carry between distros. The profile belongs to you, not the workspace: it is **never** deleted when a workspace is purged. Best used one workspace at a time — concurrent desktops on one home hit profile/browser locks (see **Clear stale browser lock**). Turning it on for an existing workspace switches its home; the old per-workspace files stay on disk. **Ephemeral** wins if both are set — an ephemeral workspace gets no bind mount at all. |
 | **Route through Tailscale** | off | Egress via a per-workspace Tailscale sidecar. Requires a configured auth key. Mutually exclusive with Gluetun. |
 | **Route through Gluetun (VPN)** | off | Egress via a per-workspace VPN sidecar. Requires an uploaded config. One active Gluetun workspace per user. |
 | **Custom DNS** + **DNS servers** | off | Use specific resolvers (≤6 IPs) instead of Docker/host DNS. Ignored for Tailscale workspaces. |
@@ -49,6 +51,7 @@ launch only needs a name and an image; everything else has a safe default. The
 | **Inject SSH key** | on | Copy your account SSH key into `~/.ssh`. No-op if you have no key on file. |
 | **Wayland streaming** | on | Stream over Wayland (`PIXELFLUX_WAYLAND=true`) — Smithay plus labwc. Turn off to force the X11/Xvfb fallback. Required for GPU hardware encode. |
 | **GPU acceleration** | off | Hardware VAAPI video encode on the host GPU. Requires the admin GPU toggle **and** Wayland streaming. See [GPU acceleration](#gpu-acceleration). |
+| **Clear stale browser lock** | off | URL-capable images only: at boot, remove a leftover single-instance lock (`SingletonLock`/`SingletonCookie`/`SingletonSocket` for the Chromium family, `lock`/`.parentlock` for Firefox) from the saved `/config` profile. An unclean halt leaves one behind and the browser then exits on the next boot — the desktop streams but no browser appears. Only lock files are removed, never profile data. |
 | **Docker (dev)** | off | Run `docker` inside the workspace via a privileged nested daemon. Desktops on the local zone only; requires the admin Docker toggle. |
 | **Install packages** | — | Distro packages installed at boot (via `universal-package-install`). |
 | **proot-apps** | — | LinuxServer proot-apps to install at boot. |
@@ -59,6 +62,7 @@ launch only needs a name and an image; everything else has a safe default. The
 
 - **Persistent (default):** the home directory lives on the host at `{COVE_STORAGE_PATH}/{username}/workspace-{name}/`, bind-mounted at `/config`. It survives halt/restart and is reused on relaunch. See [Configuration → Storage](configuration.md#persistent-storage).
 - **Ephemeral:** no bind mount — `/config` is in the container's writable layer and is **discarded when the container is removed** (which happens on every halt). Use it for throwaway browsing sessions.
+- **Shared profile:** one home per *user* at `{COVE_STORAGE_PATH}/{username}/_profile/`, mounted as `/config` on every workspace that has the option on. Such a workspace has no home of its own, and the shared profile is left alone when the workspace is purged.
 
 ## Per-workspace apps
 
@@ -208,10 +212,10 @@ server: an error *from* the server shows as an ordinary message instead.
 | Action | What happens |
 |---|---|
 | **Launch** | Row created as `creating`; the container starts on its own isolated network (`cove-ws-net-<id>`); flips to `running` once the stream renders a frame Cove can decode (falling back to the plain HTTP probe if it can't). Slow installs stay `creating` and are promoted later. |
-| **Halt / stop** | The container (and any sidecar/network/staged key) is **removed**. Status → `stopped`. Persistent `/config` is kept; ephemeral data is gone. The stored screen preview is deleted. |
+| **Halt / stop** | The container (and any sidecar/network/staged key) is **removed**. Status → `stopped`. Persistent `/config` is kept; ephemeral data is gone. The stored screen preview is deleted. A **Discard when stopped** workspace has no `stopped` state — its record is deleted here instead. |
 | **Start** | Recreates the container reusing the persistent home. **Always pulls the latest image first** (falls back to the local copy if offline), so workspaces stay current. |
 | **Clone** | Copies a stopped workspace's entire `/config` into a new workspace (optionally on a different image). The source must be stopped so files are at rest. |
-| **Delete / Purge** | Removes the container and the record. With **purge storage**, the persistent home directory is deleted too; without it, the home is left on disk. |
+| **Delete / Purge** | Removes the container and the record. With **purge storage**, the persistent home directory is deleted too; without it, the home is left on disk. A **shared profile** is never purged this way. |
 | **Runtime cap** | If the admin set a **max runtime**, running workspaces older than that are auto-stopped. |
 
 ## Networking
@@ -219,4 +223,3 @@ server: an error *from* the server shows as an ordinary message instead.
 Each workspace runs on its own isolated network and is **WAN-only by default**.
 LAN access, custom DNS, Tailscale, and Gluetun are all per-workspace and covered
 in **[Networking & routing](networking.md)**.
-</content>

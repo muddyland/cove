@@ -1,8 +1,9 @@
 # Administration
 
-Admin users get an **Admin** section in the top navigation with five tabs:
-**Users**, **Sessions**, **Images**, **Audit**, and **Settings**. All admin
-endpoints require an admin account; non-admins receive `403`.
+Admin users get an **Admin** section in the top navigation with seven tabs:
+**Users**, **Sessions**, **Images**, **Zones**, **Storage**, **Audit**, and
+**Settings**. All admin endpoints require an admin account; non-admins receive
+`403`.
 
 ## Settings
 
@@ -20,10 +21,12 @@ limits they started with.
 | **GPU render node** | `/dev/dri/renderD128` | DRI device bind-mounted for GPU workspaces. Change only on multi-GPU hosts. |
 | **GPU render group GID** | `992` | Group added so the workspace can open the render node. **Fallback only** — Cove auto-detects the node's real group on each host at launch; set this if detection can't run. |
 | **Docker-in-Docker** (master toggle) | off | Allows workspaces to run a privileged nested Docker daemon (each workspace must still opt in; local zone only). |
+| **DinD image** | `docker:dind` | Image the per-workspace Docker-in-Docker sidecar runs (multi-arch). Shown only while the master toggle is on; blanking it restores the default. |
 | **LAN access** (master toggle) | off | Allows workspaces to reach the LAN directly (each workspace must still opt in). |
 | **Allowed LAN subnets** | _(empty)_ | IPv4 CIDRs reachable when LAN access is on. Invalid entries are dropped; bare IPs become `/32`. |
 | **Tailscale sidecar image** | `tailscale/tailscale:latest` | Image used for the Tailscale sidecar (pin a tag/digest). |
 | **Gluetun sidecar image** | `qmcgaw/gluetun:latest` | Image used for the Gluetun VPN sidecar. |
+| **Trash retention (days)** | `30` (`0` = keep until emptied) | How long soft-deleted files stay in the file-browser trash before an hourly sweep purges them for good. Applies from the moment an item is trashed. |
 
 > The Docker-internal range (`172.16.0.0/12`) and cloud-metadata range
 > (`169.254.0.0/16`) are **always** blocked regardless of the LAN subnet list.
@@ -64,16 +67,50 @@ catalog auto-seeds from the LinuxServer.io API; thereafter:
 **Kill** to stop and remove any session. (The regular dashboard only ever shows a
 user their own workspaces, even for admins; this tab is the cross-user view.)
 
+## Zones
+
+**Admin → Zones** registers and manages the remote Docker hosts workspaces can run
+on: mint an enrollment token, edit a zone's endpoint, rotate its mTLS client cert,
+update its agent in place, or delete it. Full details — the enrollment flow, the
+agent stack, and per-zone troubleshooting — are in [Zones](zones.md).
+
+## Storage
+
+**Admin → Storage** shows disk usage per zone (the control plane is listed as
+**Local**), so you can see what is filling a host before containers stop starting
+and streams begin to drop. Each zone card shows:
+
+- **Host disk** — a used/total bar with free space, tinted amber past 80% and red past 90%. Unavailable on nodes that don't report it.
+- **Docker breakdown** — a `docker system df`-style table of **Images**, **Containers**, **Local Volumes**, and **Build Cache**, each with active/total item counts, size, and reclaimable bytes.
+
+A zone the control plane can't reach is shown as **Unreachable** with the daemon
+error instead of a breakdown.
+
+Two prune actions reclaim Docker disk on a zone (both confirm first):
+
+| Action | Removes | Notes |
+|---|---|---|
+| **Prune** | Dangling (untagged) images + the build cache. | Running workspaces and their data are unaffected. |
+| **Deep Prune** | **All** unused images (any image no container references) and **every** stopped container, plus the build cache. | Those images have to be re-pulled or rebuilt on next use, which is slow. |
+
+> Named volumes — where workspace data lives — are **never** pruned. They are
+> reported in the breakdown for visibility only, marked *(not pruned)*.
+
+Each prune reports the bytes reclaimed and is recorded in the audit log as
+`admin.storage.prune`. To reclaim space by removing a specific image instead, use
+[Admin → Images](#image-catalog).
+
 ## Audit log
 
 **Admin → Audit** shows the most recent **200** audited actions — timestamp,
 user, action, detail, and client IP. Recorded actions include:
 
 - **Auth:** `setup`, `login.success`, `login.fail`, `login.oidc`, `logout`, `stream.deny`.
-- **Workspaces:** `workspace.launch`, `workspace.clone`, `workspace.update`, `workspace.stop`, `workspace.start`, `workspace.delete`.
-- **Files:** `files.upload`, `files.delete`.
+- **Workspaces:** `workspace.launch`, `workspace.clone`, `workspace.update`, `workspace.stop`, `workspace.start`, `workspace.delete`, `workspace.migrate`.
+- **Files:** `files.upload`, `files.delete`, `files.copy`, `files.move`, `files.trash`, `files.restore`, `files.purge`.
 - **User secrets:** `user.tailscale.update`, `user.gluetun.update`, `user.ssh.upload`, `user.ssh.generate`, `user.ssh.clear`.
-- **Admin:** `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.session.kill`, `admin.settings.update`.
+- **Admin:** `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.session.kill`, `admin.settings.update`, `admin.storage.prune`.
+- **Zones:** `admin.zone.create`, `admin.zone.update`, `admin.zone.delete`, `admin.zone.enroll_token`, `admin.zone.rotate_cert`, `admin.zone.update_agent`.
 
 The view shows the latest 200; there is no automatic pruning of the underlying
 table.
@@ -84,9 +121,9 @@ For reference, the admin views live at:
 
 ```
 /app/admin/users      /app/admin/sessions    /app/admin/images
-/app/admin/audit       /app/admin/settings
+/app/admin/zones      /app/admin/storage     /app/admin/audit
+/app/admin/settings
 ```
 
 These are guarded — non-admins are redirected to `/app`. The full route list is in
 [API reference → SPA routes](api-reference.md#spa-routes).
-</content>

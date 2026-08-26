@@ -7,6 +7,11 @@ containers and streams them to the browser via Selkies.
 If you're new here, start with **[Installation](installation.md)**, then skim the
 **[User guide](user-guide.md)**.
 
+> **In-app reader.** These pages are also readable inside Cove — the **?** in the
+> top bar opens them in a modal. Operator pages (everything below except
+> **User guide**, **Workspaces**, **Networking & routing**, and
+> **Troubleshooting**) are shown only to admin accounts.
+
 ## Contents
 
 ### Getting started
@@ -36,4 +41,3 @@ If you're new here, start with **[Installation](installation.md)**, then skim th
 > file) requires a restart to take effect. Runtime settings under **Admin →
 > Settings** are stored in the database and apply to newly started workspaces
 > without a restart — see [Configuration](configuration.md#runtime-settings-admin--settings).
-</content>
