@@ -30,7 +30,7 @@ Reaching hosts on your local network from a workspace requires **two** switches:
 2. **The workspace opts in** — tick **LAN access** at launch.
 
 Only the admin-listed subnets become reachable; the always-blocked Docker and
-metadata ranges stay blocked regardless. The launch checkbox only appears when the
+metadata ranges stay blocked regardless. The launch toggle only appears when the
 admin has enabled LAN access and configured subnets.
 
 **Exception — "open a LAN website":** a workspace can always reach the specific

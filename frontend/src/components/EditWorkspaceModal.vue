@@ -11,31 +11,20 @@
         <textarea v-model="form.target_url" rows="2" placeholder="https://example.com" />
         <p class="hint">One URL per line — each opens in its own tab (up to 6).</p>
       </div>
-      <label v-if="urlCapable && urlCount <= 1" class="checkbox-row">
-        <input type="checkbox" v-model="form.kiosk" />
-        <span>Kiosk mode (full-screen, no browser chrome)</span>
-      </label>
+      <ToggleRow v-if="urlCapable && urlCount <= 1" v-model="form.kiosk">Kiosk mode (full-screen, no browser chrome)</ToggleRow>
       <p v-if="urlCapable && urlCount > 1" class="hint">
         Multiple tabs open full-screen with a tab bar — kiosk lock is unavailable.
       </p>
       <template v-if="urlCapable && urlCount <= 1 && form.kiosk">
-        <label class="checkbox-row ts-field">
-          <input type="checkbox" v-model="form.kiosk_dark" />
-          <span>Dark mode</span>
-        </label>
-        <label class="checkbox-row ts-field">
-          <input type="checkbox" v-model="form.kiosk_menu" />
-          <span>Allow right-click / refresh menu</span>
-        </label>
+        <div class="ts-field toggles">
+          <ToggleRow v-model="form.kiosk_dark">Dark mode</ToggleRow>
+          <ToggleRow v-model="form.kiosk_menu">Allow right-click / refresh menu</ToggleRow>
+        </div>
       </template>
-      <label v-if="urlCapable" class="checkbox-row">
-        <input type="checkbox" v-model="form.ephemeral" />
-        <span>Ephemeral (no saved data — wiped when halted)</span>
-      </label>
-      <label v-if="urlCapable && form.ephemeral" class="checkbox-row ts-field">
-        <input type="checkbox" v-model="form.auto_remove" />
-        <span>Discard when stopped (like <code>docker run --rm</code>)</span>
-      </label>
+      <ToggleRow v-if="urlCapable" v-model="form.ephemeral">Ephemeral (no saved data — wiped when halted)</ToggleRow>
+      <div v-if="urlCapable && form.ephemeral" class="ts-field toggles">
+        <ToggleRow v-model="form.auto_remove">Discard when stopped (like <code>docker run --rm</code>)</ToggleRow>
+      </div>
 
       <div class="section-head">Network</div>
       <NetworkFields
@@ -73,6 +62,7 @@
 <script setup lang="ts">
 import { reactive, computed, ref, watch, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
+import ToggleRow from './ToggleRow.vue'
 import NeonButton from './NeonButton.vue'
 import NetworkFields from './NetworkFields.vue'
 import AccessFields from './AccessFields.vue'
@@ -275,12 +265,8 @@ async function handleSubmit() {
 <style scoped>
 .form { display: flex; flex-direction: column; gap: 16px; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.checkbox-row {
-  display: flex; align-items: center; gap: 8px; cursor: pointer;
-  font-size: 12px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
-}
-.checkbox-row input { width: auto; margin: 0; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
+.toggles { display: flex; flex-direction: column; gap: 8px; }
 .section-head {
   font-size: 12px; font-weight: 600; letter-spacing: 0.5px; color: var(--accent);
   padding-bottom: 6px; border-bottom: 1px solid var(--border);

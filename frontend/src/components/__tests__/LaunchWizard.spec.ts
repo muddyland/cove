@@ -84,8 +84,8 @@ describe('LaunchWizard', () => {
     await tsSeg.trigger('click')
 
     await wrapper.find('.ts-field input[type="text"]').setValue('us-nyc-1')
-    const tsChecks = wrapper.findAll('.ts-field input[type="checkbox"]')
-    await tsChecks[tsChecks.length - 1].setValue(false) // untick Accept DNS
+    const acceptDns = wrapper.findAll('.ts-field [role="switch"]').find(t => t.text().includes('Accept DNS'))!
+    await acceptDns.trigger('click') // turn Accept DNS off
 
     await clickBtn(wrapper, 'Launch')
     await flushPromises()
@@ -124,8 +124,8 @@ describe('LaunchWizard', () => {
     await clickBtn(wrapper, 'Customize') // Network (Direct by default)
 
     // Enable custom DNS and enter a bad value.
-    const dnsToggle = wrapper.findAll('.checkbox-row').find(r => r.text().includes('custom DNS'))!
-    await dnsToggle.find('input[type="checkbox"]').setValue(true)
+    const dnsToggle = wrapper.findAll('[role="switch"]').find(r => r.text().includes('custom DNS'))!
+    await dnsToggle.trigger('click')
     await wrapper.find('input[placeholder="1.1.1.1 9.9.9.9"]').setValue('not-an-ip')
 
     await clickBtn(wrapper, 'Launch')
