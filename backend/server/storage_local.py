@@ -5,6 +5,7 @@ Shared by the control plane (for zone-0 / local workspaces) and the zone agent
 directory with the same anti-traversal guard the file browser has always used.
 """
 
+import os
 import shutil
 import zipfile
 from datetime import datetime, timezone
@@ -25,10 +26,22 @@ TRASH_DIR = ".trash"
 def resolve(base: Path, rel: str) -> Path:
     """Resolve a user-supplied relative path against base, rejecting traversal."""
     rel = (rel or "").lstrip("/")
-    candidate = (base / rel).resolve()
+    try:
+        candidate = (base / rel).resolve()
+    except (ValueError, OSError):  # embedded NUL, name too long, …
+        raise HTTPException(status_code=400, detail="Invalid path")
     if candidate != base and base not in candidate.parents:
         raise HTTPException(status_code=400, detail="Invalid path")
     return candidate
+
+
+def _within(base: Path, child: Path) -> bool:
+    """True if ``child`` (already resolved, no symlinks) still sits under base."""
+    try:
+        rp = child.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    return rp == base or base in rp.parents
 
 
 def _in_trash(base: Path, target: Path) -> bool:
@@ -59,6 +72,10 @@ def _dir_size(path: Path) -> int:
     total = 0
     for child in path.rglob("*"):
         try:
+            # Never follow symlinks: the user can plant one inside the container
+            # pointing anywhere on the host (``/etc``, another user's home…).
+            if child.is_symlink():
+                continue
             if child.is_file():
                 total += child.stat().st_size
         except OSError:
@@ -251,13 +268,27 @@ def iter_zip(base: Path, path: str) -> Iterator[bytes]:
         members: list[tuple[Path, str]] = []
         for child in sorted(target.rglob("*")):
             try:
+                # Symlinks are skipped outright — rglob would otherwise descend
+                # into a linked directory and is_file() would follow a linked
+                # file — either of which reads host paths the user planted a
+                # link to from inside the container (the archive is built here
+                # on the host, as root).
+                if child.is_symlink():
+                    continue
                 if not child.is_file():  # skip dirs (recreated implicitly) + specials
+                    continue
+                if not _within(target, child):
                     continue
             except OSError:
                 continue
             members.append((child, str(Path(root) / child.relative_to(target))))
     else:
         members = [(target, target.name)]
+
+    def _open_nofollow(path: Path):
+        # O_NOFOLLOW closes the race between the checks above and the open.
+        fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
+        return os.fdopen(fd, "rb")
 
     def _gen() -> Iterator[bytes]:
         stream = _ZipStream()
@@ -269,7 +300,7 @@ def iter_zip(base: Path, path: str) -> Iterator[bytes]:
                     continue
                 info.compress_type = zipfile.ZIP_DEFLATED
                 try:
-                    with zf.open(info, "w") as entry, open(src, "rb") as fh:
+                    with zf.open(info, "w") as entry, _open_nofollow(src) as fh:
                         while True:
                             chunk = fh.read(1024 * 1024)
                             if not chunk:

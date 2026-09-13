@@ -24,6 +24,7 @@ const adminUser: User = {
   id: 1,
   username: 'admin',
   is_admin: true,
+  docker_allowed: false,
   auth_provider: 'local',
   created_at: '2026-01-01T00:00:00Z',
   last_login_at: null,
@@ -47,16 +48,17 @@ describe('auth store', () => {
 
     expect(authApi.login).toHaveBeenCalledWith('bob', 'pw')
     expect(auth.token).toBe('tok-123')
-    expect(localStorage.getItem('cove_token')).toBe('tok-123')
+    // Never persisted: a same-origin workspace frame could read localStorage.
+    expect(localStorage.getItem('cove_token')).toBeNull()
     expect(auth.user).toEqual(normalUser)
     expect(auth.isAuthenticated).toBe(true)
   })
 
-  it('setToken persists to localStorage', () => {
+  it('setToken keeps the token in memory only', () => {
     const auth = useAuthStore()
     auth.setToken('abc')
     expect(auth.token).toBe('abc')
-    expect(localStorage.getItem('cove_token')).toBe('abc')
+    expect(localStorage.getItem('cove_token')).toBeNull()
   })
 
   it('logout() clears token + user and removes from localStorage', async () => {
@@ -114,10 +116,16 @@ describe('auth store', () => {
     expect(auth.isAdmin).toBe(true)
   })
 
-  it('initializes token from localStorage', () => {
+  it('ignores (and scrubs) a token a pre-1.1 build persisted', async () => {
     localStorage.setItem('cove_token', 'persisted')
     setActivePinia(createPinia())
     const auth = useAuthStore()
-    expect(auth.token).toBe('persisted')
+    expect(auth.token).toBeNull()
+    vi.mocked(authApi.config).mockResolvedValue({
+      oidc_enabled: false, oidc_provider_name: 'SSO', needs_setup: false, oidc_only: false,
+    })
+    vi.mocked(authApi.refresh).mockRejectedValue(new Error('no session'))
+    await auth.init()
+    expect(localStorage.getItem('cove_token')).toBeNull()
   })
 })

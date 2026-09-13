@@ -209,6 +209,21 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0042_workspace_auto_remove",
         "ALTER TABLE workspace ADD COLUMN auto_remove BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # 1.1.0: a separate relay (edge) client cert per zone, so the central Traefik
+    # never presents the control plane's own cert to an agent.
+    (
+        "0043_zone_edge_cert",
+        "ALTER TABLE zone ADD COLUMN edge_cert_pem TEXT",
+    ),
+    (
+        "0044_zone_edge_key",
+        "ALTER TABLE zone ADD COLUMN edge_key_enc TEXT",
+    ),
+    # 1.1.0: Docker-in-Docker is granted per user (it is host root).
+    (
+        "0045_user_docker_allowed",
+        "ALTER TABLE user ADD COLUMN docker_allowed BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

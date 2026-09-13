@@ -45,6 +45,27 @@ def _audit(db, action, *, detail=None, user=None, request=None):
     record_audit(db, action, detail=detail, user=user, ip=ip)
 
 
+_EXIT_NODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:\-]{0,252}$")
+
+
+def _clean_exit_node(raw: str | None) -> str | None:
+    """A Tailscale exit node is an IP or a MagicDNS name — nothing else.
+
+    The value is formatted into ``--exit-node=<value>`` and joined into
+    TS_EXTRA_ARGS, which the Tailscale image splits on whitespace onto
+    ``tailscale up``: anything with a space would smuggle extra flags (``--ssh``,
+    ``--advertise-routes``…) that hand the user the routing sidecar."""
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if not _EXIT_NODE_RE.match(value):
+        raise HTTPException(
+            status_code=400,
+            detail="Exit node must be an IP address or a Tailscale machine name",
+        )
+    return value
+
+
 def _clean_dns(raw: str | None) -> str | None:
     """Validate + normalize a DNS server list to a space-separated IP string.
 
@@ -60,6 +81,14 @@ def _clean_dns(raw: str | None) -> str | None:
             ip = ipaddress.ip_address(p)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid DNS server: {p}")
+        # Docker's embedded resolver forwards these from the HOST's netns, so a
+        # private address here would let a workspace query LAN/Docker-internal
+        # DNS servers the egress guard otherwise blocks.
+        if not ip.is_global:
+            raise HTTPException(
+                status_code=400,
+                detail=f"DNS server {p} is not a public resolver (private ranges are not allowed)",
+            )
         s = str(ip)
         if s not in cleaned:
             cleaned.append(s)
@@ -169,15 +198,16 @@ def _validate_auto_remove(auto_remove: bool, ephemeral: bool) -> None:
         )
 
 
-def _validate_docker(db, use_docker: bool, zone_id: int) -> None:
-    """Reject Docker-in-Docker unless the admin master toggle is on and the
-    workspace runs on the local zone.
+def _validate_docker(db, use_docker: bool, zone_id: int, user=None) -> None:
+    """Reject Docker-in-Docker unless the admin master toggle is on, the user has
+    been granted it, and the workspace runs on the local zone.
 
-    DinD runs a privileged nested daemon, so it is gated at the deployment level
-    (a per-workspace opt-in is only honoured when an admin enables the feature).
-    It is also restricted to the local control-plane zone: remote zone agents
-    refuse privileged container creates (server.docker_policy) to keep their
-    host-escape boundary intact, so the DinD sidecar cannot run there.
+    DinD runs a PRIVILEGED nested daemon that shares the workspace's netns —
+    whoever holds it is root on the host. So it is gated twice: at the
+    deployment level (the admin master toggle) AND per account (``docker_allowed``,
+    admins implicitly). It is also restricted to the local control-plane zone:
+    remote zone agents refuse privileged container creates
+    (server.docker_policy) to keep their host-escape boundary intact.
     """
     from server import settings_store
 
@@ -187,6 +217,12 @@ def _validate_docker(db, use_docker: bool, zone_id: int) -> None:
         raise HTTPException(
             status_code=400,
             detail="Docker-in-Docker is disabled by the administrator",
+        )
+    if user is not None and not (user.is_admin or getattr(user, "docker_allowed", False)):
+        raise HTTPException(
+            status_code=403,
+            detail="Docker-in-Docker has not been granted to your account (it runs a "
+            "privileged daemon — ask an administrator).",
         )
     if zone_id != 0:
         raise HTTPException(
@@ -259,6 +295,23 @@ def _check_name_unique(db, user_id: int, name: str, *, exclude_ws_id: int | None
             )
 
 
+def _transition(db, ws_id: int, from_states: tuple, to_state: str, *, clear_error: bool = False) -> bool:
+    """Atomically move a workspace between lifecycle states. Returns False if the
+    row was no longer in one of ``from_states`` (someone else transitioned it)."""
+    from sqlalchemy import update
+
+    values = {"status": to_state, "status_changed_at": datetime.now(timezone.utc)}
+    if clear_error:
+        values["error_message"] = None
+    res = db.execute(
+        update(Workspace)
+        .where(Workspace.id == ws_id, Workspace.status.in_(from_states))
+        .values(**values)
+    )
+    db.commit()
+    return res.rowcount == 1
+
+
 def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
     ws = db.get(Workspace, ws_id)
     if not ws:
@@ -298,7 +351,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     _validate_routing(db, user.id, body.use_tailscale, body.use_gluetun)
     if body.use_gluetun:
         _check_gluetun_single_connection(db, user.id)
-    _validate_docker(db, body.use_docker, body.zone_id)
+    _validate_docker(db, body.use_docker, body.zone_id, user)
     _validate_gpu(body.gpu_accel, body.pixelflux_wayland)
 
     _validate_zone(db, body.zone_id)
@@ -319,7 +372,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         ephemeral=body.ephemeral,
         auto_remove=body.auto_remove,
         lan_access=body.lan_access,
-        ts_exit_node=body.ts_exit_node or None,
+        ts_exit_node=_clean_exit_node(body.ts_exit_node),
         ts_accept_routes=body.ts_accept_routes,
         ts_accept_dns=body.ts_accept_dns,
         custom_dns=body.custom_dns,
@@ -927,7 +980,7 @@ def update_workspace(
     _validate_auto_remove(
         data.get("auto_remove", ws.auto_remove), data.get("ephemeral", ws.ephemeral)
     )
-    _validate_docker(db, data.get("use_docker", ws.use_docker), ws.zone_id)
+    _validate_docker(db, data.get("use_docker", ws.use_docker), ws.zone_id, user)
     _validate_gpu(
         data.get("gpu_accel", ws.gpu_accel),
         data.get("pixelflux_wayland", ws.pixelflux_wayland),
@@ -940,6 +993,8 @@ def update_workspace(
             continue  # never blank the name
         if key == "dns_servers":
             value = _clean_dns(value)
+        elif key == "ts_exit_node":
+            value = _clean_exit_node(value)
         elif key in nullable_text and isinstance(value, str) and value.strip() == "":
             value = None
         setattr(ws, key, value)
@@ -962,9 +1017,10 @@ def stop_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: BackgroundT
     ws = _get_workspace_or_404(ws_id, user, db)
     if ws.status not in ("running", "creating"):
         raise HTTPException(status_code=400, detail=f"Cannot stop workspace in state: {ws.status}")
-    ws.status = "stopping"
-    ws.status_changed_at = datetime.now(timezone.utc)
-    db.commit()
+    # Conditional UPDATE, not check-then-set: two concurrent requests must not
+    # both win (the second would enqueue a duplicate task).
+    if not _transition(db, ws.id, ("running", "creating"), "stopping"):
+        raise HTTPException(status_code=409, detail="Workspace is already changing state")
     db.refresh(ws)
     _audit(db, "workspace.stop", detail=ws.public_id, user=user, request=request)
     from server.docker_manager import get_docker_manager
@@ -981,10 +1037,10 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
         raise HTTPException(status_code=400, detail=f"Cannot start workspace in state: {ws.status}")
     if ws.use_gluetun:
         _check_gluetun_single_connection(db, user.id, exclude_ws_id=ws.id)
-    ws.status = "creating"
-    ws.status_changed_at = datetime.now(timezone.utc)
-    ws.error_message = None
-    db.commit()
+    # Conditional UPDATE: a second concurrent start sees rowcount 0 and stops
+    # here instead of launching a duplicate container.
+    if not _transition(db, ws.id, ("stopped", "error"), "creating", clear_error=True):
+        raise HTTPException(status_code=409, detail="Workspace is already starting")
     db.refresh(ws)
     _audit(db, "workspace.start", detail=ws.public_id, user=user, request=request)
     from server.docker_manager import get_docker_manager
@@ -1021,7 +1077,10 @@ def delete_workspace(
     )
     from server.docker_manager import delete_workspace_storage, get_docker_manager
 
-    if ws.status in ("running", "creating", "stopping"):
+    # Anything that may still own a container (including an "error" row whose
+    # launch left one behind) goes through the manager, which removes by id AND
+    # by name; only a row with no container at all is dropped inline.
+    if ws.status in ("running", "creating", "stopping") or ws.container_id:
         bg.add_task(get_docker_manager(ws.zone_id).remove_workspace, ws.id, purge_storage)
     else:
         if purge_storage:

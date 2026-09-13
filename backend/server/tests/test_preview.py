@@ -87,15 +87,32 @@ def test_decode_payload_returns_none_without_marker():
 
 
 class _FakeContainer:
-    """Records exec invocations and replays canned results."""
+    """Records exec invocations and replays canned (exit_code, output) results
+    through the low-level exec API the capped reader uses."""
 
     def __init__(self, results):
+        from types import SimpleNamespace
+
         self._results = list(results)
         self.calls = []
+        self.id = "c1"
+        self.name = "cove-ws-1"
+        self.client = SimpleNamespace(api=self)
+        self._pending = None
 
-    def exec_run(self, cmd, **kwargs):
+    def exec_create(self, cid, cmd, **kwargs):
         self.calls.append(cmd)
-        return self._results.pop(0)
+        self._pending = self._results.pop(0)
+        return {"Id": "exec-1"}
+
+    def exec_start(self, exec_id, stream=True):
+        _, out = self._pending
+        # Chunked like a real stream.
+        for i in range(0, len(out), 4096):
+            yield out[i : i + 4096]
+
+    def exec_inspect(self, exec_id):
+        return {"ExitCode": self._pending[0]}
 
 
 def test_capture_falls_through_interpreters_until_one_works():
@@ -122,11 +139,36 @@ def test_capture_passes_passive_only_flag_to_the_client():
 
 
 def test_capture_survives_exec_errors():
-    class Boom:
-        def exec_run(self, cmd, **kwargs):
+    class Boom(_FakeContainer):
+        def exec_create(self, cid, cmd, **kwargs):
             raise RuntimeError("daemon gone")
 
-    assert capture(Boom(), 3000) is None
+    assert capture(Boom([]), 3000) is None
+
+
+def test_capture_drops_oversized_output():
+    """Whatever the user's container prints is bounded before it reaches the
+    control plane's memory."""
+    from server.preview import _MAX_EXEC_BYTES
+
+    container = _FakeContainer([(0, b"x" * (_MAX_EXEC_BYTES + 1))])
+    assert capture(container, 3000) is None
+    # One interpreter attempt, then give up — never "try the next one" with a
+    # payload that already blew the budget.
+    assert len(container.calls) == 1
+
+
+def test_assemble_rejects_oversized_stripes():
+    import io as _io
+
+    from PIL import Image
+
+    from server.preview import _MAX_STRIPE_PX
+
+    big = Image.new("RGB", (_MAX_STRIPE_PX[0] + 1, 8))
+    buf = _io.BytesIO()
+    big.save(buf, "JPEG")
+    assert assemble({0: buf.getvalue()}) is None
 
 
 def test_capture_client_never_sends_settings_when_passive_only():

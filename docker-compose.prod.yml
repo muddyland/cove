@@ -33,6 +33,10 @@ services:
       - --log.level=WARN
       # TLS / HTTPS
       - --entrypoints.websecure.address=:443
+      # TLS on by default for this entrypoint: the per-workspace routers (subpath
+      # mode) declare entrypoints web,websecure without a tls section, and a
+      # router without one only serves plaintext — streams would 404 over HTTPS.
+      - --entrypoints.websecure.http.tls=true
       - --certificatesresolvers.le.acme.email=${COVE_ACME_EMAIL}
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.le.acme.tlschallenge=true
@@ -40,6 +44,7 @@ services:
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
     ports:
+      # Public entrypoints (this override is for an internet-facing host).
       - "${COVE_HTTP_PORT:-80}:80"
       - "443:443"
     volumes:

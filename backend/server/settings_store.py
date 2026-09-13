@@ -21,6 +21,7 @@ KEY_WORKSPACE_NO_NEW_PRIVILEGES = "workspace_no_new_privileges"
 KEY_WORKSPACE_MAX_RUNTIME_HOURS = "workspace_max_runtime_hours"
 KEY_WORKSPACE_CPU_LIMIT = "workspace_cpu_limit"
 KEY_WORKSPACE_MEMORY_LIMIT_MB = "workspace_memory_limit_mb"
+KEY_WORKSPACE_PIDS_LIMIT = "workspace_pids_limit"
 # GPU acceleration master toggle + the host's DRI render node and its group id.
 # Effective only where the host actually has that device; the render GID varies
 # per host (992 on Debian, often 44/993 elsewhere) so it is admin-configurable.
@@ -51,6 +52,9 @@ DEFAULT_WORKSPACE_MAX_RUNTIME_HOURS = 24
 # historical behaviour), so containers are uncapped until an admin sets these.
 DEFAULT_WORKSPACE_CPU_LIMIT = 0.0
 DEFAULT_WORKSPACE_MEMORY_LIMIT_MB = 0
+# Per-container process/thread cap (a fork bomb otherwise hits the host). 0 =
+# unlimited. 8192 is generous for a desktop with a busy browser.
+DEFAULT_WORKSPACE_PIDS_LIMIT = 8192
 # GPU acceleration off by default (most hosts have no usable render node, and a
 # bad device/GID would fail every launch). When an admin enables it, workspaces
 # that opt in get the render node bind-mounted with DRINODE/DRI_NODE set so the
@@ -170,6 +174,16 @@ def get_workspace_memory_limit_mb(db: Session) -> int:
         return DEFAULT_WORKSPACE_MEMORY_LIMIT_MB
 
 
+def get_workspace_pids_limit(db: Session) -> int:
+    raw = get_setting(db, KEY_WORKSPACE_PIDS_LIMIT)
+    if raw is None:
+        return DEFAULT_WORKSPACE_PIDS_LIMIT
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_WORKSPACE_PIDS_LIMIT
+
+
 def get_workspace_gpu_accel(db: Session) -> bool:
     return _to_bool(get_setting(db, KEY_WORKSPACE_GPU_ACCEL), DEFAULT_WORKSPACE_GPU_ACCEL)
 
@@ -211,6 +225,7 @@ def get_all(db: Session) -> dict:
         "workspace_max_runtime_hours": get_workspace_max_runtime_hours(db),
         "workspace_cpu_limit": get_workspace_cpu_limit(db),
         "workspace_memory_limit_mb": get_workspace_memory_limit_mb(db),
+        "workspace_pids_limit": get_workspace_pids_limit(db),
         "workspace_gpu_accel": get_workspace_gpu_accel(db),
         "workspace_gpu_render_node": get_workspace_gpu_render_node(db),
         "workspace_gpu_render_gid": get_workspace_gpu_render_gid(db),

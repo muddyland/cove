@@ -98,6 +98,35 @@ def enroll(body: ZoneEnrollRequest, token: str, db: DbSession):
     if not _token_valid(zone):
         raise HTTPException(status_code=403, detail="Invalid or expired enrollment token")
 
+    # The endpoint the control plane dials is what the ADMIN set when minting the
+    # token — never what the enroll request says. Otherwise a token holder could
+    # point the control plane (with its client cert and every user's VPN/Tailscale
+    # secrets in launch payloads) at a host of their choosing.
+    if body.endpoint_host.strip() != (zone.endpoint_host or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail=f"endpoint_host must be the zone's configured endpoint ({zone.endpoint_host})",
+        )
+    if body.endpoint_port != zone.endpoint_port:
+        raise HTTPException(
+            status_code=400,
+            detail=f"endpoint_port must be the zone's configured port ({zone.endpoint_port})",
+        )
+
+    # Validate the CSR BEFORE consuming the token, so a malformed request doesn't
+    # burn the single-use token and force the admin to mint another.
+    try:
+        ip_addresses, dns_names = _host_sans(zone.endpoint_host)
+        server_cert = ca.sign_csr(
+            body.csr_pem,
+            f"cove-zone-{zone.public_id}",
+            is_server=True,
+            dns_names=dns_names,
+            ip_addresses=ip_addresses,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Bad CSR: {exc}")
+
     # Atomic single-use consume: only the first caller flips consumed_at and
     # proceeds; a replay sees rowcount 0 and is rejected.
     now = datetime.now(timezone.utc)
@@ -110,27 +139,17 @@ def enroll(body: ZoneEnrollRequest, token: str, db: DbSession):
     if res.rowcount != 1:
         raise HTTPException(status_code=409, detail="Enrollment token already used")
 
-    try:
-        ip_addresses, dns_names = _host_sans(body.endpoint_host)
-        server_cert = ca.sign_csr(
-            body.csr_pem,
-            f"cove-zone-{zone.public_id}",
-            is_server=True,
-            dns_names=dns_names,
-            ip_addresses=ip_addresses,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Bad CSR: {exc}")
-
-    # The control plane's own client cert for dialing this zone (its key stays here).
+    # The control plane's own client cert for dialing this zone (its key stays
+    # here), plus the separate EDGE cert the central Traefik relays streams with.
     client_cert, client_key = ca.issue_cert(f"cove-cp-{zone.public_id}", is_server=False)
+    edge_cert, edge_key = ca.issue_cert(f"cove-edge-{zone.public_id}", is_server=False)
 
-    zone.endpoint_host = body.endpoint_host
-    zone.endpoint_port = body.endpoint_port
     zone.ca_cert_pem = ca.ca_cert_pem()
     zone.server_cert_pem = server_cert
     zone.client_cert_pem = client_cert
     zone.client_key_enc = encrypt_secret(client_key)
+    zone.edge_cert_pem = edge_cert
+    zone.edge_key_enc = encrypt_secret(edge_key)
     zone.agent_fingerprint = ca.cert_fingerprint(server_cert)
     zone.status = "enrolled"
     zone.enrolled_at = now
@@ -148,6 +167,7 @@ def enroll(body: ZoneEnrollRequest, token: str, db: DbSession):
         stream_signing_key=settings.get_stream_signing_key(),
         workspace_domain=settings.workspace_domain,
         expected_client_cn=f"cove-cp-{zone.public_id}",
+        edge_client_cn=f"cove-edge-{zone.public_id}",
     )
 
 
@@ -215,6 +235,7 @@ open(os.path.join(d, "server.crt"), "w").write(r["server_cert_pem"])
 print("STREAM_SIGNING_KEY=" + shlex.quote(r["stream_signing_key"]))
 print("WORKSPACE_DOMAIN=" + shlex.quote(r.get("workspace_domain") or ""))
 print("EXPECTED_CLIENT_CN=" + shlex.quote(r["expected_client_cn"]))
+print("EDGE_CLIENT_CN=" + shlex.quote(r.get("edge_client_cn") or ""))
 PY
 )"
 echo "Enrolled. Writing the agent stack..."
@@ -230,6 +251,7 @@ STORAGE_PATH=${STORAGE_PATH}
 STREAM_SIGNING_KEY=${STREAM_SIGNING_KEY}
 WORKSPACE_DOMAIN=${WORKSPACE_DOMAIN}
 EXPECTED_CLIENT_CN=${EXPECTED_CLIENT_CN}
+EDGE_CLIENT_CN=${EDGE_CLIENT_CN}
 ENV
 
 cat > "$AGENT_DIR/traefik-dynamic.yml" <<'DYN'
@@ -278,6 +300,7 @@ services:
       - COVE_STORAGE_PATH=${STORAGE_PATH}
       - COVE_AGENT_DOCKER_SOCKET_URL=http://cove-agent-sockproxy:2375
       - COVE_AGENT_EXPECTED_CLIENT_CN=${EXPECTED_CLIENT_CN}
+      - COVE_AGENT_EDGE_CLIENT_CN=${EDGE_CLIENT_CN}
     volumes:
       - "${STORAGE_PATH}:${STORAGE_PATH}"
       - cove-agent-data:/app/data

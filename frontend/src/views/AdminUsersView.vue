@@ -23,7 +23,7 @@
           <tr v-for="u in users" :key="u.id">
             <td>{{ u.username }}</td>
             <td><span class="badge">{{ u.auth_provider }}</span></td>
-            <td>{{ u.is_admin ? 'Admin' : 'User' }}</td>
+            <td>{{ u.is_admin ? 'Admin' : 'User' }}<span v-if="u.docker_allowed && !u.is_admin" class="muted"> · docker</span></td>
             <td>{{ u.last_login_at ? formatDate(u.last_login_at) : '—' }}</td>
             <td class="actions">
               <NeonButton variant="ghost" @click="openEdit(u)"><Pencil :size="13" /> Edit</NeonButton>
@@ -80,7 +80,7 @@ function confirmDelete(u: User) { deleteTarget.value = u; showConfirm.value = tr
 
 // Errors propagate to the modal (it stays open + shows them inline); we only
 // toast + mutate the list on success.
-async function handleSubmit(payload: { username: string; password?: string; is_admin: boolean }) {
+async function handleSubmit(payload: { username: string; password?: string; is_admin: boolean; docker_allowed: boolean }) {
   if (editTarget.value) {
     const updated = await adminApi.users.update(editTarget.value.id, payload)
     const idx = users.value.findIndex(u => u.id === editTarget.value!.id)

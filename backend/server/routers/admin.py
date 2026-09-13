@@ -25,7 +25,7 @@ from server.schemas import (
     WorkspaceOut,
     ZoneStorageOut,
 )
-from server.security import hash_password, validate_username
+from server.security import hash_password, validate_password, validate_username
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -35,6 +35,17 @@ def _audit(db, action, *, detail=None, user=None, request=None):
 
     ip = client_ip(request) if request is not None else None
     record_audit(db, action, detail=detail, user=user, ip=ip)
+
+
+def _clean_render_node(raw: str) -> str:
+    """The render node is interpolated into a shell probe and a device mapping:
+    accept only a /dev/dri node path."""
+    import re
+
+    value = (raw or "").strip() or settings_store.DEFAULT_WORKSPACE_GPU_RENDER_NODE
+    if not re.fullmatch(r"/dev/dri/[A-Za-z0-9_-]+", value):
+        raise HTTPException(status_code=400, detail="Render node must look like /dev/dri/renderD128")
+    return value
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -57,13 +68,13 @@ def create_user(body: AdminUserCreate, user: AdminUser, db: DbSession, request: 
     existing = db.scalar(sa_select(User).where(User.username == body.username))
     if existing:
         raise HTTPException(status_code=409, detail="Username already taken")
-    if len(body.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    validate_password(body.password)
     new_user = User(
         username=body.username,
         password_hash=hash_password(body.password),
         auth_provider="local",
         is_admin=body.is_admin,
+        docker_allowed=body.docker_allowed,
     )
     db.add(new_user)
     db.commit()
@@ -100,10 +111,11 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
         # than silently creating a back-door local credential on an SSO user.
         if target.auth_provider != "local":
             raise HTTPException(status_code=400, detail="Cannot set a password on SSO accounts")
-        if len(body.password) < 8:
-            raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        validate_password(body.password)
         target.password_hash = hash_password(body.password)
         target.tokens_valid_from = datetime.now(timezone.utc)
+    if body.docker_allowed is not None:
+        target.docker_allowed = body.docker_allowed
     db.commit()
     db.refresh(target)
     _audit(db, "admin.user.update", detail=target.username, user=admin, request=request)
@@ -345,6 +357,12 @@ def update_app_settings(
             settings_store.KEY_WORKSPACE_MEMORY_LIMIT_MB,
             str(max(0, body.workspace_memory_limit_mb)),
         )
+    if body.workspace_pids_limit is not None:
+        settings_store.set_setting(
+            db,
+            settings_store.KEY_WORKSPACE_PIDS_LIMIT,
+            str(max(0, body.workspace_pids_limit)),
+        )
     if body.workspace_gpu_accel is not None:
         settings_store.set_setting(
             db,
@@ -355,7 +373,7 @@ def update_app_settings(
         settings_store.set_setting(
             db,
             settings_store.KEY_WORKSPACE_GPU_RENDER_NODE,
-            body.workspace_gpu_render_node.strip() or settings_store.DEFAULT_WORKSPACE_GPU_RENDER_NODE,
+            _clean_render_node(body.workspace_gpu_render_node),
         )
     if body.workspace_gpu_render_gid is not None:
         settings_store.set_setting(

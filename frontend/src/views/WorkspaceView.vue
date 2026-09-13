@@ -131,6 +131,23 @@
       <NeonButton variant="secondary" :loading="booting" @click="retryBoot">RETRY</NeonButton>
     </div>
 
+    <!-- Admin opening ANOTHER user's node in subpath mode: the stream is framed
+         same-origin with this app, so whatever runs inside that workspace can
+         script against this page with the admin's session. Make it a deliberate
+         choice rather than a click-through. Subdomain mode has no such exposure. -->
+    <div v-else-if="foreignStreamPending" class="overlay-state error">
+      <p class="error-text">⚠ This node belongs to another user</p>
+      <p class="boot-sub">
+        In subpath routing mode its desktop shares this app's origin. Opening it lets code
+        running in that workspace act with your admin session. Prefer subdomain routing
+        (COVE_WORKSPACE_DOMAIN) for multi-user installs.
+      </p>
+      <div class="foreign-actions">
+        <NeonButton variant="secondary" @click="router.push('/app')">BACK</NeonButton>
+        <NeonButton variant="primary" @click="acceptForeignStream">OPEN ANYWAY</NeonButton>
+      </div>
+    </div>
+
     <div class="frame-wrap" v-else-if="ws?.status === 'running' && streamUrl" ref="frameWrap">
       <iframe
         :src="streamUrl"
@@ -169,6 +186,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { workspacesApi } from '@/api/workspaces'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { useLocalPreview } from '@/composables/useLocalPreview'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
@@ -182,6 +200,7 @@ import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Dow
 const route = useRoute()
 const router = useRouter()
 const store = useWorkspacesStore()
+const auth = useAuthStore()
 const ui = useUiStore()
 
 const wsId = computed(() => Number(route.params.id))
@@ -194,6 +213,9 @@ const showDiag = ref(false)
 const showHelp = ref(false)
 const showMetrics = ref(false)
 const streamUrl = ref<string | null>(null)
+// A same-origin (subpath) stream URL for a node the current user does not own,
+// held back until the admin explicitly accepts the exposure (see loadStreamUrl).
+const foreignStreamPending = ref<string | null>(null)
 // Set while we poll for Traefik to publish the node's route (see loadStreamUrl);
 // streamError holds a message if the route never came up or stream-auth failed.
 const connecting = ref(false)
@@ -256,6 +278,7 @@ function runAction(fn: () => void) {
 watch(wsId, async () => {
   menuOpen.value = false
   streamUrl.value = null
+  foreignStreamPending.value = null
   streamError.value = null
   connecting.value = false
   localPreview.stop()
@@ -321,6 +344,11 @@ async function loadStreamUrl() {
     }
     const { url } = await workspacesApi.streamAuth(id)
     if (id !== wsId.value) return
+    const sameOrigin = url.startsWith('/') && !url.startsWith('//')
+    if (sameOrigin && auth.user && ws.value && ws.value.user_id !== auth.user.id) {
+      foreignStreamPending.value = url
+      return
+    }
     streamUrl.value = url
     // Keep this browser's grid thumbnail current from the stream we're already
     // watching. Local only — never uploaded (see useLocalPreview).
@@ -334,9 +362,18 @@ async function loadStreamUrl() {
 
 // Manual "RETRY" from the connection-error overlay: drop any stale URL and run
 // the readiness-gated load again from scratch.
+function acceptForeignStream() {
+  const url = foreignStreamPending.value
+  foreignStreamPending.value = null
+  if (!url) return
+  streamUrl.value = url
+  localPreview.start()
+}
+
 function retryStream() {
   streamError.value = null
   streamUrl.value = null
+  foreignStreamPending.value = null
   localPreview.stop()
   loadStreamUrl()
 }
@@ -939,5 +976,6 @@ async function handleStop() {
 .halt-icon { color: var(--amber); filter: drop-shadow(0 0 10px rgba(255, 176, 0, 0.5)); }
 .overlay-state.halted .boot-text { color: var(--amber); }
 .overlay-state.error { color: var(--red); }
+.foreign-actions { display: flex; gap: 12px; margin-top: 18px; }
 .error-text { font-family: var(--font-mono); font-size: 13px; }
 </style>

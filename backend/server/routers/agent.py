@@ -7,6 +7,7 @@ covers what the Docker API cannot — file browsing (Phase 5) and workspace
 migration (Phase 6). For now it carries a health probe.
 """
 
+import re
 from pathlib import Path
 
 import anyio
@@ -20,6 +21,8 @@ from server.schemas import FileListing
 from server.security import decode_stream_token, is_valid_username
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+_SUBPATH_RE = re.compile(r"^/workspace/([^/?]+)/")
 
 
 def _agent_user_base(username: str) -> Path:
@@ -86,12 +89,23 @@ def agent_forward_auth(request: Request):
     settings = get_settings()
     host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
     public_id = _public_id_from_host(host, settings)
-    if not public_id:
+    token: str | None = None
+    if public_id:
+        # Subdomain mode: the per-workspace stream cookie set by the central edge.
+        token = request.cookies.get(settings.cookie_stream_name)
+    else:
+        # Subpath mode: the workspace is in the path, and the central edge — which
+        # did the real session check — relays a stream token for it in a header
+        # (see routers/auth.STREAM_AUTH_HEADER). The session cookie itself is
+        # useless here: the agent holds no app secret.
+        uri = request.headers.get("X-Forwarded-Uri") or ""
+        m = _SUBPATH_RE.match(uri)
+        if m:
+            public_id = m.group(1)
+            token = request.headers.get("X-Cove-Stream-Auth")
+    if not public_id or not token:
         return Response(status_code=401)
-    cookie = request.cookies.get(settings.cookie_stream_name)
-    if not cookie:
-        return Response(status_code=401)
-    payload = decode_stream_token(cookie)
+    payload = decode_stream_token(token)
     if not payload or payload.get("type") != "stream" or payload.get("ws") != public_id:
         return Response(status_code=401)
     return Response(status_code=200)

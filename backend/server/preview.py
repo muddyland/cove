@@ -134,13 +134,18 @@ def assemble(stripes: "dict[int, bytes]") -> "bytes | None":
     """
     from PIL import Image
 
-    if not stripes:
+    if not stripes or len(stripes) > _MAX_STRIPES:
         return None
     try:
-        tiles = [
-            (y, Image.open(io.BytesIO(data)).convert("RGB"))
-            for y, data in sorted(stripes.items())
-        ]
+        tiles = []
+        for y, data in sorted(stripes.items()):
+            img = Image.open(io.BytesIO(data))
+            # Check the declared size BEFORE decoding pixels: a few hundred KB
+            # of JPEG can claim a 13000x13000 canvas and cost gigabytes.
+            if img.width > _MAX_STRIPE_PX[0] or img.height > _MAX_STRIPE_PX[1]:
+                logger.debug("Preview stripe %dx%d too large; frame dropped", img.width, img.height)
+                return None
+            tiles.append((y, img.convert("RGB")))
     except Exception as exc:  # noqa: BLE001 - any undecodable stripe voids the frame
         logger.debug("Preview stripe decode failed: %s", exc)
         return None
@@ -169,6 +174,33 @@ def assemble(stripes: "dict[int, bytes]") -> "bytes | None":
     return buf.getvalue()
 
 
+# Everything the capture prints comes from a process inside the USER'S container;
+# never read an unbounded amount of it into the control plane's memory. A full
+# 4K frame of JPEG stripes base64-encoded is well under this.
+_MAX_EXEC_BYTES = 8 * 1024 * 1024
+# Largest stripe the assembler will decode (a screen, not a decompression bomb).
+_MAX_STRIPE_PX = (8192, 8192)
+_MAX_STRIPES = 256
+
+
+def _exec_capped(container, cmd: list) -> "tuple[int | None, bytes | None]":
+    """``exec_run`` that stops reading once the output exceeds _MAX_EXEC_BYTES
+    (returning ``output=None``), and still reports the exit code."""
+    api = container.client.api
+    exec_id = api.exec_create(container.id, cmd, stdout=True, stderr=True)["Id"]
+    chunks: list[bytes] = []
+    total = 0
+    overflow = False
+    for chunk in api.exec_start(exec_id, stream=True):
+        total += len(chunk)
+        if total > _MAX_EXEC_BYTES:
+            overflow = True
+            break
+        chunks.append(chunk)
+    code = api.exec_inspect(exec_id).get("ExitCode")
+    return code, (None if overflow else b"".join(chunks))
+
+
 def capture(
     container,
     port: int,
@@ -189,12 +221,13 @@ def capture(
     # surfaces as a timeout here rather than wedging the caller.
     for interpreter in _PYTHON_CANDIDATES:
         try:
-            code, output = container.exec_run(
-                [interpreter, "-c", _CAPTURE_SRC, *args], demux=False
-            )
+            code, output = _exec_capped(container, [interpreter, "-c", _CAPTURE_SRC, *args])
         except Exception as exc:  # noqa: BLE001 - docker/API/transport errors
             logger.debug("Preview exec failed via %s: %s", interpreter, exc)
             continue
+        if output is None:
+            logger.warning("Preview output from %s exceeded %d bytes; ignored", container.name, _MAX_EXEC_BYTES)
+            return None
         if code != 0:
             # Wrong interpreter (missing binary / no websockets module) — try the
             # next candidate. A real stream failure exits 0 with no marker line.

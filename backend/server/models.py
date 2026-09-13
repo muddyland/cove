@@ -30,6 +30,12 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     tokens_valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Per-user grant for Docker-in-Docker: the sidecar runs a PRIVILEGED nested
+    # daemon (host root for whoever holds it), so beyond the deployment-wide
+    # toggle an admin must grant it per account. Admins are always allowed.
+    docker_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
     # Per-user SSH key, injected into containers' ~/.ssh by default. The private
     # key is encrypted at rest; the public key + type are not secret (shown so the
     # user can copy the public key elsewhere).
@@ -101,6 +107,12 @@ class Zone(Base):
     client_cert_pem: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     client_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     agent_fingerprint: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # A SECOND client cert (CN cove-edge-<id>) the central Traefik presents when
+    # relaying browser traffic to the agent. Distinct from the control plane's
+    # cove-cp-<id> cert so a relayed request can never satisfy the agent's CN pin
+    # on its API/Docker paths. Issued at enrollment; older zones get one lazily.
+    edge_cert_pem: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    edge_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     enrolled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

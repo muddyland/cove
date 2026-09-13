@@ -18,6 +18,7 @@ instance: Pillow can't rasterize one, and nothing else here needs an SVG engine)
 """
 
 import asyncio
+import contextlib
 import io
 import ipaddress
 import logging
@@ -36,6 +37,8 @@ _ICON_PX = 256
 _MAX_BYTES = 512 * 1024
 _HTML_MAX_BYTES = 256 * 1024
 _TIMEOUT = 6.0
+# Upper bound on one whole favicon lookup (page + every candidate + redirects).
+_TOTAL_TIMEOUT = 30.0
 # Try a handful of declared icons before giving up: the first is often an SVG we
 # can't rasterize, and the next one down is usually a perfectly good PNG.
 _MAX_CANDIDATES = 5
@@ -201,10 +204,40 @@ async def _read_capped(response: httpx.Response, cap: int) -> bytes:
     return b"".join(chunks)[: cap + 1]
 
 
+_MAX_REDIRECTS = 5
+
+
+@contextlib.asynccontextmanager
+async def _stream_checked(client: httpx.AsyncClient, url: str, headers: dict):
+    """``client.stream("GET", url)`` that follows redirects by hand, re-checking
+    the target host at every hop. Yields the final response, or None when a hop
+    aims at a host we refuse to talk to (loopback, link-local, Docker-internal…)
+    or the chain is too long. The client itself has redirects disabled."""
+    for _ in range(_MAX_REDIRECTS + 1):
+        parts = urlparse(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            yield None
+            return
+        if not await _host_is_fetchable(parts.hostname):
+            logger.debug("Refusing favicon fetch from %s", parts.hostname)
+            yield None
+            return
+        async with client.stream("GET", url, headers=headers) as resp:
+            location = resp.headers.get("location")
+            if resp.status_code in (301, 302, 303, 307, 308) and location:
+                url = urljoin(url, location)
+                continue
+            yield resp
+            return
+    yield None
+
+
 async def _page_html(client: httpx.AsyncClient, origin: str) -> str:
     """The site's landing page, or "" if it isn't reachable/isn't HTML."""
     try:
-        async with client.stream("GET", origin, headers={"Accept": "text/html"}) as resp:
+        async with _stream_checked(client, origin, {"Accept": "text/html"}) as resp:
+            if resp is None:
+                return ""
             ctype = (resp.headers.get("content-type") or "").split(";")[0].strip()
             if resp.status_code != 200 or not ctype.startswith(("text/html", "application/xhtml")):
                 return ""
@@ -219,8 +252,8 @@ async def _fetch_icon(client: httpx.AsyncClient, url: str) -> "bytes | None":
     label ``favicon.ico`` as octet-stream — so the real gate is whether Pillow can
     decode what came back."""
     try:
-        async with client.stream("GET", url, headers={"Accept": "image/*"}) as resp:
-            if resp.status_code != 200:
+        async with _stream_checked(client, url, {"Accept": "image/*"}) as resp:
+            if resp is None or resp.status_code != 200:
                 return None
             data = await _read_capped(resp, _MAX_BYTES)
     except httpx.HTTPError:
@@ -268,15 +301,19 @@ async def fetch_favicon(origin: str) -> "bytes | None":
     if not host or not await _host_is_fetchable(host):
         return None
     try:
-        async with httpx.AsyncClient(
-            timeout=_TIMEOUT, follow_redirects=True, headers={"User-Agent": _UA}
-        ) as client:
-            html = await _page_html(client, origin)
-            for url in icon_candidates(html, origin):
-                data = await _fetch_icon(client, url)
-                png = to_png(data) if data else None
-                if png:
-                    return png
+        # Redirects are followed by _stream_checked so every hop's host is
+        # checked; the whole lookup is bounded so a slow-dripping server can't
+        # keep the task alive indefinitely.
+        async with asyncio.timeout(_TOTAL_TIMEOUT):
+            async with httpx.AsyncClient(
+                timeout=_TIMEOUT, follow_redirects=False, headers={"User-Agent": _UA}
+            ) as client:
+                html = await _page_html(client, origin)
+                for url in icon_candidates(html, origin):
+                    data = await _fetch_icon(client, url)
+                    png = to_png(data) if data else None
+                    if png:
+                        return png
     except Exception as exc:  # a fetch must never take down its caller
         logger.debug("Favicon lookup failed for %s: %s", origin, exc)
     return None

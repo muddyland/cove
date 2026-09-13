@@ -41,6 +41,7 @@ services:
       - --log.level=WARN
       # TLS / HTTPS
       - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls=true
       - --certificatesresolvers.le.acme.email=${COVE_ACME_EMAIL}
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
       # DNS-01 challenge (instead of tlschallenge)
@@ -51,9 +52,16 @@ services:
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
     # Provider credentials are read by Traefik from its own environment. Pull
-    # them in from the project .env so you don't have to hardcode secrets here.
+    # them in from the project .env so you don't have to hardcode secrets here…
     env_file:
       - .env
+    # …but never Cove's own secrets: the whole .env lands in this internet-facing
+    # container, so blank the values Traefik has no business holding
+    # (``environment`` wins over ``env_file``).
+    environment:
+      - COVE_OIDC_CLIENT_SECRET=
+      - COVE_DB_ENCRYPTION_KEY=
+      - COVE_OIDC_CLIENT_ID=
 
   # Wildcard certificate for the apex + all workspace subdomains. Traefik obtains
   # main + *.${COVE_DOMAIN} via DNS-01 once and serves it from its cert store for

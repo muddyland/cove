@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     # Enforced via Traefik's passTLSClientCert when set; unset disables the check.
     # (empty -> None)
     agent_expected_client_cn: Optional[str] = None
+    # On a zone agent: the CN of the control plane's relay (edge) cert. Never
+    # accepted on the agent API / Docker proxy; recorded so operators can see
+    # which cert the stream relay uses. (empty -> None)
+    agent_edge_client_cn: Optional[str] = None
+    # Dial a zone that has no mTLS material over plain TCP. Off by default: a
+    # cleartext, unauthenticated Docker channel ships user secrets (VPN configs,
+    # Tailscale keys) to whatever answers. Only for a trusted private network,
+    # and only until the zone is enrolled.
+    allow_insecure_zones: bool = False
 
     # Token lifetimes
     access_token_minutes: int = 30
@@ -112,6 +121,7 @@ class Settings(BaseSettings):
         "forward_auth_host",
         "stream_signing_key",
         "agent_expected_client_cn",
+        "agent_edge_client_cn",
         mode="before",
     )
     @classmethod

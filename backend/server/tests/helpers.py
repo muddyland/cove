@@ -76,3 +76,37 @@ def add_image(name="Ubuntu Desktop", docker_image="lscr.io/linuxserver/webtop:la
         return img.id
     finally:
         db.close()
+
+
+def make_csr() -> str:
+    """A throwaway CSR (the agent's server key never leaves the agent; tests
+    generate one locally the same way the installer does)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "cove-zone")]))
+        .sign(key, hashes.SHA256())
+    )
+    return csr.public_bytes(serialization.Encoding.PEM).decode()
+
+
+def enroll_zone(client, name="LAN", host="10.0.0.5", port=8443):
+    """Register + fully enroll a remote zone (mTLS material issued). Returns
+    ``(zone_id, enroll_response_json)``. Since 1.1.0 a zone is only usable once
+    enrolled — a manually-registered endpoint alone stays 'pending'."""
+    zid = client.post(
+        "/api/admin/zones",
+        json={"name": name, "endpoint_host": host, "endpoint_port": port},
+    ).json()["id"]
+    token = client.post(f"/api/admin/zones/{zid}/enroll-token").json()["token"]
+    resp = client.post(
+        f"/api/zones/enroll?token={token}",
+        json={"csr_pem": make_csr(), "endpoint_host": host, "endpoint_port": port},
+    )
+    assert resp.status_code == 200, resp.text
+    return zid, resp.json()

@@ -203,9 +203,12 @@ exposed anywhere else:
 
 ### Residual risk
 
-`--privileged` is a **kernel-level** attack surface. DinD is *dev-grade*
-isolation, not a hardened multi-tenant boundary: a kernel exploit from inside the
-sidecar could reach the host. **Enable it only for trusted users.** For stronger
+`--privileged` is not just a kernel attack surface — it is **host root by
+design**: a privileged container sees every host device and can start further
+privileged containers, so anyone granted DinD can escape to the host without an
+exploit. DinD is a convenience for people you would already give a root shell
+on the box. **Grant it only to those users** (the per-user grant exists for
+exactly this reason). For stronger
 isolation, run the daemon rootless (`docker:dind-rootless`) or use the
 [Sysbox](https://github.com/nestybox/sysbox) runtime (unprivileged DinD, no
 `--privileged`) — both require host-level provisioning beyond Cove's defaults.
@@ -215,7 +218,11 @@ isolation, run the daemon rootless (`docker:dind-rootless`) or use the
 1. **Admin → Settings → "Allow Docker-in-Docker"** (master toggle, off by
    default). Optionally set the DinD image (default `docker:dind`, multi-arch —
    works on x86_64 and arm64).
-2. Per workspace, tick **"Docker (dev)"** when launching or editing it.
+2. **Admin → Users → edit the account → "Allow Docker-in-Docker"**. The grant
+   is per user because the nested daemon is privileged: whoever holds it can
+   mount host disks and start host-network containers from inside their
+   workspace — it is host root. Admins have it implicitly.
+3. Per workspace, tick **"Docker (dev)"** when launching or editing it.
 
 It composes with Tailscale/Gluetun routing and needs no host changes.
 
@@ -253,6 +260,16 @@ you must place Cove behind an upstream proxy, forward to Traefik's entrypoint an
 preserve the `Host` header and `X-Forwarded-*` headers — the backend derives the
 real client IP from the rightmost `X-Forwarded-For` hop (the one Traefik appends),
 which is used for rate limiting and the audit log.
+
+Traefik discards forwarded headers from sources it doesn't trust, so also tell
+it the upstream proxy's address, or every user shares that proxy's IP and one
+attacker's failed logins lock everyone out for the rate-limit window. Add to the
+`traefik` command in your override:
+
+```yaml
+- --entrypoints.web.forwardedHeaders.trustedIPs=10.0.0.5/32
+- --entrypoints.websecure.forwardedHeaders.trustedIPs=10.0.0.5/32
+```
 
 ## After deploying
 

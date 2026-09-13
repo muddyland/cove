@@ -129,7 +129,9 @@ async def verify_id_token(id_token: str, nonce: Optional[str] = None) -> dict:
         key=key,
         algorithms=algorithms,
         audience=settings.oidc_client_id,
-        issuer=discovery.get("issuer"),
+        # Verify against the CONFIGURED issuer, not whatever discovery answered
+        # with (a None here would silently disable the check).
+        issuer=[i for i in {settings.oidc_issuer, discovery.get("issuer")} if i],
         options={"verify_aud": True},
     )
 
@@ -160,10 +162,15 @@ def extract_username(claims: dict) -> str:
 
 def sanitize_username(raw: str) -> str:
     """Coerce an arbitrary string into a valid Cove username."""
+    from server.security import is_reserved_username
+
     cleaned = _USERNAME_CHARSET_RE.sub("-", raw or "").strip("-")[:64]
     if not cleaned or cleaned in (".", ".."):
         return "user"
-    return cleaned
+    # An IdP-chosen name must not land on a reserved storage directory.
+    while cleaned and is_reserved_username(cleaned):
+        cleaned = cleaned[1:].lstrip("-") if not cleaned.lower().startswith("cove-") else cleaned[5:].lstrip("-")
+    return cleaned or "user"
 
 
 def is_admin_from_claims(claims: dict) -> bool:
@@ -171,4 +178,7 @@ def is_admin_from_claims(claims: dict) -> bool:
     if not settings.oidc_admin_group:
         return False
     groups = claims.get("groups", [])
+    # A string here would make ``in`` a substring test ("admin" in "not-admins").
+    if not isinstance(groups, (list, tuple, set)):
+        return False
     return settings.oidc_admin_group in groups

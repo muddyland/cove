@@ -14,7 +14,7 @@ workspace's network namespace at start. In order, the rules:
 3. **Always block** these, for **every** workspace (including Tailscale and LAN-granted ones):
    - `169.254.0.0/16` — link-local and **cloud metadata** (e.g. `169.254.169.254`).
    - `172.16.0.0/12` — the Docker bridge ranges (the Cove backend, the socket proxies, Traefik, and other workspaces).
-4. Allow any admin-granted **LAN subnets** and the specific host(s) a `target_url` points at.
+4. Allow any admin-granted **LAN subnets** (when the workspace opted in).
 5. Block the remaining private ranges: `10.0.0.0/8`, `192.168.0.0/16`, `100.64.0.0/10` (CGNAT).
 6. Otherwise allow — i.e. the public internet is reachable.
 
@@ -33,16 +33,16 @@ Only the admin-listed subnets become reachable; the always-blocked Docker and
 metadata ranges stay blocked regardless. The launch toggle only appears when the
 admin has enabled LAN access and configured subnets.
 
-**Exception — "open a LAN website":** a workspace can always reach the specific
-host(s) its **target URL** resolves to, added as narrow `/32` rules, even without
-the admin LAN toggle. This is what makes "open `http://nas.local`" work out of the
-box. Only addresses in the private ranges qualify; Docker-internal and metadata
-addresses remain blocked.
+**Opening a LAN website:** a browser workspace pointed at a private address
+(`http://nas.local`, `http://192.168.1.10`) needs the LAN policy above — the
+admin toggle, a subnet that contains the host, and the workspace's LAN opt-in.
+(Before 1.1.0 the target host was allowed automatically; that let any user reach
+any private host on every port just by typing its address.)
 
 ## Custom DNS
 
 Tick **Custom DNS** and supply up to six resolver IPs to point a workspace at
-specific resolvers (e.g. `1.1.1.1`, `9.9.9.9`) instead of Docker/host DNS. If you
+specific **public** resolvers (e.g. `1.1.1.1`, `9.9.9.9`) instead of Docker/host DNS. Private addresses are rejected: Docker's embedded resolver would forward to them from the host's own network, bypassing the egress guard. If you
 leave the list empty, public defaults are used. Custom DNS is **ignored for
 Tailscale workspaces**, because `tailscaled` owns the namespace's `resolv.conf`.
 

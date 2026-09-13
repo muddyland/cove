@@ -306,6 +306,7 @@ def test_resource_limits_empty_when_zero(monkeypatch):
     import server.docker_manager as dm
     monkeypatch.setattr(dm, "get_workspace_cpu_limit", lambda _db: 0.0)
     monkeypatch.setattr(dm, "get_workspace_memory_limit_mb", lambda _db: 0)
+    monkeypatch.setattr(dm, "get_workspace_pids_limit", lambda _db: 0)
     assert dm._resource_limits(None) == {}
 
 
@@ -313,6 +314,7 @@ def test_resource_limits_builds_kwargs(monkeypatch):
     import server.docker_manager as dm
     monkeypatch.setattr(dm, "get_workspace_cpu_limit", lambda _db: 2.5)
     monkeypatch.setattr(dm, "get_workspace_memory_limit_mb", lambda _db: 4096)
+    monkeypatch.setattr(dm, "get_workspace_pids_limit", lambda _db: 0)
     assert dm._resource_limits(None) == {"nano_cpus": 2_500_000_000, "mem_limit": "4096m"}
 
 
@@ -320,6 +322,7 @@ def test_resource_limits_partial(monkeypatch):
     import server.docker_manager as dm
     monkeypatch.setattr(dm, "get_workspace_cpu_limit", lambda _db: 0.0)
     monkeypatch.setattr(dm, "get_workspace_memory_limit_mb", lambda _db: 512)
+    monkeypatch.setattr(dm, "get_workspace_pids_limit", lambda _db: 0)
     assert dm._resource_limits(None) == {"mem_limit": "512m"}
 
 # ── _build_egress_rules (firewall policy) ──────────────────────────────────────

@@ -29,6 +29,7 @@ from server.security import (
     decode_token,
     hash_password,
     sign_state,
+    validate_password,
     validate_username,
     verify_password,
     verify_state,
@@ -37,6 +38,9 @@ from server.security import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _STREAM_RE = re.compile(r"^/workspace/([^/]+)/")
+# Request header the central ForwardAuth sets (via Traefik authResponseHeaders)
+# on subpath-mode requests relayed to a remote zone; the agent verifies it.
+STREAM_AUTH_HEADER = "X-Cove-Stream-Auth"
 
 # Module-level sliding-window rate limiter for sensitive auth endpoints, keyed by
 # "<scope>:<client IP>" so each endpoint family throttles independently.
@@ -138,8 +142,7 @@ def setup(body: SetupRequest, request: Request, db: DbSession):
     if not _needs_setup(db):
         raise HTTPException(status_code=410, detail="Setup already complete")
     validate_username(body.username)
-    if len(body.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    validate_password(body.password)
     user = User(
         username=body.username,
         password_hash=hash_password(body.password),
@@ -211,11 +214,9 @@ def refresh(request: Request, db: DbSession):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    # Enforce revocation: iat must be >= tokens_valid_from.
-    if user.tokens_valid_from:
-        issued_at = datetime.fromtimestamp(payload.get("iat", 0), tz=timezone.utc)
-        if issued_at < user.tokens_valid_from.replace(tzinfo=timezone.utc):
-            raise HTTPException(status_code=401, detail="Refresh token revoked")
+    # Enforce revocation: iat must be >= tokens_valid_from (second granularity).
+    if not _check_revocation(user, payload):
+        raise HTTPException(status_code=401, detail="Refresh token revoked")
 
     resp = JSONResponse(
         content=TokenResponse(access_token=create_access_token(user.id, user.is_admin)).model_dump()
@@ -252,8 +253,7 @@ def change_password(
         raise HTTPException(status_code=400, detail="Cannot change password for SSO accounts")
     if not verify_password(body.current_password, user.password_hash or ""):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
-    if len(body.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    validate_password(body.new_password)
     user.password_hash = hash_password(body.new_password)
     user.tokens_valid_from = datetime.now(timezone.utc)
     db.commit()
@@ -525,7 +525,16 @@ def _forward_auth_subpath(request, db, uri: str | None):
         return Response(status_code=401)
 
     if _authorize_ws(db, public_id, user):
-        return Response(status_code=200, headers={"X-Cove-User": user.username})
+        headers = {"X-Cove-User": user.username}
+        ws = db.scalar(select(Workspace).where(Workspace.public_id == public_id))
+        if ws is not None and ws.zone_id != 0:
+            # Remote zone, subpath mode: the agent's own Traefik re-checks every
+            # stream request but holds only the stream-signing key (no session
+            # secret, no user DB), and the session cookie is meaningless to it.
+            # Hand it a short-lived token scoped to exactly this workspace via
+            # authResponseHeaders. Local workspaces never see this header.
+            headers[STREAM_AUTH_HEADER] = create_stream_token(user.id, public_id)
+        return Response(status_code=200, headers=headers)
 
     _record_audit(db, "stream.deny", detail=uri, user=user, ip=client_ip(request))
     return Response(status_code=401)

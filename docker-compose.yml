@@ -67,7 +67,11 @@ services:
       - --entrypoints.web.address=:80
       - --log.level=WARN
     ports:
-      - "${COVE_HTTP_PORT:-80}:80"
+      # Bound to loopback by default: this base file serves plain HTTP with
+      # Secure cookies off, which is only safe on the machine itself. Set
+      # COVE_HTTP_BIND=0.0.0.0 to expose it on a trusted private network, or
+      # (better) layer one of the TLS overrides, which publish :443 themselves.
+      - "${COVE_HTTP_BIND:-127.0.0.1}:${COVE_HTTP_PORT:-80}:80"
     volumes:
       # The per-zone mTLS client certs the HTTP-provider serversTransports
       # reference (staged by the control plane under its data dir).
@@ -99,6 +103,15 @@ services:
       - traefik.http.routers.cove.service=cove
       - traefik.http.routers.cove.middlewares=cove-headers
       - traefik.http.services.cove.loadbalancer.server.port=8080
+      # Infrastructure-only endpoints (the ForwardAuth callback and the remote-
+      # zone Traefik config) are refused by Traefik itself (its no-op service
+      # answers 418) — they never reach the app from the public entrypoints,
+      # whatever Host header a client sends. Traefik calls them over the
+      # internal network directly.
+      - traefik.http.routers.cove-internal.rule=PathPrefix(`/api/auth/forward`) || PathPrefix(`/api/internal`)
+      - traefik.http.routers.cove-internal.entrypoints=web,websecure
+      - traefik.http.routers.cove-internal.priority=200
+      - traefik.http.routers.cove-internal.service=noop@internal
       # Dedicated login router with rate limiting (higher priority).
       - traefik.http.routers.cove-login.rule=PathPrefix(`/api/auth/login`)
       - traefik.http.routers.cove-login.entrypoints=web
@@ -126,7 +139,7 @@ services:
       # has no inline scripts, so script-src 'self' is safe; styles need
       # unsafe-inline (Vue :style bindings) + Google Fonts; frame-src allows the
       # workspace stream iframes (own subdomain in subdomain mode).
-      - "traefik.http.middlewares.cove-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-src 'self' https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
+      - "traefik.http.middlewares.cove-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' wss://*.${COVE_WORKSPACE_DOMAIN:-invalid}; frame-src 'self' https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
       # Rate limit for login.
       - traefik.http.middlewares.cove-ratelimit.ratelimit.average=5
       - traefik.http.middlewares.cove-ratelimit.ratelimit.period=1m
@@ -194,6 +207,9 @@ services:
       # Set true to disable local username/password login + setup entirely and
       # go straight to the IdP (only takes effect when OIDC is configured).
       - COVE_OIDC_ONLY=${COVE_OIDC_ONLY:-false}
+      # Dial a zone that has no mTLS material over plain TCP (cleartext,
+      # unauthenticated). Off unless you know why you need it.
+      - COVE_ALLOW_INSECURE_ZONES=${COVE_ALLOW_INSECURE_ZONES:-false}
 
 networks:
   # Per-workspace networks are created at runtime by the backend; not declared here.

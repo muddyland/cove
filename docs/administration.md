@@ -15,12 +15,13 @@ limits they started with.
 |---|---|---|
 | **Default CPU limit (cores)** | `0` (unlimited) | Caps each new workspace container's CPU; fractions allowed. |
 | **Default memory limit (MB)** | `0` (unlimited) | Caps each new workspace container's RAM. |
+| **Process limit (pids)** | `8192` | Caps processes + threads per workspace container (a fork bomb otherwise exhausts the host). `0` = unlimited. |
 | **Max runtime (hours)** | `24` (`0` = unlimited) | Running workspaces older than this are auto-stopped. |
 | **Force-disable sudo** | off | Applies `no-new-privileges` to **all** workspaces, overriding the per-launch "Allow sudo". |
 | **GPU acceleration** (master toggle) | off | Allows workspaces to use host-GPU hardware video encode (each workspace must still opt in, and needs Wayland streaming). See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). |
 | **GPU render node** | `/dev/dri/renderD128` | DRI device bind-mounted for GPU workspaces. Change only on multi-GPU hosts. |
 | **GPU render group GID** | `992` | Group added so the workspace can open the render node. **Fallback only** — Cove auto-detects the node's real group on each host at launch; set this if detection can't run. |
-| **Docker-in-Docker** (master toggle) | off | Allows workspaces to run a privileged nested Docker daemon (each workspace must still opt in; local zone only). |
+| **Docker-in-Docker** (master toggle) | off | Allows workspaces to run a **privileged** nested Docker daemon — effectively **host root** for whoever holds it. A non-admin account must additionally be granted *Allow Docker-in-Docker* under [User management](#user-management); each workspace still opts in; local zone only. |
 | **DinD image** | `docker:dind` | Image the per-workspace Docker-in-Docker sidecar runs (multi-arch). Shown only while the master toggle is on; blanking it restores the default. |
 | **LAN access** (master toggle) | off | Allows workspaces to reach the LAN directly (each workspace must still opt in). |
 | **Allowed LAN subnets** | _(empty)_ | IPv4 CIDRs reachable when LAN access is on. Invalid entries are dropped; bare IPs become `/32`. |
@@ -43,6 +44,14 @@ reported only as present/absent — never shown.
 - **Create** — username + password (+ optional admin). Username rules: 1–64 chars of `[a-zA-Z0-9._-]`, not `.`/`..`; password ≥ 8 chars. Disabled in [OIDC-only mode](authentication.md#oidc-only-mode).
 - **Edit** — rename, toggle admin, or reset the password. Notes: you **cannot demote the last admin**; passwords can only be set on **local** accounts (not SSO); a password reset invalidates that user's existing sessions.
 - **Delete** — removes the account and background-stops all of that user's running workspaces. You can't delete your own account.
+
+- **Allow Docker-in-Docker** (per user, off by default): lets the account enable
+  Docker on its workspaces once the deployment-wide toggle is on. Because the
+  nested daemon is privileged, treat this grant as handing out root on the host.
+  Admins have it implicitly.
+- Usernames may not begin with `.`, `_` or `cove-` — those prefixes name Cove's
+  own directories under the storage root.
+
 
 ## Image catalog
 

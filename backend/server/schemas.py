@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Sentinel used to distinguish an omitted field from one explicitly set to clear.
 _UNSET = "\x00__unset__\x00"
@@ -34,6 +34,7 @@ class UserOut(BaseModel):
     id: int
     username: str
     is_admin: bool
+    docker_allowed: bool = False
     auth_provider: str
     created_at: datetime
     last_login_at: Optional[datetime]
@@ -350,12 +351,14 @@ class AdminUserCreate(BaseModel):
     username: str
     password: str
     is_admin: bool = False
+    docker_allowed: bool = False
 
 
 class AdminUserUpdate(BaseModel):
     username: Optional[str] = None
     is_admin: Optional[bool] = None
     password: Optional[str] = None
+    docker_allowed: Optional[bool] = None
 
 
 # ── App settings ──────────────────────────────────────────────────────────────
@@ -369,6 +372,7 @@ class AppSettingsOut(BaseModel):
     workspace_max_runtime_hours: int
     workspace_cpu_limit: float
     workspace_memory_limit_mb: int
+    workspace_pids_limit: int = 8192
     workspace_gpu_accel: bool
     workspace_gpu_render_node: str
     workspace_gpu_render_gid: int
@@ -434,8 +438,11 @@ class AppSettingsUpdate(BaseModel):
     workspace_lan_subnets: Optional[str] = None
     workspace_no_new_privileges: Optional[bool] = None
     workspace_max_runtime_hours: Optional[int] = None
-    workspace_cpu_limit: Optional[float] = None
-    workspace_memory_limit_mb: Optional[int] = None
+    # allow_inf_nan=False: "Infinity" would otherwise be stored and break every
+    # launch (int(inf * 1e9) raises) until an admin notices.
+    workspace_cpu_limit: Optional[float] = Field(default=None, allow_inf_nan=False, ge=0, le=4096)
+    workspace_memory_limit_mb: Optional[int] = Field(default=None, ge=0, le=64 * 1024 * 1024)
+    workspace_pids_limit: Optional[int] = Field(default=None, ge=0, le=1_000_000)
     workspace_gpu_accel: Optional[bool] = None
     workspace_gpu_render_node: Optional[str] = None
     workspace_gpu_render_gid: Optional[int] = None
@@ -567,7 +574,6 @@ class ZoneUpdate(BaseModel):
     name: Optional[str] = None
     endpoint_host: Optional[str] = None
     endpoint_port: Optional[int] = None
-    status: Optional[str] = None
 
 
 class ZoneEnrollTokenOut(BaseModel):
@@ -600,6 +606,9 @@ class ZoneEnrollResponse(BaseModel):
     # The only client-cert CN the agent should accept (this zone's control-plane
     # cert) — pins the zone to its control plane.
     expected_client_cn: str
+    # CN of the relay (edge) cert the central Traefik presents on stream routes.
+    # Informational for the agent: its API/Docker paths accept only expected_client_cn.
+    edge_client_cn: Optional[str] = None
 
 
 class ZoneListItem(BaseModel):

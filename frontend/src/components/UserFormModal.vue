@@ -12,6 +12,14 @@
       <div class="form-group checkbox">
         <label><input type="checkbox" v-model="form.is_admin" /> Admin</label>
       </div>
+      <div class="form-group checkbox">
+        <label><input type="checkbox" v-model="form.docker_allowed" /> Allow Docker-in-Docker</label>
+        <p class="hint">
+          Lets this account enable Docker on its workspaces (when the deployment-wide
+          toggle is on). The nested daemon is <strong>privileged</strong>: whoever holds it
+          is effectively root on the host. Admins always have it.
+        </p>
+      </div>
       <div v-if="error" class="form-error">{{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -35,16 +43,16 @@ const props = defineProps<{
   // Async so the modal can await the real API call: it stays open and shows the
   // inline error on failure (a taken username, weak password, …) instead of
   // vanishing and dropping the user's input behind an ephemeral toast.
-  onSubmit: (payload: { username: string; password?: string; is_admin: boolean }) => Promise<void>
+  onSubmit: (payload: { username: string; password?: string; is_admin: boolean; docker_allowed: boolean }) => Promise<void>
 }>()
 
 const loading = ref(false)
 const error = ref('')
-const form = reactive({ username: '', password: '', is_admin: false })
+const form = reactive({ username: '', password: '', is_admin: false, docker_allowed: false })
 
 watch(() => props.editUser, (u) => {
-  if (u) { form.username = u.username; form.is_admin = u.is_admin; form.password = '' }
-  else { form.username = ''; form.password = ''; form.is_admin = false }
+  if (u) { form.username = u.username; form.is_admin = u.is_admin; form.docker_allowed = !!u.docker_allowed; form.password = '' }
+  else { form.username = ''; form.password = ''; form.is_admin = false; form.docker_allowed = false }
 }, { immediate: true })
 
 // Clear any stale error each time the modal is (re)opened.
@@ -54,9 +62,10 @@ async function handleSubmit() {
   error.value = ''
   loading.value = true
   try {
-    const payload: { username: string; password?: string; is_admin: boolean } = {
+    const payload: { username: string; password?: string; is_admin: boolean; docker_allowed: boolean } = {
       username: form.username,
       is_admin: form.is_admin,
+      docker_allowed: form.docker_allowed,
     }
     if (form.password) payload.password = form.password
     await props.onSubmit(payload)

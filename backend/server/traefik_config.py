@@ -14,7 +14,7 @@ so a remote workspace routes and frames identically to a local one. ForwardAuth
 from sqlalchemy import select
 
 from server.config import get_settings
-from server.docker_manager import _zone_has_mtls, stage_zone_certs
+from server.docker_manager import _zone_has_mtls, ensure_zone_edge_cert, stage_zone_edge_certs
 from server.models import Workspace, Zone
 
 
@@ -39,7 +39,9 @@ def build_dynamic_config(db) -> dict:
     middlewares["cove-auth"] = {
         "forwardAuth": {
             "address": "http://cove:8080/api/auth/forward",
-            "authResponseHeaders": ["X-Cove-User"],
+            # X-Cove-Stream-Auth carries the per-workspace stream token the
+            # agent's own ForwardAuth verifies (subpath mode).
+            "authResponseHeaders": ["X-Cove-User", "X-Cove-Stream-Auth"],
         }
     }
     middlewares["cove-errors"] = {
@@ -55,8 +57,12 @@ def build_dynamic_config(db) -> dict:
         zone = db.get(Zone, ws.zone_id)
         if zone is None or not zone.endpoint_host or not _zone_has_mtls(zone):
             continue
-        # Ensure the client cert files exist where Traefik can read them.
-        stage_zone_certs(zone)
+        # The relay presents the zone's EDGE cert (CN cove-edge-<id>), never the
+        # control plane's own client cert: the agent accepts the edge CN on
+        # stream routes only, so a relayed browser request can't reach the agent
+        # API or Docker proxy even if it misses the workspace router.
+        ensure_zone_edge_cert(zone, db)
+        stage_zone_edge_certs(zone)
 
         name = f"cove-ws-{ws.id}"
         hdr = f"{name}-hdr"
@@ -83,8 +89,8 @@ def build_dynamic_config(db) -> dict:
             "serverName": zone.endpoint_host,
             "certificates": [
                 {
-                    "certFile": f"{mount}/{zone.id}/client.crt",
-                    "keyFile": f"{mount}/{zone.id}/client.key",
+                    "certFile": f"{mount}/{zone.id}/edge.crt",
+                    "keyFile": f"{mount}/{zone.id}/edge.key",
                 }
             ],
             "rootCAs": [f"{mount}/{zone.id}/ca.crt"],
@@ -98,18 +104,23 @@ def build_dynamic_config(db) -> dict:
                 "service": name,
                 "middlewares": ["cove-errors", "cove-auth", hdr],
             }
-            if settings.cookie_secure:
-                router["tls"] = {}
         else:
+            # Subpath mode: do NOT strip the prefix here. The agent's own Traefik
+            # matches the workspace router on the same ``/workspace/<id>/`` prefix
+            # (the labels come from _build_traefik_labels) and strips it itself;
+            # stripping centrally made every relayed request miss that router
+            # and land on the agent's catch-all instead.
             prefix = f"/workspace/{ws.public_id}"
-            strip = f"{name}-strip"
-            middlewares[strip] = {"stripPrefix": {"prefixes": [prefix]}}
             router = {
                 "rule": f"PathPrefix(`{prefix}/`)",
                 "entryPoints": ["web", "websecure"],
                 "service": name,
-                "middlewares": ["cove-errors", "cove-auth", hdr, strip],
+                "middlewares": ["cove-errors", "cove-auth", hdr],
             }
+        if settings.cookie_secure:
+            # A router without a TLS section only serves plaintext on an
+            # entrypoint that doesn't force TLS — the stream would 404 over HTTPS.
+            router["tls"] = {}
         routers[name] = router
 
     return {

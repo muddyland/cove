@@ -34,6 +34,7 @@ from server.settings_store import (
     get_workspace_max_runtime_hours,
     get_workspace_memory_limit_mb,
     get_workspace_no_new_privileges,
+    get_workspace_pids_limit,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,8 +79,13 @@ def _stage_helper_scripts() -> "Path":
             # can't overwrite a directory, so clear it before writing the script.
             if target.is_dir() and not target.is_symlink():
                 shutil.rmtree(target, ignore_errors=True)
-            shutil.copyfile(src, target)
-            os.chmod(target, 0o755)
+            # Write-then-rename: the previous copy may be executing as root
+            # inside a booting container right now (bash reads incrementally),
+            # and copyfile truncates in place.
+            tmp = dest / f".{name}.{os.getpid()}.tmp"
+            shutil.copyfile(src, tmp)
+            os.chmod(tmp, 0o755)
+            os.replace(tmp, target)
     return dest
 
 
@@ -116,6 +122,10 @@ def _build_browser_cli(ws) -> str:
 # Helper image used to apply egress firewall rules inside a workspace netns.
 # netshoot ships iptables; it runs briefly and is removed immediately.
 EGRESS_GUARD_IMAGE = "nicolaka/netshoot:latest"
+
+
+class EgressGuardError(RuntimeError):
+    """The per-workspace egress firewall could not be installed. Launch aborts."""
 
 # Destinations blocked for EVERY workspace, even Tailscale ones and even when
 # direct LAN access is granted: cloud/link-local metadata and the Docker-internal
@@ -357,7 +367,14 @@ def copy_workspace_storage(src_ws, dst_ws) -> None:
         return
     if dst == src_r:
         raise ValueError("clone destination resolves to the source storage")
-    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True, ignore_dangling_symlinks=True)
+    if dst.exists() or dst.is_symlink():
+        # A leftover home from a deleted (unpurged) workspace of the same name.
+        # copytree(dirs_exist_ok=True) would write THROUGH any symlink planted
+        # inside it, so refuse rather than merge; the user can purge or rename.
+        raise ValueError(
+            "a storage directory already exists for that name — purge it or choose another name"
+        )
+    shutil.copytree(src, dst, symlinks=True, ignore_dangling_symlinks=True)
     logger.info("Cloned workspace storage %s -> %s", src_r, dst)
 
 
@@ -467,6 +484,9 @@ def _resource_limits(db) -> dict:
     mem_mb = get_workspace_memory_limit_mb(db)
     if mem_mb > 0:
         limits["mem_limit"] = f"{mem_mb}m"
+    pids = get_workspace_pids_limit(db)
+    if pids > 0:
+        limits["pids_limit"] = pids
     return limits
 
 
@@ -542,6 +562,42 @@ def stage_zone_certs(zone) -> tuple[str, str, str]:
     return str(cert), str(key), str(ca)
 
 
+def ensure_zone_edge_cert(zone, db) -> None:
+    """Issue the zone's relay (edge) client cert if it doesn't have one yet.
+
+    Zones enrolled before 1.1.0 only carry the control plane's ``cove-cp-<id>``
+    cert; the central Traefik used to relay streams with that same cert, which
+    let a relayed browser request satisfy the agent's CN pin. The edge cert has
+    its own CN (``cove-edge-<id>``) that the agent accepts only on stream routes.
+    Idempotent; commits on ``db`` when it mints one.
+    """
+    if zone.edge_cert_pem and zone.edge_key_enc:
+        return
+    from server import ca
+    from server.security import encrypt_secret
+
+    cert_pem, key_pem = ca.issue_cert(f"cove-edge-{zone.public_id}", is_server=False)
+    zone.edge_cert_pem = cert_pem
+    zone.edge_key_enc = encrypt_secret(key_pem)
+    db.commit()
+
+
+def stage_zone_edge_certs(zone) -> tuple[str, str, str]:
+    """Materialize the zone's relay (edge) cert/key + CA for the central Traefik
+    (``data_dir/zone-certs/<id>/edge.{crt,key}``). Requires ensure_zone_edge_cert."""
+    d = _zone_cert_dir(zone.id)
+    d.mkdir(parents=True, exist_ok=True)
+    ca = d / "ca.crt"
+    cert = d / "edge.crt"
+    key = d / "edge.key"
+    ca.write_text(zone.ca_cert_pem)
+    cert.write_text(zone.edge_cert_pem)
+    key.write_text(decrypt_secret(zone.edge_key_enc))
+    for p in (ca, cert, key):
+        os.chmod(p, 0o600)
+    return str(cert), str(key), str(ca)
+
+
 def zone_agent_base_url(zone) -> str:
     """The base URL of a zone agent's mTLS API (served by the agent's Traefik on
     its single port, alongside the workspace streams and Docker proxy)."""
@@ -603,6 +659,14 @@ class DockerManager:
             if _zone_has_mtls(zone):
                 cert, key, ca = stage_zone_certs(zone)
                 tls = docker.tls.TLSConfig(client_cert=(cert, key), ca_cert=ca, verify=True)
+            elif not get_settings().allow_insecure_zones:
+                # Never dial a cleartext, unauthenticated Docker endpoint by
+                # default: the launch payload carries user secrets, and anything
+                # answering on that port would be trusted as the zone.
+                raise RuntimeError(
+                    f"zone {zone_id} is not enrolled for mTLS (set COVE_ALLOW_INSECURE_ZONES=true "
+                    "to dial it over plain TCP on a trusted network)"
+                )
         finally:
             db.close()
         scheme = "https" if tls else "tcp"
@@ -765,6 +829,11 @@ class DockerManager:
             logger.info("Pulled image %s", ref)
         except docker.errors.APIError as exc:
             logger.warning("Could not pull %s (%s); using local image if present", ref, exc)
+
+    def _ensure_image(self, ref: str) -> None:
+        """Pull ``ref`` only if the daemon doesn't have it already."""
+        if not self.image_present(ref):
+            self._pull_image(ref)
 
     def image_present(self, ref: str) -> bool:
         """True if the image is available locally (no registry round-trip)."""
@@ -1025,7 +1094,7 @@ class DockerManager:
             f"curl -sf -o /dev/null http://localhost:{port}/ && exit 0; sleep 3; done; exit 1"
         )
         try:
-            self._pull_image(EGRESS_GUARD_IMAGE)
+            self._ensure_image(EGRESS_GUARD_IMAGE)
             self._client.containers.run(
                 EGRESS_GUARD_IMAGE,
                 network_mode=f"container:{target}",
@@ -1345,13 +1414,15 @@ class DockerManager:
                     if ws.lan_access and get_workspace_lan_access(db)
                     else []
                 )
-                # Always let a workspace reach the specific LAN host its target_url
-                # points at (as a /32), so "open a LAN website" works without the
-                # admin LAN toggle. Docker-internal/metadata stay blocked (those
-                # ranges are dropped before these accepts in the egress rules).
-                lan_subnets = list(
-                    dict.fromkeys(lan_subnets + _target_url_lan_ips(ws.target_url))
-                )
+                # (1.1.0) A browser workspace's target URL no longer punches its
+                # own hole through the LAN block: that let any user reach any
+                # private host on every port by typing its address. LAN reach is
+                # the admin's LAN policy alone (toggle + subnets + per-workspace
+                # opt-in). Everything the guard needs is known before the
+                # workload starts, so make sure the helper image is local now —
+                # a registry pull between container start and guard was the
+                # window init scripts could phone out through.
+                self._ensure_image(EGRESS_GUARD_IMAGE)
 
                 if ws.use_tailscale:
                     ts_cfg = db.scalar(
@@ -1434,14 +1505,8 @@ class DockerManager:
                     )
                 logger.info("Started container %s for workspace %s", container.id[:12], ws_id)
 
-                # Connect Traefik to this isolated network so it can route to the
-                # workspace. The backend itself is never attached.
-                try:
-                    self._client.networks.get(net_name).connect(settings.traefik_container)
-                except docker.errors.APIError:
-                    # Already connected (or transient) is fine.
-                    pass
-
+                # Record the container FIRST so a failure below still leaves a
+                # row that stop/remove can act on.
                 ws.container_id = container.id
                 ws.container_name = container_name
                 # Don't pin volume_name to the shared profile path — that path is
@@ -1451,14 +1516,22 @@ class DockerManager:
                     ws.volume_name = mount_source
                 db.commit()
 
-                # EGRESS GUARD for plain workspaces. Tailscale workspaces are
-                # guarded above (before start); Gluetun workspaces rely on
-                # gluetun's own killswitch firewall (adding our OUTPUT drops would
-                # fight it), so both are skipped here.
+                # EGRESS GUARD for plain workspaces, before Traefik is even
+                # attached. Tailscale workspaces are guarded above (before
+                # start); Gluetun workspaces rely on gluetun's own killswitch
+                # firewall (adding our OUTPUT drops would fight it).
                 if not ws.use_tailscale and not ws.use_gluetun:
                     self._apply_egress_guard(
                         ws.id, lan_subnets=lan_subnets, dind=docker_enabled
                     )
+
+                # Connect Traefik to this isolated network so it can route to the
+                # workspace. The backend itself is never attached.
+                try:
+                    self._client.networks.get(net_name).connect(settings.traefik_container)
+                except docker.errors.APIError:
+                    # Already connected (or transient) is fine.
+                    pass
 
                 # DinD sidecar: launched now that the netns owner (the workspace
                 # container, or its routing sidecar) is running and the egress
@@ -1481,7 +1554,16 @@ class DockerManager:
                             ws.id, lan_subnets, tailscale=ws.use_tailscale
                         )
                     except Exception as exc:
-                        logger.warning("DinD setup failed for workspace %s: %s", ws.id, exc)
+                        # Fail closed: without the DOCKER-USER guard, nested
+                        # containers would egress unfiltered. Drop the daemon;
+                        # the workspace itself stays usable (no docker).
+                        logger.warning(
+                            "DinD setup failed for workspace %s (removing sidecar): %s", ws.id, exc
+                        )
+                        try:
+                            self._cleanup_docker_sidecar(ws.id)
+                        except Exception as cleanup_exc:
+                            logger.warning("DinD cleanup failed for %s: %s", ws.id, cleanup_exc)
 
                 started = self._wait_for_ready(container)
                 ws = db.get(Workspace, ws_id)  # re-fetch after wait
@@ -1521,8 +1603,17 @@ class DockerManager:
                             ws.preview_at = ws.started_at
                         db.commit()
 
+            except EgressGuardError as exc:
+                logger.error("Launch of workspace %s aborted: %s", ws_id, exc)
+                self._teardown_after_failed_launch(ws_id)
+                ws = db.get(Workspace, ws_id)
+                if ws is not None:
+                    ws.status = "error"
+                    ws.error_message = str(exc)
+                    db.commit()
             except docker.errors.APIError as exc:
                 logger.error("Docker error launching workspace %s: %s", ws_id, exc)
+                self._teardown_after_failed_launch(ws_id)
                 ws = db.get(Workspace, ws_id)
                 ws.status = "error"
                 ws.error_message = str(exc)
@@ -1687,6 +1778,34 @@ class DockerManager:
                 return "VPN failed to connect — check your Gluetun config"
         return None
 
+    def _remove_container_by_name(self, name: str, *, timeout: int = 10) -> None:
+        """Stop + remove a container by name (no-op if absent). Complements the
+        id-based path: a launch that failed before ``container_id`` was committed
+        still leaves a container named ``cove-ws-<id>`` behind."""
+        try:
+            container = self._client.containers.get(name)
+        except docker.errors.NotFound:
+            return
+        try:
+            container.stop(timeout=timeout)
+        except docker.errors.APIError:
+            pass
+        try:
+            container.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
+    def _teardown_after_failed_launch(self, ws_id: int) -> None:
+        """Best-effort removal of everything a failed launch may have started."""
+        try:
+            self._cleanup_docker_sidecar(ws_id)
+            self._remove_container_by_name(f"cove-ws-{ws_id}", timeout=2)
+            self._cleanup_tailscale_sidecar(ws_id)
+            self._cleanup_gluetun_sidecar(ws_id)
+            self._cleanup_ws_network(self._ws_network_name(ws_id))
+        except Exception as exc:
+            logger.warning("Teardown after failed launch of %s: %s", ws_id, exc)
+
     def stop_workspace(self, ws_id: int) -> None:
         db = self._get_db()
         try:
@@ -1711,6 +1830,12 @@ class DockerManager:
                     logger.warning("Error stopping container %s: %s", ws.container_id[:12], exc)
                 except Exception as exc:
                     logger.warning("Error stopping container for ws %s: %s", ws.id, exc)
+            # Also by name: a Halt that lands mid-launch (before container_id is
+            # committed) must not leave a running, routed container behind.
+            try:
+                self._remove_container_by_name(f"cove-ws-{ws.id}")
+            except Exception as exc:
+                logger.warning("Error removing cove-ws-%s by name: %s", ws.id, exc)
 
             # Best-effort cleanup — must not block marking the workspace stopped
             # (a workspace on an unreachable zone would otherwise stick in
@@ -1775,6 +1900,7 @@ class DockerManager:
                         container.remove()
                     except (docker.errors.NotFound, docker.errors.APIError):
                         pass
+                self._remove_container_by_name(f"cove-ws-{ws.id}", timeout=5)
                 self._cleanup_tailscale_sidecar(ws.id)
                 self._cleanup_gluetun_sidecar(ws.id)
                 self._cleanup_ws_network(self._ws_network_name(ws.id))
@@ -2054,6 +2180,9 @@ class DockerManager:
             rules.append(f"iptables -A OUTPUT -d {cidr} -j ACCEPT")
         for cidr in _LAN_BLOCK:
             rules.append(f"iptables -A OUTPUT -d {cidr} -j DROP")
+        # Kill any connection the workload opened before the rules landed: the
+        # ESTABLISHED,RELATED accept above would otherwise keep it alive.
+        rules.append("(conntrack -F >/dev/null 2>&1 || true)")
         return " && ".join(rules)
 
     def _apply_egress_guard(
@@ -2073,17 +2202,19 @@ class DockerManager:
         workspaces, or the Tailscale sidecar (which owns the shared netns) for
         Tailscale workspaces.
 
-        Best-effort: any failure is logged and never aborts the launch. For
-        non-Tailscale workspaces this runs just after the container starts, so a
-        packet in that brief window could slip through; for Tailscale workspaces
-        it runs against the sidecar BEFORE the workspace container starts, so the
-        rules are in place before the workload can emit any traffic.
+        Fails CLOSED: any failure raises :class:`EgressGuardError` and the caller
+        tears the workspace down — a workspace must never run unguarded because
+        the helper image was missing or a rule didn't apply. For non-Tailscale
+        workspaces this runs right after the container starts (and flushes
+        conntrack so nothing opened in that window survives); for Tailscale
+        workspaces it runs against the sidecar BEFORE the workspace container
+        starts, so the rules are in place before the workload can emit traffic.
         """
         target = target or f"cove-ws-{ws_id}"
         script = self._build_egress_rules(tailscale, lan_subnets or [], dind=dind)
 
         try:
-            self._pull_image(EGRESS_GUARD_IMAGE)
+            self._ensure_image(EGRESS_GUARD_IMAGE)
             self._client.containers.run(
                 EGRESS_GUARD_IMAGE,
                 network_mode=f"container:{target}",
@@ -2098,7 +2229,8 @@ class DockerManager:
                 ws_id, tailscale, ",".join(lan_subnets or []) or "none",
             )
         except Exception as exc:
-            logger.warning("Egress guard failed for workspace %s: %s", ws_id, exc)
+            logger.error("Egress guard failed for workspace %s: %s", ws_id, exc)
+            raise EgressGuardError(f"Egress firewall could not be applied: {exc}") from exc
 
     def _launch_tailscale_sidecar(
         self,
@@ -2442,12 +2574,13 @@ class DockerManager:
             if code == 0:
                 logger.info("Applied DinD egress guard for workspace %s", ws_id)
             else:
-                logger.warning(
-                    "DinD egress guard exit %s for workspace %s: %s",
-                    code, ws_id, (out or b"").decode(errors="ignore")[:300],
+                raise EgressGuardError(
+                    f"DinD egress guard exit {code}: {(out or b'').decode(errors='ignore')[:300]}"
                 )
+        except EgressGuardError:
+            raise
         except Exception as exc:
-            logger.warning("DinD egress guard failed for workspace %s: %s", ws_id, exc)
+            raise EgressGuardError(f"DinD egress guard failed: {exc}") from exc
 
     @staticmethod
     def _build_hardening(*, no_new_privileges_setting: bool, allow_sudo: bool) -> dict:
@@ -2683,6 +2816,14 @@ class DockerManager:
             f"cove-errors@docker,cove-auth@docker,{hdr},{name}-strip"
         )
         base[f"traefik.http.middlewares.{name}-strip.stripprefix.prefixes"] = prefix
+        # A router without a TLS section only serves plaintext. On a TLS
+        # deployment (prod/lan-tls) that meant subpath streams answered 404 over
+        # HTTPS; on a zone agent — whose only entrypoint is mTLS — it meant the
+        # workspace router never matched and relayed requests fell through to
+        # the agent's catch-all. Plain-HTTP local installs must NOT get it, or
+        # the router would stop serving http.
+        if settings.cookie_secure or getattr(ws, "zone_id", 0) != 0:
+            base[f"traefik.http.routers.{name}.tls"] = "true"
         return base
 
 

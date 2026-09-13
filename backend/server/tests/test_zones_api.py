@@ -1,6 +1,6 @@
 """API tests for zones: CRUD, the seeded local zone, and zone-pinned workspaces."""
 
-from server.tests.helpers import add_image, auth_header, setup_admin
+from server.tests.helpers import add_image, auth_header, enroll_zone, setup_admin
 
 
 def test_local_zone_seeded(client):
@@ -41,8 +41,9 @@ def test_create_and_delete_zone(client):
     zone = resp.json()
     assert zone["name"] == "LAN"
     assert zone["endpoint_host"] == "10.0.0.5"
-    # A manually-registered endpoint is immediately usable.
-    assert zone["status"] == "enrolled"
+    # 1.1.0: a manually-registered endpoint is NOT usable until enrolled (mTLS);
+    # the old plain-TCP shortcut needs COVE_ALLOW_INSECURE_ZONES.
+    assert zone["status"] == "pending"
     zid = zone["id"]
 
     # Delete it.
@@ -93,10 +94,7 @@ def test_create_workspace_on_pending_zone_rejected(client):
 
 def test_delete_zone_with_pinned_workspace_blocked(client):
     setup_admin(client)
-    zid = client.post(
-        "/api/admin/zones",
-        json={"name": "LAN", "endpoint_host": "10.0.0.5"},
-    ).json()["id"]
+    zid, _ = enroll_zone(client)
     image_id = add_image(name="Desktop", image_type="desktop")
     ws = client.post(
         "/api/workspaces", json={"name": "ws", "image_id": image_id, "zone_id": zid}
@@ -112,13 +110,14 @@ def test_delete_zone_with_pinned_workspace_blocked(client):
 
 def test_user_zones_lists_enrolled_only(client):
     setup_admin(client)
-    client.post("/api/admin/zones", json={"name": "LAN", "endpoint_host": "10.0.0.5"})  # enrolled
+    enroll_zone(client)  # enrolled
     client.post("/api/admin/zones", json={"name": "Pending"})  # pending (no endpoint)
+    client.post("/api/admin/zones", json={"name": "Manual", "endpoint_host": "10.0.0.6"})  # pending too
     resp = client.get("/api/zones")
     assert resp.status_code == 200, resp.text
     names = [z["name"] for z in resp.json()]
     assert "Local" in names and "LAN" in names
-    assert "Pending" not in names
+    assert "Pending" not in names and "Manual" not in names
     # Minimal, non-sensitive shape.
     assert set(resp.json()[0].keys()) == {"id", "name"}
 

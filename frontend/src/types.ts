@@ -2,6 +2,7 @@ export interface User {
   id: number
   username: string
   is_admin: boolean
+  docker_allowed: boolean
   auth_provider: string
   created_at: string
   last_login_at: string | null
@@ -171,6 +172,7 @@ export interface AppSettings {
   workspace_max_runtime_hours: number
   workspace_cpu_limit: number
   workspace_memory_limit_mb: number
+  workspace_pids_limit: number
   workspace_gpu_accel: boolean
   workspace_gpu_render_node: string
   workspace_gpu_render_gid: number

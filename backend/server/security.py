@@ -18,11 +18,25 @@ from server.config import get_settings
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 
 
+# Usernames double as per-user storage directory names under the storage root,
+# which also holds Cove's own reserved staging directories (``.cove-scripts``,
+# ``.cove-ssh``, ``.cove-gluetun`` — root-executed init scripts and decrypted
+# secrets). No username may start with a dot, an underscore, or ``cove-``, so an
+# account can never be a file browser onto those.
+_RESERVED_USERNAME_PREFIXES = (".", "_", "cove-")
+
+
+def is_reserved_username(username: str) -> bool:
+    return username.lower().startswith(_RESERVED_USERNAME_PREFIXES)
+
+
 def is_valid_username(username: str) -> bool:
     """Return True if `username` is a syntactically valid Cove username."""
     if not isinstance(username, str):
         return False
     if username in (".", ".."):
+        return False
+    if is_reserved_username(username):
         return False
     return bool(_USERNAME_RE.match(username))
 
@@ -34,7 +48,8 @@ def validate_username(username: str) -> str:
     if not is_valid_username(username):
         raise HTTPException(
             status_code=400,
-            detail="Invalid username: must be 1-64 chars of [a-zA-Z0-9._-] and not '.' or '..'",
+            detail="Invalid username: must be 1-64 chars of [a-zA-Z0-9._-], not '.' or '..', "
+            "and not start with '.', '_' or 'cove-'",
         )
     return username
 
@@ -73,12 +88,31 @@ def decrypt_secret(value: Optional[str]) -> Optional[str]:
         return None
 
 
+# bcrypt ignores everything past 72 bytes; bcrypt>=4.1 raises instead of
+# truncating silently. Refuse such passwords up front (a 400, not a 500).
+MAX_PASSWORD_BYTES = 72
+
+
+def validate_password(password: str) -> str:
+    """Enforce the length envelope every password must satisfy; raises HTTP 400."""
+    from fastapi import HTTPException
+
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if len(password.encode()) > MAX_PASSWORD_BYTES:
+        raise HTTPException(status_code=400, detail="Password must be at most 72 bytes")
+    return password
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(password.encode()[:MAX_PASSWORD_BYTES], bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+    try:
+        return bcrypt.checkpw(plain.encode()[:MAX_PASSWORD_BYTES], hashed.encode())
+    except ValueError:
+        return False
 
 
 def create_access_token(user_id: int, is_admin: bool) -> str:
@@ -89,7 +123,7 @@ def create_access_token(user_id: int, is_admin: bool) -> str:
         "sub": str(user_id),
         "adm": bool(is_admin),
         "type": "access",
-        "iat": now,
+        "iat": now.timestamp(),
         "exp": expire,
     }
     return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
@@ -102,7 +136,7 @@ def create_refresh_token(user_id: int) -> str:
     payload = {
         "sub": str(user_id),
         "type": "refresh",
-        "iat": now,
+        "iat": now.timestamp(),
         "exp": expire,
     }
     return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
@@ -123,7 +157,7 @@ def create_stream_token(user_id: int, public_id: str) -> str:
         "sub": str(user_id),
         "ws": public_id,
         "type": "stream",
-        "iat": now,
+        "iat": now.timestamp(),
         "exp": expire,
     }
     return jwt.encode(
@@ -146,12 +180,17 @@ def create_stream_bootstrap_token(user_id: int, public_id: str) -> str:
         "ws": public_id,
         "type": "stream_bootstrap",
         "jti": uuid.uuid4().hex,
-        "iat": now,
+        "iat": now.timestamp(),
         "exp": expire,
     }
     return jwt.encode(
         payload, settings.get_stream_signing_key(), algorithm=settings.jwt_algorithm
     )
+
+
+# ``iat`` is minted as a float (fractional seconds) so a token created right
+# after a revocation in the same wall-clock second sorts after it; 1.0.x tokens
+# carry an integer iat and compare exactly as before.
 
 
 def decode_token(token: str) -> Optional[dict]:

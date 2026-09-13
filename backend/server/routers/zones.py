@@ -53,13 +53,15 @@ def create_zone(body: ZoneCreate, admin: AdminUser, db: DbSession, request: Requ
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
+    # A zone is only usable once enrolled (mTLS). The pre-1.1 shortcut of
+    # marking a manually-registered endpoint "enrolled" dialed it over plain TCP;
+    # that now needs the explicit COVE_ALLOW_INSECURE_ZONES opt-in.
+    insecure_ok = get_settings().allow_insecure_zones and (body.endpoint_host or "").strip()
     zone = Zone(
         name=name,
         endpoint_host=(body.endpoint_host or "").strip() or None,
         endpoint_port=body.endpoint_port,
-        # A manually-registered endpoint is immediately usable; without one the
-        # zone waits for enrollment (Phase 3).
-        status="enrolled" if (body.endpoint_host or "").strip() else "pending",
+        status="enrolled" if insecure_ok else "pending",
     )
     db.add(zone)
     db.commit()
@@ -126,6 +128,10 @@ def rotate_client_cert(zone_id: int, admin: AdminUser, db: DbSession, request: R
     client_cert, client_key = ca.issue_cert(f"cove-cp-{zone.public_id}", is_server=False)
     zone.client_cert_pem = client_cert
     zone.client_key_enc = encrypt_secret(client_key)
+    # Rotate the relay (edge) cert alongside it.
+    edge_cert, edge_key = ca.issue_cert(f"cove-edge-{zone.public_id}", is_server=False)
+    zone.edge_cert_pem = edge_cert
+    zone.edge_key_enc = encrypt_secret(edge_key)
     db.commit()
     reset_docker_manager(zone_id)
     _audit(db, "admin.zone.rotate_cert", detail=zone.public_id, user=admin, request=request)
@@ -224,9 +230,15 @@ def delete_zone(zone_id: int, admin: AdminUser, db: DbSession, request: Request)
             status_code=409,
             detail=f"{count} workspace(s) are pinned to this zone. Migrate or delete them first.",
         )
+    public_id = zone.public_id
     db.delete(zone)
     db.commit()
-    from server.docker_manager import reset_docker_manager
+    from server.docker_manager import _zone_cert_dir, reset_docker_manager
 
     reset_docker_manager(zone_id)
-    _audit(db, "admin.zone.delete", detail=zone.public_id, user=admin, request=request)
+    # Don't leave the decrypted client/edge keys on disk for a zone that no
+    # longer exists.
+    import shutil
+
+    shutil.rmtree(_zone_cert_dir(zone_id), ignore_errors=True)
+    _audit(db, "admin.zone.delete", detail=public_id, user=admin, request=request)

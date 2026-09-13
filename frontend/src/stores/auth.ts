@@ -5,7 +5,11 @@ import type { User, AuthConfig } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
-  const token = ref<string | null>(localStorage.getItem('cove_token'))
+  // Held in memory only. It used to be persisted in localStorage, where any
+  // same-origin script — including a workspace stream framed under
+  // /workspace/{id}/ in subpath mode — could read it. A reload resumes the
+  // session from the httpOnly refresh cookie instead (see init()).
+  const token = ref<string | null>(null)
   const config = ref<AuthConfig | null>(null)
 
   const isAuthenticated = computed(() => !!user.value)
@@ -17,13 +21,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   function setToken(t: string) {
     token.value = t
-    localStorage.setItem('cove_token', t)
   }
 
   function clear() {
     user.value = null
     token.value = null
-    localStorage.removeItem('cove_token')
+    // Drop a token a pre-1.1 build may have left behind.
+    try { localStorage.removeItem('cove_token') } catch {}
     // Screen previews are pictures of the user's desktops — drop them (and
     // revoke their object URLs) so nothing survives a logout or a session
     // expiry on a shared machine. Imported lazily: this store is initialised
@@ -39,9 +43,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function init() {
     await loadConfig()
-    // Resume a cookie-based session when there's no stored bearer token. This
-    // covers OIDC logins (the callback sets httpOnly cookies but no localStorage
-    // token) and returning users whose refresh cookie is still valid.
+    try { localStorage.removeItem('cove_token') } catch {}
+    // Resume a cookie-based session: the access token is never persisted, so
+    // every page load (OIDC callback, reload, returning user) goes through the
+    // httpOnly refresh cookie.
     if (!token.value) {
       try {
         const { access_token } = await authApi.refresh()

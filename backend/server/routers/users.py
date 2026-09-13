@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -72,10 +73,18 @@ def update_my_tailscale(
         login_server = body.login_server or None
         if login_server:
             parsed = urlparse(login_server)
-            if parsed.scheme != "https" or not parsed.hostname:
+            # It is joined into TS_EXTRA_ARGS, which the Tailscale image splits
+            # on whitespace: any space/control char would smuggle extra flags
+            # (--ssh, --advertise-routes…) onto ``tailscale up``.
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or any(c.isspace() or ord(c) < 32 for c in login_server)
+                or not re.fullmatch(r"[A-Za-z0-9.\-:/_%@?=&]+", login_server)
+            ):
                 raise HTTPException(
                     status_code=400,
-                    detail="login_server must be a valid https:// URL",
+                    detail="login_server must be a plain https:// URL with no spaces",
                 )
         ts.login_server = login_server
     if body.enabled is not None:

@@ -36,7 +36,9 @@ services:
       - --providers.file.filename=/tls/dynamic.yml
       - --entrypoints.web.address=:80
       # Force every plain-HTTP request to HTTPS.
-      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      # Redirect to the PUBLISHED https port (COVE_HTTPS_PORT), not the
+      # entrypoint's internal :443, so a non-default port keeps working.
+      - --entrypoints.web.http.redirections.entrypoint.to=:${COVE_HTTPS_PORT:-443}
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
       - --entrypoints.websecure.address=:443
       # TLS on by default for this entrypoint, so routers (incl. the per-workspace
@@ -44,7 +46,8 @@ services:
       - --entrypoints.websecure.http.tls=true
       - --log.level=WARN
     ports:
-      - "${COVE_HTTP_PORT:-80}:80"
+      # LAN-facing on purpose (TLS is on); the HTTP port only redirects.
+      - "${COVE_HTTP_BIND:-0.0.0.0}:${COVE_HTTP_PORT:-80}:80"
       - "${COVE_HTTPS_PORT:-443}:443"
     volumes:
       - ${COVE_DATA_DIR_HOST:-./data}/zone-certs:/zone-certs:ro

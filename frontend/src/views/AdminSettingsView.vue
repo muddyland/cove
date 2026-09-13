@@ -95,6 +95,22 @@
             </p>
           </div>
 
+          <div class="form-group">
+            <label>// process limit (pids)</label>
+            <input
+              v-model.number="form.workspace_pids_limit"
+              type="number"
+              min="0"
+              step="1024"
+              placeholder="8192"
+            />
+            <p class="hint">
+              Max processes + threads per workspace container (a fork bomb otherwise
+              exhausts the host). 0 = unlimited. Default <code>8192</code> is generous for a
+              desktop with a busy browser.
+            </p>
+          </div>
+
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_lan_access" />
             <span>Allow direct LAN access (opt-in per workspace)</span>
@@ -169,10 +185,11 @@
           </label>
           <p class="hint">
             Master switch for in-workspace Docker (dev container support). When
-            <strong>on</strong>, workspaces can opt in to run a <strong>privileged</strong> nested
-            Docker daemon in an isolated per-workspace sidecar. The host Docker socket is never
-            exposed and the sidecar can't reach other workspaces, but <code>--privileged</code>
-            carries kernel-level risk — enable only for trusted users. Off by default.
+            <strong>on</strong>, accounts you have granted <em>Allow Docker-in-Docker</em> (and
+            admins) can opt a workspace into a <strong>privileged</strong> nested Docker daemon.
+            Privileged means exactly that: anyone holding it is effectively <strong>root on this
+            host</strong> — the nested daemon can mount host disks and start host-network
+            containers. Treat the per-user grant as handing out host root. Off by default.
           </p>
 
           <div v-if="form.workspace_docker" class="form-group">
@@ -247,6 +264,7 @@ const form = reactive({
   workspace_max_runtime_hours: 24,
   workspace_cpu_limit: 0,
   workspace_memory_limit_mb: 0,
+  workspace_pids_limit: 8192,
   workspace_gpu_accel: false,
   workspace_gpu_render_node: '/dev/dri/renderD128',
   workspace_gpu_render_gid: 992,
@@ -266,6 +284,7 @@ onMounted(async () => {
     form.workspace_max_runtime_hours = settings.workspace_max_runtime_hours
     form.workspace_cpu_limit = settings.workspace_cpu_limit
     form.workspace_memory_limit_mb = settings.workspace_memory_limit_mb
+    form.workspace_pids_limit = settings.workspace_pids_limit
     form.workspace_gpu_accel = settings.workspace_gpu_accel
     form.workspace_gpu_render_node = settings.workspace_gpu_render_node
     form.workspace_gpu_render_gid = settings.workspace_gpu_render_gid
@@ -301,6 +320,7 @@ async function handleSave() {
       workspace_max_runtime_hours: form.workspace_max_runtime_hours,
       workspace_cpu_limit: form.workspace_cpu_limit,
       workspace_memory_limit_mb: form.workspace_memory_limit_mb,
+      workspace_pids_limit: form.workspace_pids_limit,
       workspace_gpu_accel: form.workspace_gpu_accel,
       workspace_gpu_render_node: form.workspace_gpu_render_node,
       workspace_gpu_render_gid: form.workspace_gpu_render_gid,
@@ -316,6 +336,7 @@ async function handleSave() {
     form.workspace_max_runtime_hours = updated.workspace_max_runtime_hours
     form.workspace_cpu_limit = updated.workspace_cpu_limit
     form.workspace_memory_limit_mb = updated.workspace_memory_limit_mb
+    form.workspace_pids_limit = updated.workspace_pids_limit
     form.workspace_gpu_accel = updated.workspace_gpu_accel
     form.workspace_gpu_render_node = updated.workspace_gpu_render_node
     form.workspace_gpu_render_gid = updated.workspace_gpu_render_gid

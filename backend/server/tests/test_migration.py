@@ -10,7 +10,7 @@ from server.config import get_settings
 from server.db import SessionLocal
 from server.models import Workspace
 from server.routers import agent as agent_router
-from server.tests.helpers import add_image, setup_admin
+from server.tests.helpers import add_image, enroll_zone, setup_admin
 
 # ── tar payload round-trip ─────────────────────────────────────────────────
 
@@ -183,9 +183,7 @@ def test_migrate_rejects_running(client):
 def test_migrate_rejects_ephemeral(client):
     setup_admin(client)
     ws_id = _stopped_ws(client, ephemeral=True)
-    zid = client.post(
-        "/api/admin/zones", json={"name": "Z", "endpoint_host": "10.0.0.9"}
-    ).json()["id"]
+    zid, _ = enroll_zone(client, name="Z", host="10.0.0.9")
     r = client.post(f"/api/workspaces/{ws_id}/migrate", json={"target_zone_id": zid})
     assert r.status_code == 400
 
@@ -200,9 +198,7 @@ def test_migrate_rejects_unknown_zone(client):
 def test_migrate_sets_migrating_and_schedules(client):
     setup_admin(client)
     ws_id = _stopped_ws(client)
-    zid = client.post(
-        "/api/admin/zones", json={"name": "Z", "endpoint_host": "10.0.0.9"}
-    ).json()["id"]
+    zid, _ = enroll_zone(client, name="Z", host="10.0.0.9")
     r = client.post(f"/api/workspaces/{ws_id}/migrate", json={"target_zone_id": zid})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "migrating"
@@ -211,9 +207,7 @@ def test_migrate_sets_migrating_and_schedules(client):
 # ── orchestration state machine ────────────────────────────────────────────
 
 def _make_zone(client) -> int:
-    return client.post(
-        "/api/admin/zones", json={"name": "Dest", "endpoint_host": "10.0.0.9"}
-    ).json()["id"]
+    return enroll_zone(client, name="Dest", host="10.0.0.9")[0]
 
 
 def test_run_migration_flips_zone_and_cleans_source(client, monkeypatch):

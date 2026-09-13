@@ -96,7 +96,10 @@ def test_traefik_config_routes_remote_workspace(client):
     assert transport == f"cove-zone-{zid}"
     t = http["serversTransports"][transport]
     assert t["rootCAs"] == [f"/zone-certs/{zid}/ca.crt"]
-    assert t["certificates"][0]["certFile"] == f"/zone-certs/{zid}/client.crt"
+    # The relay presents the zone's EDGE cert, never the control plane's own
+    # client cert (which would satisfy the agent's API/Docker CN pin).
+    assert t["certificates"][0]["certFile"] == f"/zone-certs/{zid}/edge.crt"
+    assert t["certificates"][0]["keyFile"] == f"/zone-certs/{zid}/edge.key"
     # ForwardAuth (cove-auth) is kept on the central edge, defined in THIS provider
     # (not referenced @docker) so the router resolves it even while the Docker
     # provider reloads — otherwise live WebSockets flicker and drop.

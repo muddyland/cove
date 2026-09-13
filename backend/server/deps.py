@@ -24,7 +24,15 @@ def get_db() -> Generator[Session, None, None]:
 def _check_revocation(user: User, payload: dict) -> bool:
     """Return True if the token is still valid w.r.t. user.tokens_valid_from."""
     if user.tokens_valid_from:
-        issued_at = datetime.fromtimestamp(payload.get("iat", 0), tz=timezone.utc)
+        # Tokens carry a fractional ``iat`` (see security.create_access_token),
+        # so one minted right after a revocation in the same second — as
+        # change-password does — compares later than tokens_valid_from, while
+        # everything minted before it is revoked.
+        try:
+            iat = float(payload.get("iat", 0))
+        except (TypeError, ValueError):
+            return False
+        issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
         if issued_at < user.tokens_valid_from.replace(tzinfo=timezone.utc):
             return False
     return True

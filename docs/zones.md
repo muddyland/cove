@@ -56,6 +56,22 @@ plane verifies the agent's server cert against the same CA. The CA private key
 never leaves the control plane, and the agent's server private key never leaves
 the agent (only a CSR is sent).
 
+Browser traffic the central Traefik relays to a zone's streams uses a **second,
+separate client cert** (`cove-edge-<id>`), never the control plane's own. The
+agent accepts the edge CN only on stream routes, so a relayed request that
+misses a workspace router lands on the agent app with the wrong CN and is
+refused — it can never reach the agent API or the Docker proxy.
+
+What the Docker proxy enforces (1.1.0): `containers/create` is checked against an
+**allow-list** of `HostConfig` keys (case-insensitive, duplicate keys refused),
+so `VolumesFrom`, volume driver options, `DeviceCgroupRules`, `MaskedPaths`/
+`ReadonlyPaths`, non-default `SecurityOpt`, sysctls and container-mode PID/IPC
+namespaces are all rejected; `volumes/create`, `networks/create`,
+`networks/{id}/connect` and `archive` are policy-checked; `rename` is refused;
+exec is allowed only into workspace/routing-sidecar containers and, for the
+single fixed recreate command, the updater sidecar. Only the listed API families
+are reachable at all, versioned or not.
+
 ---
 
 ## 2. Agent host requirements
@@ -88,6 +104,11 @@ In the Cove SPA: **Admin → Zones → Add Zone**.
 - **mTLS port** (default `8443`) — the single port the control plane dials.
 
 > Or via API: `POST /api/admin/zones` `{"name":"lan","endpoint_host":"10.0.0.5"}`.
+
+The zone stays **pending** until the installer enrolls it — nothing is dialed
+before mutual TLS is in place. (`COVE_ALLOW_INSECURE_ZONES=true` restores the
+old plain-TCP shortcut for a trusted private network; every launch payload
+then crosses the wire in cleartext.)
 
 ### 3b. Mint an enrollment token
 
@@ -250,6 +271,7 @@ Control-plane settings (env prefix `COVE_`):
 | `COVE_STORAGE_PATH` | _(unset)_ | Workspace storage root — must match on control plane and agents. |
 | `COVE_WORKSPACE_DOMAIN` | _(unset)_ | Subdomain routing; provisioned to agents so they can resolve a workspace from its host. |
 | `COVE_DATA_DIR_HOST` | `./data` | Host path of the control plane's data dir, mounted into Traefik for `zone-certs`. |
+| `COVE_ALLOW_INSECURE_ZONES` | `false` | Dial an un-enrolled zone over plain TCP. Off: a zone must be enrolled (mTLS) before it is used. |
 
 Agent-only settings (set by the installer, normally not edited by hand):
 
@@ -261,6 +283,7 @@ Agent-only settings (set by the installer, normally not edited by hand):
 | `COVE_STORAGE_PATH` | Must equal the control plane's. |
 | `COVE_AGENT_DOCKER_SOCKET_URL` | The local socket-proxy the Docker proxy forwards to (default `http://cove-agent-sockproxy:2375`). |
 | `COVE_AGENT_EXPECTED_CLIENT_CN` | The only client-cert CN the agent accepts (`cove-cp-<zone-id>`); pins the zone to its control plane. |
+| `COVE_AGENT_EDGE_CLIENT_CN` | CN of the relay (edge) cert the central Traefik presents on stream routes (`cove-edge-<zone-id>`). Informational: it is never accepted on the agent API or Docker paths. |
 
 ---
 

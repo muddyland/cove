@@ -12,9 +12,9 @@ import type {
 export const adminApi = {
   users: {
     list: () => api.get<User[]>('/admin/users'),
-    create: (payload: { username: string; password: string; is_admin: boolean }) =>
+    create: (payload: { username: string; password: string; is_admin: boolean; docker_allowed?: boolean }) =>
       api.post<User>('/admin/users', payload),
-    update: (id: number, payload: { username?: string; is_admin?: boolean; password?: string }) =>
+    update: (id: number, payload: { username?: string; is_admin?: boolean; password?: string; docker_allowed?: boolean }) =>
       api.patch<User>(`/admin/users/${id}`, payload),
     remove: (id: number) => api.delete(`/admin/users/${id}`),
   },
