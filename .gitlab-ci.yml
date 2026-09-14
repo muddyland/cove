@@ -1,10 +1,20 @@
-# Registry setup and the mandatory dependency audit are shared across the
-# internal projects. $CI_TEMPLATES is a group variable holding the templates
-# project's path.
+# This file runs unchanged on both the internal GitLab and the public mirror.
+#
+# Nothing here names an internal host or service. Where packages come from is
+# decided entirely by group variables the tools read themselves --
+# PIP_INDEX_URL and NPM_CONFIG_REGISTRY -- so internally they resolve through
+# the caching registry and on the mirror they resolve from PyPI and npmjs,
+# with no difference in this file.
+#
+# The one extra job internally is a dependency audit, pulled in only when
+# CI_TEMPLATES is set. On the mirror that variable does not exist, the
+# include is skipped, and the pipeline is exactly what you see below.
 include:
   - project: $CI_TEMPLATES
     ref: main
     file: /audit.yml
+    rules:
+      - if: $CI_TEMPLATES
 
 stages:
   - lint
@@ -12,27 +22,27 @@ stages:
   - build
 
 variables:
-  # This project is still on node 20; the shared default is 22.
-  NODE_IMAGE: "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:20-alpine"
-  # nanoid's CVE-2026-67213 scored 5.9, so `high` would have let it through.
-  MINIREG_AUDIT_FAIL_ON: medium
-  # frontend has package-lock.json, backend a fully pinned requirements.txt.
-  MINIREG_AUDIT_PATHS: "frontend backend"
+  # Plain images by default. The internal group overrides these to pull
+  # through its dependency proxy; a mirror needs no such thing.
+  PYTHON_IMAGE: python:3.12-slim
+  # This project is still on node 20.
+  NODE_IMAGE: node:20-alpine
+  DOCKER_IMAGE: docker:24.0.5
+  # Prefix for the Dockerfile's FROM lines. Empty means Docker Hub.
+  BASE_REGISTRY: ""
 
 # ── Shared bases ──────────────────────────────────────────────────────────
 
-# The registry setup (image, pip preflight, npm auth) comes from the shared
-# templates; these only add what is specific to this project.
 .python_base:
-  extends: .minireg-python
+  image: $PYTHON_IMAGE
+  tags: [saas-linux-small-amd64]
   before_script:
-    - !reference [.minireg-python, before_script]
     - pip install --quiet -r backend/requirements.txt
 
 .node_base:
-  extends: .minireg-node
+  image: $NODE_IMAGE
+  tags: [saas-linux-small-amd64]
   before_script:
-    - !reference [.minireg-node, before_script]
     - cd frontend && npm ci
 
 # ── Lint ──────────────────────────────────────────────────────────────────
@@ -41,7 +51,6 @@ lint:backend:
   extends: .python_base
   stage: lint
   before_script:
-    - !reference [.minireg-python, before_script]
     - pip install --quiet ruff
   script:
     - cd backend && ruff check server
@@ -59,7 +68,6 @@ test:backend:
   extends: .python_base
   stage: test
   before_script:
-    - !reference [.minireg-python, before_script]
     - pip install --quiet -r backend/requirements.txt pytest pytest-asyncio
   script:
     - cd backend
@@ -87,23 +95,27 @@ build:frontend:
 build:image:
   stage: build
   tags: [saas-linux-small-amd64]
-  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:24.0.5
+  image: $DOCKER_IMAGE
   services:
-    # Explicit alias: GitLab derives a service's hostname from its image name, so
-    # the dependency-proxy prefix would otherwise change it away from "docker" and
-    # `docker info` would wait forever for a host that never comes up.
-    - name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:24.0.5-dind
+    # Explicit alias: GitLab derives a service's hostname from its image name,
+    # so a registry prefix on DOCKER_IMAGE would otherwise move it away from
+    # "docker" and `docker info` would wait forever for a host that never
+    # comes up.
+    - name: $DOCKER_IMAGE-dind
       alias: docker
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - until docker info; do sleep 1; done
-    # Log the dind daemon in to the dependency proxy so the Dockerfile's FROM
-    # base images (node, python) also pull through the cache, not Docker Hub.
-    - docker login -u $CI_DEPENDENCY_PROXY_USER -p $CI_DEPENDENCY_PROXY_PASSWORD $CI_DEPENDENCY_PROXY_SERVER
+    # Only where a dependency proxy exists. Logging the dind daemon in lets
+    # the Dockerfile's FROM lines pull through the cache too.
+    - |
+      if [ -n "${CI_DEPENDENCY_PROXY_SERVER:-}" ]; then
+        docker login -u "$CI_DEPENDENCY_PROXY_USER" -p "$CI_DEPENDENCY_PROXY_PASSWORD" "$CI_DEPENDENCY_PROXY_SERVER"
+      fi
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    - docker build --build-arg BASE_REGISTRY=${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
+    - docker build --build-arg BASE_REGISTRY="$BASE_REGISTRY" --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
   rules:
     - if: '$CI_COMMIT_REF_NAME == "main"'
