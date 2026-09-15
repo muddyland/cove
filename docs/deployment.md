@@ -271,6 +271,12 @@ attacker's failed logins lock everyone out for the rate-limit window. Add to the
 - --entrypoints.websecure.forwardedHeaders.trustedIPs=10.0.0.5/32
 ```
 
+Workspace streams are long-lived WebSockets carrying live video, so the upstream
+proxy must pass them through unbuffered with long timeouts. With Nginx Proxy
+Manager or plain nginx defaults, streams freeze and burst over the internet. See
+[Troubleshooting → Stream freezes over the internet](troubleshooting.md#stream-freezes-over-the-internet-behind-a-reverse-proxy)
+for the settings.
+
 ## After deploying
 
 - Confirm health: `curl https://cove.example.com/api/health` should return `200`.

@@ -17,6 +17,7 @@ Common symptoms and fixes. For backend logs: `docker compose logs -f cove`.
 | **TLS certificate won't issue** | TLS-ALPN needs inbound `:80`/`:443`; if those are closed, switch to DNS-01. Check `COVE_DOMAIN`/`COVE_ACME_EMAIL` and Traefik logs. |
 | **Tailscale/Gluetun workspace won't start** | The host needs `/dev/net/tun`. Confirm the user has a valid auth key / uploaded VPN config in Preferences. Only one active Gluetun workspace per user is allowed. |
 | **GPU workspace stutters / GPU errors** | Cove auto-detects the render-node group per host, so the classic GID mismatch is handled — but confirm **Wayland streaming** is on (required for HW encode), the host GPU isn't oversubscribed by several concurrent GPU workspaces, and the encoder is engaged on the host (`vainfo`, `radeontop`/`intel_gpu_top`). A workspace that errors with *"no render node…"* has GPU on but no usable device — turn GPU off or fix the render node. On a low-power shared iGPU, GPU off can be smoother. See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). Note that Wayland streaming is also what breaks cursor shapes ([below](#mouse-cursor-never-changes-shape)) — the two cannot both be satisfied. |
+| **Stream freezes every few seconds over the internet, then catches up in a burst; a refresh fixes it briefly** | An upstream reverse proxy (e.g. Nginx Proxy Manager) buffering the WebSocket stream on the WAN leg. Turn off proxy buffering and raise its timeouts for the workspace hosts. See [below](#stream-freezes-over-the-internet-behind-a-reverse-proxy). |
 | **Mouse cursor never changes shape** | Not a theme problem. Selkies sends cursor shapes as stream metadata and skips that entirely on Wayland, which Cove uses by default. Turn **Wayland streaming** off for that workspace. See [below](#mouse-cursor-never-changes-shape). |
 | **Can't reach a LAN host from a workspace** | LAN access needs both the admin master toggle + allowed subnets **and** the per-workspace opt-in. Docker-internal/metadata ranges are always blocked. "Open a website" to a LAN host works via the per-URL `/32` exception. |
 | **Locked out after enabling OIDC-only** | A broken OIDC config disables OIDC-only automatically. To force recovery, set `COVE_OIDC_ONLY=false` on the server and restart. |
@@ -82,6 +83,65 @@ docker logs cove-ws-<id> | grep -i cursor
 # "Cursor monitor disabled"     → Wayland: static arrow
 # "watching for cursor changes" → X11: shapes work
 ```
+
+## Stream freezes over the internet (behind a reverse proxy)
+
+**Symptom.** Streaming a workspace from outside your network, the picture freezes
+for a moment every few seconds, even while you're idle. When it comes back, a
+blinking text cursor flashes rapidly as delayed frames arrive all at once, and
+keystrokes typed during the freeze still land. A page refresh makes it smooth
+again, but only for a while. On the LAN the same workspace is fine. Opening the
+browser's developer console on the stream shows repeated
+`[websockets] Connection closed` / `reloading page to reconnect` messages, and
+sometimes `Critical decode error` or `FATAL DECODER ERROR`.
+
+**Cause.** The stream is one long-lived WebSocket carrying live video. Selkies
+applies no send-side flow control to it: every encoded frame is pushed straight
+into the connection's write buffer whether or not the link is keeping up. A
+reverse proxy in front of Cove on the WAN side, such as **Nginx Proxy Manager**
+with its defaults, buffers that traffic like an ordinary web response. Whenever
+the WAN leg momentarily can't keep up, frames pile up behind the proxy and are
+delivered late in a burst. That's the freeze and the fast-forward.
+
+If the browser's video decoder hits an error during one of those stalls, the
+Selkies client first restarts video (another freeze). On a second error it closes
+the connection and reloads the page, which on a struggling link repeats every
+20–30 seconds. After three such crashes the client silently switches that browser
+to the JPEG encoder, which it remembers in the browser's local storage.
+
+**Fix.** Configure the upstream proxy for streaming on every host that serves
+Cove workspaces, including the `*.<workspace domain>` wildcard host in subdomain
+mode. In Nginx Proxy Manager, open the proxy host:
+
+1. **Details:** enable **Websockets Support**.
+2. **Advanced → Custom Nginx Configuration:**
+
+   ```nginx
+   proxy_buffering off;
+   proxy_request_buffering off;
+   proxy_read_timeout 3600s;
+   proxy_send_timeout 3600s;
+   tcp_nodelay on;
+   ```
+
+For another nginx-based proxy, add the same directives to the `location` that
+proxies to Cove's Traefik. If a CDN or tunnel sits in front of the proxy (for
+example Cloudflare's orange-cloud proxy), try bypassing it too, since it adds its
+own buffering and WebSocket limits.
+
+If a browser already fell back to JPEG, pick **x264enc** again in the Selkies
+sidebar's video settings once the stream is stable.
+
+**Confirm it's the proxy.** Open the same workspace for a few minutes over a path
+that skips it: on the LAN, or over Tailscale straight to Cove. Smooth there and
+freezing through the proxy means it's the WAN path. If it still freezes on the
+LAN, the cause is elsewhere; capture the `[websockets] Connection closed` line
+(it includes a close code) and the desktop log (**Logs → Desktop** in the
+workspace menu) from right after a freeze.
+
+If the proxy is configured correctly and it still stalls, the link itself can't
+carry the stream. Lower the frame rate or raise the H.264 CRF in the Selkies
+sidebar to cut bitrate.
 
 ## Inspecting a workspace directly
 
