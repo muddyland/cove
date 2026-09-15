@@ -92,7 +92,9 @@ docker network ls --filter name=cove      # cove + per-workspace networks
 ```
 
 In-container install logs (inside the workspace's `/config`):
-`/config/.cove-proot-apps.log` and `/config/.cove-appimages.log`.
+`/config/.cove-proot-apps.log` and `/config/.cove-appimages.log`. proot-apps
+tasks started from the Apps dialog log only to the navbar's tasks menu (their
+state lives in `/tmp/cove-proot-apps-<uid>/` inside the running container).
 
 ## Full reset
 

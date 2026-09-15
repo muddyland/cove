@@ -55,6 +55,13 @@ cookies.
 | GET | `/api/workspaces/{id}/preview.jpg` | owner/admin | Stored still frame of the workspace screen (`404` when there is none). `private` caching + ETag. |
 | POST | `/api/workspaces/{id}/preview/refresh` | owner/admin | Re-capture the preview from an already-running stream (passive only; `409` unless the workspace is running). |
 | GET | `/api/workspaces/{id}/favicon.png` | owner/admin | Favicon of the site a browser workspace opens (`404` when there is none). |
+| GET | `/api/workspaces/{id}/proot-apps` | owner/admin | Installed proot-apps with `update_available` per app (`?check=false` skips the registry). `409` unless a running desktop. |
+| POST | `/api/workspaces/{id}/proot-apps/tasks` | owner/admin | Queue a background task: `{"op": "install"\|"update"\|"remove", "apps": [...]}` → `202`. Install/remove also update the saved `proot_apps`. `429` when three are already active. |
+| GET | `/api/workspaces/{id}/proot-apps/tasks` | owner/admin | The workspace's proot-apps tasks (`queued`/`running`/`done`/`failed`/`interrupted`). |
+| GET | `/api/workspaces/{id}/proot-apps/tasks/{task_id}/log` | owner/admin | Tail (64 KB) of one task's output. |
+| POST | `/api/workspaces/{id}/proot-apps/tasks/clear` | owner/admin | Forget finished tasks. |
+
+The `proot-apps` endpoints run a short command inside the workspace, so each workspace (2) and each caller (4) gets only a few at a time; beyond that they answer `429`.
 
 ## Images — `/api/images`
 
@@ -141,6 +148,7 @@ entries expire per **trash retention (days)** and are swept hourly; see
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/api/proot-apps` | auth | List installable proot-app names. |
+| GET | `/api/proot-tasks` | auth | proot-apps tasks across your own running desktop workspaces (the navbar tasks menu). |
 | GET | `/api/health` | public | Health check. |
 | GET | `/api/docs` | auth | List the bundled documentation pages (`slug`, `title`, `scope`). Non-admins receive only `scope: "user"` pages. |
 | GET | `/api/docs/{slug}` | auth (admin for admin-scoped pages) | One page's Markdown plus its `scope`. `403` if a non-admin requests an admin-scoped page, `404` for a malformed slug. |

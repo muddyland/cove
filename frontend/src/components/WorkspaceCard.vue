@@ -91,6 +91,7 @@
             :title="isStopped ? '' : 'Stop the workspace to edit — changes apply on the next start'"
             @click="act(() => (showEdit = true))"
           ><Pencil :size="14" /> Edit</button>
+          <button v-if="ws.status === 'running' && ws.workspace_type === 'desktop'" type="button" class="action-item" @click="act(() => (showApps = true))"><Package :size="14" /> Apps</button>
           <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(() => (showDiag = true))"><Activity :size="14" /> Logs</button>
           <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(handleStop)"><Square :size="14" /> Halt</button>
           <button v-if="isStopped" type="button" class="action-item" @click="act(() => (showClone = true))"><CopyPlus :size="14" /> Clone</button>
@@ -130,6 +131,7 @@
   <CloneModal v-model="showClone" :ws="ws" />
   <MigrateModal v-model="showMigrate" :ws="ws" />
   <DiagnosticsModal v-model="showDiag" :ws="ws" />
+  <ProotAppsModal v-if="ws.workspace_type === 'desktop'" v-model="showApps" :ws="ws" />
 </template>
 
 <script setup lang="ts">
@@ -146,7 +148,8 @@ import EditWorkspaceModal from './EditWorkspaceModal.vue'
 import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
-import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2, MonitorPlay } from 'lucide-vue-next'
+import ProotAppsModal from './ProotAppsModal.vue'
+import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2, MonitorPlay, Package } from 'lucide-vue-next'
 import { workspaceIconUrl } from '@/utils/workspaceIcon'
 import type { Workspace, WorkspaceStats } from '@/types'
 
@@ -185,6 +188,7 @@ const showEdit = ref(false)
 const showClone = ref(false)
 const showMigrate = ref(false)
 const showDiag = ref(false)
+const showApps = ref(false)
 
 const isStopped = computed(() => props.ws.status === 'stopped' || props.ws.status === 'error')
 

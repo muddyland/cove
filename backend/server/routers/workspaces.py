@@ -18,6 +18,7 @@ from server.favicons import refresh_workspace_favicon
 from server.icons import bake_watermarked_icon
 from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
 from server.net import client_ip
+from server.proot import APP_NAME_RE as PROOT_APP_NAME_RE
 from server.schemas import (
     ContainerLogsOut,
     DockerPolicyOut,
@@ -160,7 +161,11 @@ def _validate_app_fields(install_packages, proot_apps, appimages) -> None:
     if install_packages:
         _validate_package_list(install_packages, "install_packages")
     if proot_apps:
-        _validate_package_list(proot_apps, "proot_apps")
+        # proot-app names are lowercase catalog names; the boot script and the
+        # Apps dialog accept nothing else.
+        for tok in re.split(r"[,\s]+", proot_apps.strip()):
+            if tok and not PROOT_APP_NAME_RE.match(tok):
+                raise HTTPException(status_code=400, detail=f"Invalid proot_apps entry: {tok!r}")
     if appimages:
         _validate_appimage_list(appimages)
 

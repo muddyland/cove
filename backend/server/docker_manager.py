@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import socket
+import struct
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -92,6 +93,71 @@ def _stage_helper_scripts() -> "Path":
 def _helper_script_path(name: str) -> str:
     """Host-resolvable bind-mount source for a staged helper script."""
     return str(_stage_helper_scripts() / name)
+
+
+# Bounds on a synchronous proot driver exec (listing apps / tasks / a log tail).
+_PROOT_EXEC_MAX_BYTES = 512 * 1024
+_PROOT_EXEC_DEADLINE = 30.0
+
+
+def _read_exec_stdout(sock, deadline: float, max_bytes: int) -> "bytes | None":
+    """Read a non-TTY exec's multiplexed output off its raw socket until EOF and
+    return the stdout payload. Returns None if ``deadline`` (a monotonic time)
+    passes first or the output grows past ``max_bytes``. Always closes the
+    socket."""
+    raw = getattr(sock, "_sock", sock)
+    buf = bytearray()
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            raw.settimeout(remaining)
+            try:
+                data = raw.recv(65536)
+            except (socket.timeout, TimeoutError):
+                return None
+            if not data:
+                break
+            buf += data
+            # Frame headers ride along with the payload; allow for them, but a
+            # stream of tiny frames can't dodge the cap.
+            if len(buf) > 2 * max_bytes:
+                return None
+    finally:
+        # The HTTP response first (it flushes through the socket), then the socket.
+        for closable in (getattr(sock, "_response", None), sock, raw):
+            try:
+                if closable is not None:
+                    closable.close()
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
+    out = bytearray()
+    offset = 0
+    # Each frame: 1 byte stream id, 3 padding, 4 bytes big-endian length.
+    while offset + 8 <= len(buf):
+        stream_id, length = struct.unpack(">BxxxL", buf[offset:offset + 8])
+        payload = buf[offset + 8:offset + 8 + length]
+        offset += 8 + length
+        if stream_id == 1:
+            out += payload
+            if len(out) > max_bytes:
+                return None
+    return bytes(out)
+
+
+class ProotUnavailable(RuntimeError):
+    """The workspace has no container to run the proot-apps driver in."""
+
+
+def _proot_script() -> str:
+    """Text of the proot-apps driver, read fresh so an updated checkout applies
+    without a restart. Falls back to the repo copy when running from source."""
+    for base in (Path(_SCRIPTS_SRC_DIR), Path(__file__).resolve().parents[2] / "scripts"):
+        path = base / "install-proot-apps.sh"
+        if path.is_file():
+            return path.read_text()
+    raise ProotUnavailable("proot-apps driver script is missing")
 
 
 def _build_browser_cli(ws) -> str:
@@ -802,6 +868,52 @@ class DockerManager:
         the work continues after the proxy this call rode through is torn down."""
         container = self._client.containers.get(container_name)
         container.exec_run(cmd, detach=True)
+
+    def proot_command(
+        self, ws: Workspace, args: list[str], *, detach: bool = False
+    ) -> "tuple[int | None, bytes | None]":
+        """Run the proot-apps driver script inside a workspace (see
+        ``scripts/install-proot-apps.sh``) and return ``(exit_code, output)``.
+
+        The script travels as an argument rather than a mount, so containers
+        launched before it existed can run it too. It always runs as the desktop
+        user: the workspace's files belong to that user, and root touching them
+        could be steered through a planted symlink. The output comes from a
+        container its user controls, so it's capped and deadlined here and the
+        caller must validate every field. ``output`` is None when the cap or the
+        deadline was hit. Raises ``ProotUnavailable`` if the container is gone.
+        """
+        if not ws.container_id:
+            raise ProotUnavailable("workspace has no container")
+        try:
+            container = self._client.containers.get(ws.container_id)
+        except docker.errors.NotFound as exc:
+            raise ProotUnavailable("workspace container not found") from exc
+        api = container.client.api
+        if detach:
+            cmd = ["bash", "-c", _proot_script(), "cove-proot", *args]
+            exec_id = api.exec_create(container.id, cmd, user="abc", stdout=False, stderr=False)["Id"]
+            api.exec_start(exec_id, detach=True)
+            return 0, b""
+        # An in-container timeout ends a stuck read (e.g. a FIFO planted where a
+        # state file should be); the deadline below covers an image without one.
+        wrapper = (
+            'if command -v timeout >/dev/null 2>&1; then exec timeout 20 bash -c "$0" "$@"; fi; '
+            'exec bash -c "$0" "$@"'
+        )
+        cmd = ["sh", "-c", wrapper, _proot_script(), "cove-proot", *args]
+        exec_id = api.exec_create(container.id, cmd, user="abc", stdout=True, stderr=False)["Id"]
+        deadline = time.monotonic() + _PROOT_EXEC_DEADLINE
+        # The raw socket, not exec_start(stream=True): docker-py's stream reader
+        # waits in poll() with no timeout, so an exec that goes silent (its
+        # process SIGSTOPped by the workspace user, say) would pin this thread
+        # forever. Reading the socket ourselves bounds every wait.
+        sock = api.exec_start(exec_id, socket=True)
+        output = _read_exec_stdout(sock, deadline, _PROOT_EXEC_MAX_BYTES)
+        if output is None:
+            return None, None
+        code = api.exec_inspect(exec_id).get("ExitCode")
+        return code, output
 
     def _ensure_named_volume(self, volume_name: str) -> None:
         try:

@@ -43,6 +43,7 @@
         </nav>
 
         <div class="nav-right">
+          <TasksMenu />
           <button
             type="button"
             class="icon-link"
@@ -92,6 +93,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import DocsModal from '@/components/DocsModal.vue'
+import TasksMenu from '@/components/TasksMenu.vue'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
   ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle, HardDrive,

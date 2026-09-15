@@ -83,7 +83,7 @@ python-jose for JWTs. Key modules:
 | `oidc.py` | OIDC discovery + token verification (JWKS), Authentik group → admin mapping. |
 | `security.py` | Password hashing (bcrypt), JWT mint/verify, secret encryption (for Tailscale keys), username validation. |
 | `net.py` | Real-client-IP extraction from forwarded headers (for rate limiting / audit). |
-| `proot.py` | Lists the LinuxServer proot-apps catalog (GitHub contents API). |
+| `proot.py` | proot-apps: the catalog (GitHub contents API), strict parsers for the in-workspace driver's output, and update checks (installed layer digest vs. ghcr.io, cached). |
 | `preview.py` | Workspace screen captures: pulls a frame off the workspace's own Selkies stream (via `docker exec`), reassembles the JPEG stripes with Pillow. Also the launch readiness signal. |
 | `favicons.py` | Site favicons for browser workspaces pinned to one URL: discovers icons from the page's `<link rel=icon>` tags (else `/favicon.ico`), fetches and normalizes them to PNG. Refuses loopback/link-local targets. |
 | `deps.py` | FastAPI dependencies: `CurrentUser`, `AdminUser`, `DbSession`. |
@@ -98,7 +98,7 @@ python-jose for JWTs. Key modules:
 | `/api/admin` | Users CRUD, app settings, env summary, audit log. Admin-gated. |
 | `/api/users` | Per-user Tailscale config. |
 | `/api/files` | Per-user file browser (list/upload/download/delete) confined to the user's storage. |
-| `/api` (proot) | proot-apps catalog. |
+| `/api` (proot) | proot-apps catalog; per-workspace installed apps, update status and background tasks; `/proot-tasks` for the navbar. |
 
 ### Frontend (`frontend/src/`)
 
@@ -204,7 +204,11 @@ launch ──▶ creating ──▶ running ──▶ (halt) ──▶ stopped �
 wired by `docker_manager` and `scripts/`):
 
 - **Distro packages** → `universal-package-install` mod (`INSTALL_PACKAGES`).
-- **proot-apps** → `PROOT_APPS` + `scripts/install-proot-apps.sh`.
+- **proot-apps** → `PROOT_APPS` + `scripts/install-proot-apps.sh`. The same
+  script is the in-workspace driver for the Apps dialog: the backend runs its text
+  via `docker exec` **as the desktop user** (never root — `/config` is
+  user-writable) to list apps and start/inspect install/update/remove tasks, and
+  treats everything it prints as untrusted.
 - **AppImages** → `COVE_APPIMAGES` + `scripts/install-appimages.sh`: downloads
   (curl), extracts (`--appimage-extract`, no FUSE needed in these hardened
   containers), and writes a `.desktop` launcher with `APPDIR` set and

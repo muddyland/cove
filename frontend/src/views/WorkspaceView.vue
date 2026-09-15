@@ -95,6 +95,13 @@
             <button v-if="!standalone" class="menu-item" @click="runAction(handleInstall)">
               <Download :size="15" /> Install as app
             </button>
+            <button
+              v-if="ws?.status === 'running' && ws.workspace_type === 'desktop'"
+              class="menu-item"
+              @click="runAction(() => (showApps = true))"
+            >
+              <Package :size="15" /> Apps
+            </button>
             <button class="menu-item" @click="runAction(() => (showDiag = true))">
               <Activity :size="15" /> Logs
             </button>
@@ -107,6 +114,7 @@
     </div>
 
     <DiagnosticsModal v-if="ws" v-model="showDiag" :ws="ws" />
+    <ProotAppsModal v-if="ws && ws.workspace_type === 'desktop'" v-model="showApps" :ws="ws" />
     <WorkspaceMetricsModal v-if="ws" v-model="showMetrics" :ws-id="ws.id" :name="ws.name" />
 
     <DocsModal v-model="showHelp" initial="__quick" />
@@ -191,11 +199,12 @@ import { useLocalPreview } from '@/composables/useLocalPreview'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
+import ProotAppsModal from '@/components/ProotAppsModal.vue'
 import WorkspaceMetricsModal from '@/components/WorkspaceMetricsModal.vue'
 import DocsModal from '@/components/DocsModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
 import { workspaceIconUrl, type IconSource } from '@/utils/workspaceIcon'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -210,6 +219,7 @@ const iconUrl = computed(() => (ws.value ? workspaceIconUrl(ws.value) : null))
 const installing = computed(() => !!(ws.value?.install_packages || ws.value?.proot_apps))
 const stopping = ref(false)
 const showDiag = ref(false)
+const showApps = ref(false)
 const showHelp = ref(false)
 const showMetrics = ref(false)
 const streamUrl = ref<string | null>(null)

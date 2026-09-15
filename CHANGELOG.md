@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Manage proot-apps in a running workspace.** Actions → Apps lists installed
+  proot-apps, flags the ones with an update available (compared against ghcr.io
+  without downloading), and installs, updates or removes them. Booting still
+  never updates an installed app.
+- **Background tasks in the navbar.** proot-apps installs, updates and removals —
+  including the ones a workspace runs at boot — show in a tasks menu with
+  progress and logs, across all of your running workspaces.
+- The boot-time proot-apps install now runs entirely as the desktop user; it
+  previously appended its log in `/config` as root.
+
 ## 1.1.0 — security hardening release
 
 Upgrading from 1.0.x is in-place: pull, rebuild, `docker compose up -d`. The

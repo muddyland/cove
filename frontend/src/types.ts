@@ -51,6 +51,51 @@ export interface ContainerLogs {
   output: string
 }
 
+export interface ProotApp {
+  // Default-repository app name; null for an app installed from another image.
+  name: string | null
+  folder: string
+  installed: boolean
+  downloading: boolean
+  // In the workspace's saved list, so it's reinstalled on boot and migration.
+  in_config: boolean
+  installed_digest: string | null
+  latest_digest: string | null
+  // null when unknown (not checked, or the registry couldn't be reached).
+  update_available: boolean | null
+}
+
+export interface ProotApps {
+  available: boolean
+  arch: string | null
+  checked: boolean
+  apps: ProotApp[]
+}
+
+export type ProotTaskOp = 'install' | 'update' | 'remove'
+export type ProotTaskState = 'queued' | 'running' | 'done' | 'failed' | 'interrupted'
+
+export interface ProotTask {
+  id: string
+  op: ProotTaskOp
+  state: ProotTaskState
+  exit_code: number | null
+  apps: string[]
+  failed_apps: string[]
+  current_app: string | null
+  done_count: number
+  // Epoch seconds, from the workspace's clock.
+  created_at: number | null
+  started_at: number | null
+  finished_at: number | null
+}
+
+export interface WorkspaceProotTasks {
+  workspace_id: number
+  workspace_name: string
+  tasks: ProotTask[]
+}
+
 export interface Workspace {
   id: number
   public_id: string

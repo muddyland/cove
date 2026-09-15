@@ -70,11 +70,37 @@ All three install methods run at container boot via LinuxServer init scripts and
 are best-effort (they never fail the boot):
 
 - **Install packages** — adds the `universal-package-install` Docker Mod and installs your distro packages.
-- **proot-apps** — installs the named [proot-apps](https://github.com/linuxserver/proot-apps). Installs run **in the background** so the desktop comes up promptly; apps appear in the menu as each finishes (progress logged to `/config/.cove-proot-apps.log`). Already-installed apps are skipped.
+- **proot-apps** — installs the named [proot-apps](https://github.com/linuxserver/proot-apps). Installs run **in the background** so the desktop comes up promptly; apps appear in the menu as each finishes (progress in the navbar's tasks menu, and appended to `/config/.cove-proot-apps.log`). Already-installed apps are skipped — booting never updates them; see below.
 - **AppImages** — downloads each URL and, because the containers are hardened (no FUSE), **extracts** it rather than FUSE-mounting, then writes a desktop launcher. Electron apps launch with `--no-sandbox`. Background install, logged to `/config/.cove-appimages.log`.
 
 When packages or proot-apps are requested, the workspace shows a **Provisioning**
 screen ("this can take a few minutes") until the desktop is ready.
+
+### Managing proot-apps in a running workspace
+
+**Actions → Apps** on a running desktop (or **Apps** in the stream page's menu)
+lists the proot-apps installed in it and whether each is **up to date** or has an
+**update available**. Cove compares the build each app was installed from with the
+one ghcr.io serves now — the same check `proot-apps update` makes — without
+downloading anything. Results are cached for about half an hour; only apps from
+the LinuxServer catalog are checked.
+
+From there you can **Update** one app or **Update all**, **Install** more, or
+**Remove** one. Installing or removing also updates the workspace's saved
+proot-apps list, so what you see survives a restart and a migration (migration
+reinstalls from that list rather than copying the app files).
+
+Each of these runs as a **background task** inside the workspace, one at a time
+(at most three waiting or running at once). The **tasks menu** in the navbar (the
+checklist icon, a spinner with a count while something runs) shows every task
+across your running workspaces, with progress and the full log. Tasks live inside
+the container, so a halt clears them; a task cut short by a restart shows as
+**interrupted**.
+
+An update deletes the old copy before downloading the new one — that's how
+proot-apps works — so if the download fails, the app is left uninstalled. Install
+it again from the same dialog (it's still in the saved list, so the next boot
+retries it too).
 
 ## SSH-key injection
 

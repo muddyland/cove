@@ -521,6 +521,58 @@ class ContainerLogsOut(BaseModel):
     output: str
 
 
+# ── proot-apps ────────────────────────────────────────────────────────────────
+
+class ProotAppOut(BaseModel):
+    # Default-repository app name; None for an app installed from another image.
+    name: Optional[str]
+    folder: str
+    installed: bool
+    downloading: bool
+    # In the workspace's saved proot_apps list (reinstalled on boot/migration).
+    in_config: bool
+    installed_digest: Optional[str]
+    latest_digest: Optional[str]
+    # None when it couldn't be determined (not checked, registry unreachable, …).
+    update_available: Optional[bool]
+
+
+class ProotAppsOut(BaseModel):
+    available: bool  # proot-apps exists in this image
+    arch: Optional[str]
+    checked: bool  # whether registry update checks ran
+    apps: list[ProotAppOut]
+
+
+class ProotTaskCreate(BaseModel):
+    op: str = Field(pattern="^(install|update|remove)$")
+    apps: list[str] = Field(min_length=1, max_length=50)
+
+
+class ProotTaskOut(BaseModel):
+    id: str
+    op: str
+    state: str  # queued | running | done | failed | interrupted
+    exit_code: Optional[int]
+    apps: list[str]
+    failed_apps: list[str]
+    current_app: Optional[str]
+    done_count: int
+    created_at: Optional[int]  # epoch seconds, from the workspace clock
+    started_at: Optional[int]
+    finished_at: Optional[int]
+
+
+class WorkspaceProotTasksOut(BaseModel):
+    workspace_id: int
+    workspace_name: str
+    tasks: list[ProotTaskOut]
+
+
+class ProotTaskLogOut(BaseModel):
+    output: str
+
+
 # ── Files ─────────────────────────────────────────────────────────────────────
 
 class FileEntry(BaseModel):
