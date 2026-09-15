@@ -137,6 +137,10 @@ export interface Workspace {
   // browser, several sites open, or nothing decodable at the site). The PNG is
   // fetched separately; this says whether to ask, and changes when it's refetched.
   favicon_at: string | null
+  // Running AND its stream has rendered a first frame (or the server's fallback
+  // window for uncapturable images passed). Connect on this, not on status: a
+  // stream opened before Selkies renders never recovers without a reload.
+  connectable: boolean
   use_tailscale: boolean
   use_gluetun: boolean
   ephemeral: boolean

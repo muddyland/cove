@@ -105,25 +105,6 @@ describe('previews store', () => {
     expect(workspacesApi.preview).toHaveBeenCalledTimes(2)
   })
 
-  it('setLocal replaces the frame, as a data: URL, without any upload', async () => {
-    const store = usePreviewsStore()
-    await store.load(ws())
-    const first = store.urls[1]
-    await store.setLocal(1, jpegBlob('local frame'))
-    expect(store.urls[1]).toMatch(/^data:image\/jpeg;base64,/)
-    expect(store.urls[1]).not.toBe(first)
-    // Only the initial load ever talked to the server.
-    expect(workspacesApi.preview).toHaveBeenCalledTimes(1)
-  })
-
-  it('a locally-set frame can still be superseded by a newer server frame', async () => {
-    const store = usePreviewsStore()
-    await store.load(ws())
-    await store.setLocal(1, jpegBlob('local'))
-    await store.load(ws())
-    expect(workspacesApi.preview).toHaveBeenCalledTimes(2)
-  })
-
   it('clear drops the frame and forces a refetch afterwards', async () => {
     const store = usePreviewsStore()
     await store.load(ws())

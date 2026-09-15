@@ -20,6 +20,7 @@ from server.config import get_settings
 from server.db import SessionLocal
 from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
 from server.preview import capture as capture_preview_frame
+from server.preview import is_connectable
 from server.security import decrypt_secret
 from server.settings_store import (
     get_dind_image,
@@ -2093,6 +2094,17 @@ class DockerManager:
                     ws.status = "error"
                     ws.error_message = sidecar_msg
                     db.commit()
+                    continue
+                # Went running without its first frame (the launch-time wait ran
+                # out). Clients are held back until one exists, so keep trying —
+                # nobody can be watching yet, so starting the stream evicts no one.
+                if ws.preview_at is None and not is_connectable(ws):
+                    port = ws.image.internal_port if ws.image else 3000
+                    frame = capture_preview_frame(container, port, passive_wait=0.8)
+                    if frame:
+                        ws.preview_jpg = frame
+                        ws.preview_at = datetime.now(timezone.utc)
+                        db.commit()
 
             # Promote provisioning workspaces once their GUI answers — and also
             # recover ones we previously marked "error" (e.g. a very large install
@@ -2161,7 +2173,9 @@ class DockerManager:
                     ws.started_at = now
                     ws.error_message = None
                     ws.preview_jpg = frame
-                    ws.preview_at = now
+                    # Only a real frame counts: preview_at is what lets clients
+                    # connect before the fallback window (see is_connectable).
+                    ws.preview_at = now if frame else None
                     db.commit()
                     continue
                 # Still starting: only fail a "creating" one past the (generous)

@@ -34,14 +34,11 @@ you can tell your workspaces apart at a glance without opening them.
 
 - The frame is captured from the workspace's **own stream**, so it works the same
   for every image and needs nothing installed inside it.
-- It doubles as the **readiness check**: a workspace isn't marked running until
-  Cove can decode a real frame from its stream.
+- It doubles as the **readiness check**: you can't connect to a workspace until
+  Cove has decoded a real frame from its stream (the card shows **STARTING** until
+  then), so the stream never opens half-ready.
 - Previews are **dropped the moment a workspace halts** — a stopped card never
   shows what was last on its screen. Booting it again takes a fresh one.
-- While you have a workspace **open**, its card is refreshed from the stream
-  you're already watching. Those refreshes **stay in your browser and are never
-  uploaded**; reload the page and the card falls back to the frame taken at
-  launch.
 - A stream Cove can't read simply leaves the card with a placeholder. The
   workspace still launches normally.
 

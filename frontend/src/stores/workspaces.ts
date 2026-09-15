@@ -13,7 +13,11 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let statsTimer: ReturnType<typeof setInterval> | null = null
 
-  const hasTransient = computed(() => items.value.some(ws => TRANSIENT.has(ws.status)))
+  // A running workspace still waiting on its first frame counts as transient, so
+  // the grid keeps polling until it can be connected to.
+  const hasTransient = computed(() =>
+    items.value.some(ws => TRANSIENT.has(ws.status) || (ws.status === 'running' && !ws.connectable)),
+  )
   const hasRunning = computed(() => items.value.some(ws => ws.status === 'running'))
 
   async function fetch() {

@@ -282,12 +282,17 @@ class WorkspaceOut(BaseModel):
     # arrangement as preview_at: the PNG is served from GET /{id}/favicon.png and
     # this field is what tells the UI to ask for it instead of the browser logo.
     favicon_at: Optional[datetime]
+    # Running and ready for a client: its stream has produced a first frame (or
+    # the fallback window for uncapturable images has passed). Clients wait on
+    # this rather than status, since a stream opened too early never recovers.
+    connectable: bool = False
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def from_workspace(cls, ws) -> "WorkspaceOut":
         from server.config import get_settings
+        from server.preview import is_connectable
 
         stream_url = None
         if ws.status == "running":
@@ -342,6 +347,7 @@ class WorkspaceOut(BaseModel):
             error_message=ws.error_message,
             preview_at=ws.preview_at,
             favicon_at=ws.favicon_at,
+            connectable=is_connectable(ws),
         )
 
 

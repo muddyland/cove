@@ -28,11 +28,18 @@ import base64
 import io
 import json
 import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 # Longest edge of a stored preview. Cards render ~320px wide, so this stays sharp
 # on a 2x display without storing a full desktop frame per workspace.
+# A running workspace is held back from connecting until its stream has produced
+# its first frame, since opening the stream before Selkies is rendering leaves a
+# client that only a reload recovers. Past this long after going running it opens
+# anyway, so an image whose stream Cove can't capture still becomes usable.
+CONNECT_FALLBACK_SECONDS = 90
+
 _THUMB_MAX = 480
 _THUMB_QUALITY = 72
 
@@ -238,3 +245,17 @@ def capture(
             return None
         return assemble(stripes)
     return None
+
+
+def is_connectable(ws, now: "datetime | None" = None) -> bool:
+    """Whether a workspace's stream is ready for a client: running, and either
+    its first frame has been captured or CONNECT_FALLBACK_SECONDS have passed."""
+    if ws.status != "running":
+        return False
+    if ws.preview_at is not None or ws.started_at is None:
+        return True
+    started = ws.started_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return (now - started).total_seconds() >= CONNECT_FALLBACK_SECONDS

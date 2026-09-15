@@ -198,7 +198,11 @@ launch ──▶ creating ──▶ running ──▶ (halt) ──▶ stopped �
    the **sidecar netns before the workspace starts** (closing the startup race),
    and `tailscale0` egress is allowed first — so tailnet peers, subnet routes,
    and exit nodes keep working while the raw bridge stays firewalled.
-6. Wait for readiness (Docker-API only), then flip status to `running`.
+6. Wait for readiness (Docker-API only), then for the stream's first frame
+   (which becomes the preview), then flip status to `running`. Clients connect
+   only once the workspace is `connectable` — running with that first frame, or
+   past a fallback window for streams Cove can't capture; the status monitor keeps
+   retrying the frame meanwhile.
 
 **In-container app installation** (LinuxServer `custom-cont-init.d` + Docker Mods,
 wired by `docker_manager` and `scripts/`):

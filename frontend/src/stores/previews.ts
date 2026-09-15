@@ -11,13 +11,8 @@ import type { Workspace } from '@/types'
  * desktop, so they live for the lifetime of the page and no longer; closing the
  * tab leaves nothing behind on disk.
  *
- * Two sources feed the same map:
- *  - the server-side capture taken at launch, fetched on demand (`load`)
- *  - frames grabbed locally from a stream the user is watching (`setLocal`)
- *
- * Locally-grabbed frames are **never uploaded**. They refresh what this browser
- * shows and go no further, which is why a reload falls back to the launch frame
- * rather than whatever the workspace looked like a moment ago.
+ * The frame is the server-side capture taken at launch, fetched on demand
+ * (`load`).
  */
 /**
  * Frames are held as `data:` URLs, NOT `blob:` object URLs.
@@ -75,16 +70,6 @@ export const usePreviewsStore = defineStore('previews', () => {
     }
   }
 
-  /**
-   * Replace a workspace's preview with a frame grabbed from the live stream in
-   * this browser. Local only — never sent to the server.
-   */
-  async function setLocal(id: number, blob: Blob) {
-    urls.value[id] = await toDataUrl(blob)
-    // Clear the fetch marker so a genuinely newer server frame can still win.
-    delete fetchedAt.value[id]
-  }
-
   /** Drop a workspace's preview (halted, purged, or errored). */
   function clear(id: number) {
     delete urls.value[id]
@@ -96,5 +81,5 @@ export const usePreviewsStore = defineStore('previews', () => {
     fetchedAt.value = {}
   }
 
-  return { urls, load, setLocal, clear, clearAll }
+  return { urls, load, clear, clearAll }
 })

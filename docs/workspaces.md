@@ -181,10 +181,12 @@ needs nothing installed in the image. It doubles as the readiness signal: a fram
 Cove can actually decode proves the stream, compositor and encode pipeline are all
 working, which an HTTP 200 from the container's web server does not.
 
-While you have a workspace **open**, your browser refreshes that card's thumbnail
-from the stream it is already showing. Those refreshed frames are **local to your
-browser and are never uploaded** — they live in memory for the life of the page.
-Reload and the card falls back to the frame taken at launch.
+You can't connect to a workspace until that first frame exists — the card shows
+**STARTING** and the stream page **Starting desktop** instead. Opening the stream
+before Selkies is drawing leaves a client that only a page reload recovers. If the
+first frame hasn't arrived by the time the workspace goes running, Cove keeps
+trying in the background; an image whose stream it can't capture at all opens
+anyway about 90 seconds later.
 
 Privacy and lifecycle:
 

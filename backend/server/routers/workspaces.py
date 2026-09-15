@@ -18,6 +18,7 @@ from server.favicons import refresh_workspace_favicon
 from server.icons import bake_watermarked_icon
 from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
 from server.net import client_ip
+from server.preview import is_connectable
 from server.proot import APP_NAME_RE as PROOT_APP_NAME_RE
 from server.schemas import (
     ContainerLogsOut,
@@ -911,11 +912,12 @@ async def stream_ready(ws_id: int, user: CurrentUser, db: DbSession):
     workspace route exists. In subpath mode an un-published route doesn't 404 — it
     falls through to the control-plane catch-all (``PathPrefix('/')``), whose
     responses carry ``X-Cove``, so that header also counts as not-ready. The
-    container is confirmed answering before ``running``, so route propagation is
-    the only thing left to wait on.
+    container is confirmed answering before ``running``; until its stream has also
+    produced a first frame (see ``is_connectable``) this reports not-ready, since
+    a client that connects before Selkies renders never recovers without a reload.
     """
     ws = _get_workspace_or_404(ws_id, user, db)
-    if ws.status != "running":
+    if not is_connectable(ws):
         return StreamReadyOut(ready=False)
 
     settings = get_settings()

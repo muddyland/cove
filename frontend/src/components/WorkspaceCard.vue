@@ -2,7 +2,7 @@
   <div
     ref="cardEl"
     class="card"
-    :class="{ interactive: ws.status === 'running', 'menu-open': actionsOpen }"
+    :class="{ interactive: ws.status === 'running' && ws.connectable, 'menu-open': actionsOpen }"
     @click="open"
   >
     <!-- Live screen preview. Only for running nodes: previews are dropped when a
@@ -67,7 +67,7 @@
     <div class="card-actions" @click.stop>
       <!-- Primary: Connect (running), Boot (stopped/error), or a disabled
            progress button while the workspace is transitioning (starting, etc.). -->
-      <NeonButton v-if="ws.status === 'running'" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
+      <NeonButton v-if="ws.status === 'running' && ws.connectable" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
       <NeonButton
         v-else-if="isStopped"
         variant="success"
@@ -198,8 +198,8 @@ const _transientLabels: Record<string, string> = {
   stopping: 'STOPPING',
   migrating: 'MIGRATING',
 }
-const transientLabel = computed(
-  () => _transientLabels[props.ws.status] ?? props.ws.status.toUpperCase(),
+const transientLabel = computed(() =>
+  props.ws.status === 'running' ? 'STARTING' : _transientLabels[props.ws.status] ?? props.ws.status.toUpperCase(),
 )
 
 // Actions dropdown: run the chosen action and close the menu.
@@ -307,7 +307,7 @@ function truncateUrl(url: string) {
 }
 
 function open() {
-  if (props.ws.status === 'running') router.push(`/app/workspace/${props.ws.id}`)
+  if (props.ws.status === 'running' && props.ws.connectable) router.push(`/app/workspace/${props.ws.id}`)
 }
 
 async function handleStop() {

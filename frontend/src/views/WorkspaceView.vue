@@ -129,8 +129,9 @@
 
     <div v-else-if="isBooting" class="overlay-state">
       <img class="boot-icon" src="/favicon.svg" alt="" />
-      <p class="boot-text">{{ installing ? 'PROVISIONING NODE' : 'BOOTING NODE' }}<span class="ellipsis" /></p>
-      <p v-if="installing" class="boot-sub">Installing packages &amp; proot-apps — this can take a few minutes.</p>
+      <p class="boot-text">{{ startingDesktop ? 'STARTING DESKTOP' : installing ? 'PROVISIONING NODE' : 'BOOTING NODE' }}<span class="ellipsis" /></p>
+      <p v-if="startingDesktop" class="boot-sub">Waiting for the desktop to draw its first frame…</p>
+      <p v-else-if="installing" class="boot-sub">Installing packages &amp; proot-apps — this can take a few minutes.</p>
       <p v-else class="boot-sub">Waiting for the container to start…</p>
     </div>
 
@@ -195,7 +196,6 @@ import { workspacesApi } from '@/api/workspaces'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
-import { useLocalPreview } from '@/composables/useLocalPreview'
 import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
@@ -233,9 +233,6 @@ const streamError = ref<string | null>(null)
 const frameWrap = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
-// Refreshes this browser's grid thumbnail from the live stream. Purely local:
-// captures are held in memory for this tab and never sent to the server.
-const localPreview = useLocalPreview(() => wsId.value, () => streamUrl.value)
 
 // Quick-switch dropdown: jump between nodes (and boot stopped ones) without
 // going via the grid. Running nodes first, then booting, then the rest.
@@ -291,7 +288,6 @@ watch(wsId, async () => {
   foreignStreamPending.value = null
   streamError.value = null
   connecting.value = false
-  localPreview.stop()
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (!ws.value) await store.fetch()
   startPollIfNeeded()
@@ -341,7 +337,7 @@ async function loadStreamUrl() {
   // mode that URL carries a one-time token that bootstraps a per-workspace stream
   // cookie; in subpath mode it is the plain same-origin path. Never reuse the SPA
   // session cookie cross-origin.
-  if (ws.value?.status !== 'running' || streamUrl.value || connecting.value) return
+  if (!ws.value?.connectable || streamUrl.value || connecting.value) return
   const id = wsId.value
   connecting.value = true
   streamError.value = null
@@ -360,9 +356,6 @@ async function loadStreamUrl() {
       return
     }
     streamUrl.value = url
-    // Keep this browser's grid thumbnail current from the stream we're already
-    // watching. Local only — never uploaded (see useLocalPreview).
-    localPreview.start()
   } catch (e: any) {
     if (id === wsId.value) streamError.value = e.message || 'Failed to open the stream'
   } finally {
@@ -377,14 +370,12 @@ function acceptForeignStream() {
   foreignStreamPending.value = null
   if (!url) return
   streamUrl.value = url
-  localPreview.start()
 }
 
 function retryStream() {
   streamError.value = null
   streamUrl.value = null
   foreignStreamPending.value = null
-  localPreview.stop()
   loadStreamUrl()
 }
 
@@ -402,22 +393,29 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
 
-watch(() => ws.value?.status, (s) => {
-  if (s === 'running' || s === 'error') {
+watch(() => [ws.value?.status, ws.value?.connectable] as const, ([s, connectable]) => {
+  if ((s === 'running' && connectable) || s === 'error') {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
     booting.value = false
   }
-  if (s === 'running') loadStreamUrl()
+  if (s === 'running') {
+    if (connectable) loadStreamUrl()
+    else startPollIfNeeded()
+  }
 })
 
 function startPollIfNeeded() {
-  if (ws.value?.status === 'creating' && !pollTimer) {
+  const waiting = ws.value?.status === 'creating' || (ws.value?.status === 'running' && !ws.value.connectable)
+  if (waiting && !pollTimer) {
     pollTimer = setInterval(async () => {
       const fresh = await workspacesApi.get(wsId.value)
       const idx = store.items.findIndex(w => w.id === wsId.value)
       if (idx !== -1) store.items[idx] = fresh
       else store.items.push(fresh)
-      if (fresh.status !== 'creating') { clearInterval(pollTimer!); pollTimer = null }
+      if (fresh.status !== 'creating' && (fresh.status !== 'running' || fresh.connectable)) {
+        clearInterval(pollTimer!)
+        pollTimer = null
+      }
     }, 2000)
   }
 }
@@ -448,8 +446,17 @@ const booting = ref(false)
 // already in use by another workspace) — shown instead of a blank screen.
 const bootError = ref<string | null>(null)
 const showHalted = computed(() => lockedToWorkspace.value && halted.value)
+const startingDesktop = computed(() => ws.value?.status === 'running' && !ws.value.connectable)
+// Booting covers a running node whose stream hasn't rendered its first frame
+// yet: connecting then leaves a dead stream that only a reload recovers.
 const isBooting = computed(
-  () => !showHalted.value && !bootError.value && (booting.value || !ws.value || ws.value.status === 'creating'),
+  () =>
+    !showHalted.value &&
+    !bootError.value &&
+    (booting.value ||
+      !ws.value ||
+      ws.value.status === 'creating' ||
+      (ws.value.status === 'running' && !ws.value.connectable)),
 )
 
 // A per-workspace PWA opened while its node is offline boots it automatically and

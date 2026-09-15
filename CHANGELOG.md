@@ -11,6 +11,19 @@
   progress and logs, across all of your running workspaces.
 - The boot-time proot-apps install now runs entirely as the desktop user; it
   previously appended its log in `/config` as root.
+- **Removed the in-browser thumbnail refresh.** An open workspace no longer
+  opens a second stream socket every minute to update its grid card, which
+  rarely produced a frame and made each workspace's Selkies server leak a pair
+  of stats tasks per connection. Cards show the frame taken at launch. The
+  SPA's CSP drops the `wss://*.<workspace domain>` connect source that existed
+  only for it.
+- **No connecting before the desktop is drawing.** A workspace can be opened only
+  once its stream has produced its first frame (new `connectable` field; cards
+  show STARTING, the stream page "Starting desktop"). Previously a workspace
+  whose first frame took longer than the launch wait went running early, and a
+  per-workspace app opened then needed a manual reload. The status monitor keeps
+  retrying the frame, and streams Cove can't capture open after 90 seconds. The
+  reconciler no longer stamps `preview_at` when it promoted without a frame.
 
 ## 1.1.0 — security hardening release
 
