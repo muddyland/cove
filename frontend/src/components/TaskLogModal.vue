@@ -7,7 +7,8 @@
           <RefreshCw :size="13" /> Refresh
         </NeonButton>
       </div>
-      <pre ref="pre" class="output" :class="{ muted: !text }">{{ body }}</pre>
+      <div v-if="loading && !text && !error" class="output"><LoadingSpinner block /></div>
+      <pre v-else ref="pre" class="output" :class="{ muted: !text }">{{ body }}</pre>
     </div>
   </BaseModal>
 </template>
@@ -16,6 +17,7 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
+import LoadingSpinner from './LoadingSpinner.vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { prootApi } from '@/api/proot'
 import { isActiveTask, useTasksStore } from '@/stores/tasks'
@@ -49,7 +51,6 @@ const subtitle = computed(() => {
 })
 const body = computed(() => {
   if (error.value) return error.value
-  if (loading.value && !text.value) return 'Loading…'
   return text.value || '(no output yet)'
 })
 

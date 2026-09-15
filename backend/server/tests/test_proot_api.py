@@ -24,6 +24,7 @@ def _fresh_caches(monkeypatch):
     monkeypatch.setattr(proot_module, "_digest_cache", {})
     monkeypatch.setattr(proot_module, "_token_cache", None)
     monkeypatch.setattr(proot_module, "_inflight", {})
+    monkeypatch.setattr(proot_module, "_meta_cache", {})
     monkeypatch.setattr(proot_router, "_tasks_cache", {})
     monkeypatch.setattr(proot_router, "_calls", {})
 
@@ -64,9 +65,44 @@ def test_proot_apps_lists_catalog(client, monkeypatch):
     # Seed the module cache so no network call is made.
     monkeypatch.setattr(proot_module, "_cache", ["blender", "firefox"])
     setup_admin(client)
+    meta = {"firefox": {"icon_url": "https://x/f.svg", "full_name": "Firefox"}}
+    monkeypatch.setattr(proot_module, "_meta_cache", meta)
     resp = client.get("/api/proot-apps")
     assert resp.status_code == 200
-    assert resp.json() == {"apps": ["blender", "firefox"]}
+    assert resp.json() == {
+        "apps": ["blender", "firefox"],
+        "meta": {"firefox": {"icon_url": "https://x/f.svg", "full_name": "Firefox"}},
+    }
+
+
+def test_parse_metadata_builds_icon_urls_and_rejects_bad_values():
+    text = """include:
+  - name: firefox
+    full_name: Firefox
+    arch: linux/amd64,linux/arm64
+    icon: firefox.svg
+    description: "Browser"
+  - name: anki
+    full_name: "Anki"
+    icon: anydesk.svg
+  - name: evil
+    full_name: Evil
+    icon: ../../../../evil.svg
+  - name: evil2
+    icon: javascript:alert(1).svg
+  - name: evil3
+    icon: https://attacker.example/x.png
+  - name: Bad Name
+    icon: bad.svg
+"""
+    meta = proot_module.parse_metadata(text)
+    base = "https://raw.githubusercontent.com/linuxserver/proot-apps/master/metadata/img/"
+    assert meta["firefox"] == {"icon_url": base + "firefox.svg", "full_name": "Firefox"}
+    assert meta["anki"] == {"icon_url": base + "anydesk.svg", "full_name": "Anki"}
+    assert meta["evil"]["icon_url"] is None
+    assert meta["evil2"]["icon_url"] is None
+    assert meta["evil3"]["icon_url"] is None
+    assert "Bad Name" not in meta
 
 
 def test_proot_apps_requires_auth(client):
@@ -234,12 +270,19 @@ def test_installed_apps_report_updates(client, fake_docker_manager, monkeypatch,
         return {"firefox": NEW, "gimp": NEW}
 
     monkeypatch.setattr(proot_router, "latest_digests", fake_latest)
+    monkeypatch.setattr(proot_module, "_meta_cache", {
+        "firefox": {"icon_url": "https://x/firefox.svg", "full_name": "Firefox"},
+        "blender": {"icon_url": "https://x/blender.svg", "full_name": "Blender"},
+    })
     resp = client.get(f"/api/workspaces/{ws_id}/proot-apps")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["available"] is True and body["checked"] is True
+    assert body["available"] is True and body["checked"] is True and body["check_failed"] is False
     apps = {a["name"]: a for a in body["apps"]}
     assert apps["firefox"]["update_available"] is True
+    assert apps["firefox"]["icon_url"] == "https://x/firefox.svg"
+    assert apps["blender"]["full_name"] == "Blender"  # saved-but-missing rows too
+    assert apps["gimp"]["icon_url"] is None
     assert apps["gimp"]["update_available"] is False
     assert apps["krita"]["downloading"] is True and apps["krita"]["update_available"] is None
     assert apps["krita"]["in_config"] is False
@@ -279,8 +322,23 @@ def test_update_checks_only_query_catalog_apps(client, fake_docker_manager, monk
     monkeypatch.setattr(proot_router, "latest_digests", fake_latest)
     body = client.get(f"/api/workspaces/{ws_id}/proot-apps").json()
     assert seen == ["firefox"]
+    # Unchecked non-catalog apps aren't a failed check.
+    assert body["check_failed"] is False
     apps = {a["name"]: a for a in body["apps"]}
     assert apps["made-up-1"]["update_available"] is None
+
+
+def test_unresolved_catalog_app_reports_check_failed(client, fake_docker_manager, monkeypatch, catalog):
+    setup_admin(client)
+    ws_id = _make_ws(client)
+    fake_docker_manager.proot_command.return_value = (0, _listing(("firefox", OLD, 0), ("gimp", OLD, 0)))
+
+    async def fake_latest(apps, arch):
+        return {"firefox": NEW, "gimp": None}
+
+    monkeypatch.setattr(proot_router, "latest_digests", fake_latest)
+    body = client.get(f"/api/workspaces/{ws_id}/proot-apps").json()
+    assert body["check_failed"] is True
 
 
 def test_update_checks_skipped_without_catalog(client, fake_docker_manager, monkeypatch):

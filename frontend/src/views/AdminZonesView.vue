@@ -10,7 +10,7 @@
       <strong>Local</strong> is this control plane's own Docker daemon.
     </p>
 
-    <div v-if="loading" class="empty">LOADING…</div>
+    <LoadingSpinner v-if="loading" block />
     <div v-else class="table-wrap">
       <table>
         <thead>
@@ -106,6 +106,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'

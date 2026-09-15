@@ -28,12 +28,13 @@
       </p>
       <p v-if="checkNote" class="note">{{ checkNote }}</p>
 
-      <div v-if="!state && loading" class="note">Loading…</div>
+      <LoadingSpinner v-if="!state && loading" block />
       <div v-else-if="state && !state.apps.length" class="note">No proot-apps installed yet.</div>
       <ul v-else-if="state" class="app-list">
         <li v-for="app in state.apps" :key="app.name ?? app.folder" class="app-row">
           <div class="app-main">
-            <span class="app-name">{{ app.name ?? app.folder }}</span>
+            <AppIcon :src="app.icon_url" :size="22" />
+            <span class="app-name" :title="app.full_name ?? ''">{{ app.name ?? app.folder }}</span>
             <span class="chip" :class="statusOf(app).cls" :title="digestTitle(app)">{{ statusOf(app).label }}</span>
             <span v-if="app.name && !app.in_config && app.installed" class="chip muted" title="Not in this workspace's saved app list, so it isn't reinstalled after a migration">not saved</span>
           </div>
@@ -116,6 +117,8 @@
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
+import AppIcon from './AppIcon.vue'
+import LoadingSpinner from './LoadingSpinner.vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
@@ -181,7 +184,7 @@ const checkNote = computed(() => {
   const checkable = s.apps.filter(a => a.name && a.installed && a.installed_digest)
   if (!checkable.length) return ''
   if (!s.checked) return "Couldn't check for updates right now — try Refresh later."
-  if (checkable.some(a => a.update_available === null)) return "Couldn't check some apps for updates — try Refresh later."
+  if (s.check_failed) return "Couldn't check some apps for updates — try Refresh later."
   return ''
 })
 

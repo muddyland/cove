@@ -28,12 +28,13 @@ const listing: ProotApps = {
   available: true,
   arch: 'amd64',
   checked: true,
+  check_failed: false,
   apps: [
-    { name: 'firefox', folder: 'f', installed: true, downloading: false, in_config: true,
+    { name: 'firefox', full_name: 'Mozilla Firefox', icon_url: 'https://raw.githubusercontent.com/x/firefox.svg', folder: 'f', installed: true, downloading: false, in_config: true,
       installed_digest: digest('a'), latest_digest: digest('b'), update_available: true },
-    { name: 'gimp', folder: 'g', installed: true, downloading: false, in_config: true,
+    { name: 'gimp', full_name: null, icon_url: null, folder: 'g', installed: true, downloading: false, in_config: true,
       installed_digest: digest('a'), latest_digest: digest('a'), update_available: false },
-    { name: 'blender', folder: '', installed: false, downloading: false, in_config: true,
+    { name: 'blender', full_name: null, icon_url: null, folder: '', installed: false, downloading: false, in_config: true,
       installed_digest: null, latest_digest: null, update_available: null },
   ],
 }
@@ -64,6 +65,30 @@ describe('ProotAppsModal', () => {
     expect(text).toContain('up to date')
     expect(text).toContain('not installed')
     expect(text).toContain('1 update')
+  })
+
+  it('shows a spinner while the app list loads', async () => {
+    let resolve!: (v: ProotApps) => void
+    vi.mocked(prootApi.installed).mockImplementationOnce(() => new Promise(r => { resolve = r }))
+    const wrapper = mount(ProotAppsModal, { props: { ws, modelValue: false }, attachTo: document.body })
+    await wrapper.setProps({ modelValue: true })
+    expect(wrapper.find('[role="status"] .ring').exists()).toBe(true)
+    resolve(listing)
+    await flushPromises()
+    expect(wrapper.find('.app-list [role="status"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('firefox')
+  })
+
+  it('shows app icons, falling back to a generic glyph', async () => {
+    const wrapper = await mountOpen()
+    const imgs = wrapper.findAll('.app-row img')
+    expect(imgs).toHaveLength(1)
+    expect(imgs[0].attributes('src')).toBe('https://raw.githubusercontent.com/x/firefox.svg')
+    expect(imgs[0].attributes('referrerpolicy')).toBe('no-referrer')
+    // A broken image swaps to the fallback instead of rendering broken.
+    await imgs[0].trigger('error')
+    expect(wrapper.findAll('.app-row img')).toHaveLength(0)
+    expect(wrapper.findAll('.app-row .app-icon svg')).toHaveLength(3)
   })
 
   it('updates one app, and all apps with updates', async () => {

@@ -16,6 +16,7 @@ from server.models import Workspace
 from server.proot import (
     APP_NAME_RE,
     TASK_ID_RE,
+    app_metadata,
     clean_log,
     latest_digests,
     list_proot_apps,
@@ -70,7 +71,8 @@ async def proot_apps(user: CurrentUser):
         apps = await list_proot_apps()
     except Exception:
         apps = []
-    return {"apps": apps}
+    meta = await app_metadata()
+    return {"apps": apps, "meta": {a: meta[a] for a in apps if a in meta}}
 
 
 @contextmanager
@@ -175,6 +177,7 @@ async def workspace_proot_apps(ws_id: int, user: CurrentUser, db: DbSession, che
     installed = {a["name"]: a for a in listing["apps"] if a["name"]}
     latest: dict[str, str | None] = {}
     checked = False
+    check_failed = False
     if check and listing["arch"] and installed:
         # Only catalog apps are looked up. Folder names come from the workspace,
         # so without this a user could make the control plane query ghcr.io for
@@ -185,15 +188,15 @@ async def workspace_proot_apps(ws_id: int, user: CurrentUser, db: DbSession, che
         except Exception:
             catalog = set()
         if catalog:
+            wanted = [n for n, a in installed.items() if n in catalog and a["digest"] and not a["downloading"]]
             try:
-                latest = await latest_digests(
-                    [n for n, a in installed.items() if n in catalog and a["digest"] and not a["downloading"]],
-                    listing["arch"],
-                )
+                latest = await latest_digests(wanted, listing["arch"])
                 checked = True
+                check_failed = any(latest.get(n) is None for n in wanted)
             except Exception:
                 logger.exception("proot-apps update check failed for workspace %s", ws_id)
 
+    meta = await app_metadata()
     apps: list[ProotAppOut] = []
     for a in listing["apps"]:
         name = a["name"]
@@ -211,6 +214,7 @@ async def workspace_proot_apps(ws_id: int, user: CurrentUser, db: DbSession, che
                 installed_digest=a["digest"],
                 latest_digest=remote,
                 update_available=update,
+                **meta.get(name or "", {}),
             )
         )
     # Saved in the workspace but not on disk (failed or pending install).
@@ -220,10 +224,13 @@ async def workspace_proot_apps(ws_id: int, user: CurrentUser, db: DbSession, che
                 ProotAppOut(
                     name=name, folder="", installed=False, downloading=False, in_config=True,
                     installed_digest=None, latest_digest=None, update_available=None,
+                    **meta.get(name, {}),
                 )
             )
     apps.sort(key=lambda a: (a.name or a.folder).lower())
-    return ProotAppsOut(available=listing["available"], arch=listing["arch"], checked=checked, apps=apps)
+    return ProotAppsOut(
+        available=listing["available"], arch=listing["arch"], checked=checked, check_failed=check_failed, apps=apps
+    )
 
 
 @router.post("/workspaces/{ws_id}/proot-apps/tasks", response_model=ProotTaskOut, status_code=202)

@@ -96,6 +96,68 @@ async def list_proot_apps() -> list[str]:
     return apps
 
 
+# Upstream's per-app metadata (display name, icon file). Icons are served
+# straight from GitHub, like image logos: an <img> can't run an SVG's scripts, and
+# GitHub sends them with a sandboxing CSP and nosniff.
+_METADATA_URL = "https://raw.githubusercontent.com/linuxserver/proot-apps/master/metadata/metadata.yml"
+_ICON_BASE = "https://raw.githubusercontent.com/linuxserver/proot-apps/master/metadata/img/"
+_ICON_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(svg|png)$")
+_MAX_METADATA_BYTES = 1024 * 1024
+_meta_cache: dict[str, dict] | None = None
+_meta_retry_at = 0.0
+
+
+def parse_metadata(text: str) -> dict[str, dict]:
+    """``{app: {"icon_url", "full_name"}}`` from upstream's metadata.yml.
+
+    A line parser for its fixed two-level layout rather than a YAML dependency;
+    values are validated, so a malformed or unexpected entry just has no icon.
+    """
+    meta: dict[str, dict] = {}
+    current: dict | None = None
+    for line in text.splitlines():
+        # Any new entry ends the previous one, even one whose name is rejected.
+        m = re.match(r"^  - name:\s*(.*?)\s*$", line)
+        if m:
+            name = m.group(1)
+            current = meta.setdefault(name, {"icon_url": None, "full_name": None}) if APP_NAME_RE.match(name) else None
+            continue
+        if current is None:
+            continue
+        m = re.match(r"^    (icon|full_name):\s*(.*?)\s*$", line)
+        if not m:
+            continue
+        value = m.group(2).strip("\"'").strip()
+        if m.group(1) == "icon" and _ICON_RE.match(value):
+            current["icon_url"] = _ICON_BASE + value
+        elif m.group(1) == "full_name" and value and len(value) <= 80 and value.isprintable():
+            current["full_name"] = value
+    return meta
+
+
+async def app_metadata() -> dict[str, dict]:
+    """Upstream app metadata, cached for the process; ``{}`` when unavailable
+    (retried after a minute)."""
+    global _meta_cache, _meta_retry_at
+    if _meta_cache is not None:
+        return _meta_cache
+    if time.monotonic() < _meta_retry_at:
+        return {}
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+            resp = await client.get(_METADATA_URL)
+        resp.raise_for_status()
+        if len(resp.content) > _MAX_METADATA_BYTES:
+            raise ValueError("metadata too large")
+        _meta_cache = parse_metadata(resp.text)
+        logger.info("Loaded proot-apps metadata for %d apps", len(_meta_cache))
+        return _meta_cache
+    except Exception as exc:
+        logger.info("proot-apps metadata unavailable: %s", exc)
+        _meta_retry_at = time.monotonic() + _CATALOG_RETRY
+        return {}
+
+
 def split_apps(text: str | None) -> list[str]:
     """A stored proot_apps value as a de-duplicated list, order kept."""
     seen: list[str] = []

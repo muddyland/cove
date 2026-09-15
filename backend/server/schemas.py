@@ -526,6 +526,8 @@ class ContainerLogsOut(BaseModel):
 class ProotAppOut(BaseModel):
     # Default-repository app name; None for an app installed from another image.
     name: Optional[str]
+    full_name: Optional[str] = None  # upstream display name
+    icon_url: Optional[str] = None
     folder: str
     installed: bool
     downloading: bool
@@ -541,6 +543,7 @@ class ProotAppsOut(BaseModel):
     available: bool  # proot-apps exists in this image
     arch: Optional[str]
     checked: bool  # whether registry update checks ran
+    check_failed: bool = False  # some catalog app's latest build couldn't be resolved
     apps: list[ProotAppOut]
 
 

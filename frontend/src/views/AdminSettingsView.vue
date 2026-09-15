@@ -7,7 +7,7 @@
     <div class="panels">
       <section class="panel">
         <h3>// SYSTEM</h3>
-        <div v-if="loading" class="loading">Loading…</div>
+        <LoadingSpinner v-if="loading" block />
         <form v-else class="form" @submit.prevent="handleSave">
           <div class="form-group">
             <label>// tailscale image</label>
@@ -213,7 +213,7 @@
           Read-only summary of configuration derived from environment variables. To change these,
           update the environment and restart the server. Secrets are masked.
         </p>
-        <div v-if="envLoading" class="loading">Loading…</div>
+        <LoadingSpinner v-if="envLoading" block />
         <div v-else-if="envError" class="form-error">⚠ {{ envError }}</div>
         <div v-else-if="envEntries.length === 0" class="empty">NO ENVIRONMENT CONFIG</div>
         <div v-else class="table-wrap">
@@ -240,6 +240,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
@@ -393,7 +394,6 @@ async function handleSave() {
   font-size: 10px;
   color: var(--accent);
 }
-.loading { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
 
 .env-note { margin: 0 0 16px; }
 .env-table td { font-family: var(--font-mono); font-size: 12px; vertical-align: top; }

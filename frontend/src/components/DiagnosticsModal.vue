@@ -22,7 +22,8 @@
         </NeonButton>
       </div>
 
-      <pre class="output" :class="{ muted: !hasContent }">{{ body }}</pre>
+      <div v-if="loading && !current" class="output"><LoadingSpinner block /></div>
+      <pre v-else class="output" :class="{ muted: !hasContent }">{{ body }}</pre>
     </div>
   </BaseModal>
 </template>
@@ -31,6 +32,7 @@
 import { reactive, ref, computed, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
 import NeonButton from './NeonButton.vue'
+import LoadingSpinner from './LoadingSpinner.vue'
 import { workspacesApi, type LogSource } from '@/api/workspaces'
 import { Monitor, Network, ShieldCheck, Activity, RefreshCw } from 'lucide-vue-next'
 import type { Workspace } from '@/types'
@@ -62,7 +64,6 @@ const current = computed(() => cache[active.value])
 const hasContent = computed(() => !!current.value?.text)
 const body = computed(() => {
   const c = current.value
-  if (loading.value && !c) return 'Loading…'
   if (!c) return ''
   if (c.error) return c.error
   return c.text || '(no output)'

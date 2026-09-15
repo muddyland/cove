@@ -11,7 +11,7 @@
         <NeonButton variant="primary" @click="openAdd"><Plus :size="14" /> Add Image</NeonButton>
       </div>
     </div>
-    <div v-if="loading" class="empty">LOADING…</div>
+    <LoadingSpinner v-if="loading" block />
     <div v-else-if="!images.length" class="empty">
       No images yet — click “Sync LinuxServer” to import the catalog, or “Add Image”.
     </div>
@@ -179,6 +179,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import {

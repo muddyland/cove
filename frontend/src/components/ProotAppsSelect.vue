@@ -9,11 +9,11 @@
     <div class="proot-list">
       <label v-for="app in filtered" :key="app" class="proot-item">
         <input type="checkbox" :checked="selectedSet.has(app)" @change="toggle(app)" />
-        <span>{{ app }}</span>
+        <AppIcon :src="meta[app]?.icon_url" :size="18" />
+        <span :title="meta[app]?.full_name ?? ''">{{ app }}</span>
       </label>
-      <p v-if="!apps.length" class="proot-note">
-        {{ loadError ? 'Catalog unavailable — proot-apps cannot be selected.' : 'Loading…' }}
-      </p>
+      <p v-if="!apps.length && loadError" class="proot-note">Catalog unavailable — proot-apps cannot be selected.</p>
+      <LoadingSpinner v-else-if="!apps.length" block :size="16" />
       <p v-else-if="!filtered.length" class="proot-note">No apps match “{{ search }}”.</p>
     </div>
     <p v-if="selected.length" class="proot-count">
@@ -25,11 +25,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { prootApi } from '@/api/proot'
+import AppIcon from './AppIcon.vue'
+import LoadingSpinner from './LoadingSpinner.vue'
+import type { ProotAppMeta } from '@/types'
 
 // Selected app names. Bound with v-model from the parent form.
 const selected = defineModel<string[]>({ default: () => [] })
 
 const apps = ref<string[]>([])
+const meta = ref<Record<string, ProotAppMeta>>({})
 const search = ref('')
 const loadError = ref(false)
 
@@ -47,7 +51,9 @@ function toggle(app: string) {
 
 onMounted(async () => {
   try {
-    apps.value = (await prootApi.list()).apps
+    const res = await prootApi.list()
+    apps.value = res.apps
+    meta.value = res.meta ?? {}
   } catch {
     loadError.value = true
   }

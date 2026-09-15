@@ -12,7 +12,7 @@
       reclaims Docker space; it never removes named volumes (workspace data).
     </p>
 
-    <div v-if="loading && !info" class="empty">LOADING…</div>
+    <LoadingSpinner v-if="loading && !info" block />
 
     <div v-else class="zones">
       <section v-for="z in info?.zones ?? []" :key="z.zone_id" class="zone-card">
@@ -97,6 +97,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { RefreshCw, Trash2, Flame } from 'lucide-vue-next'

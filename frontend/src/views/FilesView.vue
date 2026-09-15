@@ -93,7 +93,7 @@
           </tbody>
         </table>
         <div v-if="!loading && !entries.length" class="empty">EMPTY DIRECTORY</div>
-        <div v-if="loading" class="empty">LOADING…</div>
+        <LoadingSpinner v-if="loading" block />
       </div>
     </template>
 
@@ -137,7 +137,7 @@
           </tbody>
         </table>
         <div v-if="!trashLoading && !trashEntries.length" class="empty">TRASH IS EMPTY</div>
-        <div v-if="trashLoading" class="empty">LOADING…</div>
+        <LoadingSpinner v-if="trashLoading" block />
       </div>
     </template>
 
@@ -155,6 +155,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { Upload, FolderUp, House, Folder, File, Download, Copy, Scissors, ClipboardPaste, Trash2, RotateCcw, X, Loader2 } from 'lucide-vue-next'

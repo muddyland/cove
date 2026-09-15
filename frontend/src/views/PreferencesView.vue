@@ -29,7 +29,7 @@
 
       <section class="panel">
         <h3>// TAILSCALE</h3>
-        <div v-if="tsLoading" class="loading">Loading…</div>
+        <LoadingSpinner v-if="tsLoading" block />
         <form v-else class="form" @submit.prevent="handleTailscale">
           <label class="checkbox-row">
             <input type="checkbox" v-model="ts.enabled" />
@@ -61,7 +61,7 @@
 
       <section class="panel">
         <h3>// GLUETUN VPN</h3>
-        <div v-if="gLoading" class="loading">Loading…</div>
+        <LoadingSpinner v-if="gLoading" block />
         <form v-else class="form" @submit.prevent="handleGluetun">
           <label class="checkbox-row">
             <input type="checkbox" v-model="g.enabled" />
@@ -124,7 +124,7 @@
 
       <section class="panel">
         <h3>// SSH KEY</h3>
-        <div v-if="sshLoading" class="loading">Loading…</div>
+        <LoadingSpinner v-if="sshLoading" block />
         <div v-else class="form">
           <p class="hint">
             Your account SSH key is copied into each workspace's <code>~/.ssh</code> at
@@ -195,6 +195,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { authApi } from '@/api/auth'
@@ -477,7 +478,6 @@ async function doRemove() {
   margin-bottom: 0;
 }
 .checkbox-row input { width: auto; margin: 0; }
-.loading { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
 .hint {
   color: var(--text-muted);
   font-family: var(--font-mono);

@@ -79,7 +79,8 @@ screen ("this can take a few minutes") until the desktop is ready.
 ### Managing proot-apps in a running workspace
 
 **Actions → Apps** on a running desktop (or **Apps** in the stream page's menu)
-lists the proot-apps installed in it and whether each is **up to date** or has an
+lists the proot-apps installed in it (with each app's icon from the LinuxServer
+catalog) and whether each is **up to date** or has an
 **update available**. Cove compares the build each app was installed from with the
 one ghcr.io serves now — the same check `proot-apps update` makes — without
 downloading anything. Results are cached for about half an hour; only apps from

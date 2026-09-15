@@ -54,6 +54,9 @@ export interface ContainerLogs {
 export interface ProotApp {
   // Default-repository app name; null for an app installed from another image.
   name: string | null
+  // Upstream display name and icon, when known.
+  full_name: string | null
+  icon_url: string | null
   folder: string
   installed: boolean
   downloading: boolean
@@ -69,7 +72,14 @@ export interface ProotApps {
   available: boolean
   arch: string | null
   checked: boolean
+  // A catalog app's latest build couldn't be resolved (apps outside the catalog aren't checked).
+  check_failed: boolean
   apps: ProotApp[]
+}
+
+export interface ProotAppMeta {
+  full_name: string | null
+  icon_url: string | null
 }
 
 export type ProotTaskOp = 'install' | 'update' | 'remove'

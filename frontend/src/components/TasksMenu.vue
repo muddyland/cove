@@ -17,7 +17,7 @@
       <div class="menu-head">
         <span class="menu-title">Background tasks</span>
       </div>
-      <p v-if="!tasks.loaded" class="empty">Loading…</p>
+      <LoadingSpinner v-if="!tasks.loaded" block :size="16" />
       <p v-else-if="!tasks.groups.length" class="empty">No background tasks. App installs and updates show up here.</p>
       <div v-for="g in tasks.groups" :key="g.workspace_id" class="group">
         <div class="group-head">
@@ -47,6 +47,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ListChecks, Loader2, ScrollText } from 'lucide-vue-next'
 import TaskSummary from './TaskSummary.vue'
+import LoadingSpinner from './LoadingSpinner.vue'
 import TaskLogModal from './TaskLogModal.vue'
 import { prootApi } from '@/api/proot'
 import { isActiveTask, useTasksStore } from '@/stores/tasks'

@@ -1,9 +1,9 @@
 import { api } from './client'
-import type { ProotApps, ProotTask, ProotTaskOp, WorkspaceProotTasks } from '@/types'
+import type { ProotAppMeta, ProotApps, ProotTask, ProotTaskOp, WorkspaceProotTasks } from '@/types'
 
 export const prootApi = {
   // Available LinuxServer proot-app names (for autocomplete in the launcher).
-  list: () => api.get<{ apps: string[] }>('/proot-apps'),
+  list: () => api.get<{ apps: string[]; meta?: Record<string, ProotAppMeta> }>('/proot-apps'),
   // Apps installed in a running workspace; `check` compares them with the registry.
   installed: (wsId: number, check = true) =>
     api.get<ProotApps>(`/workspaces/${wsId}/proot-apps?check=${check}`),
