@@ -30,7 +30,9 @@ for other images any submitted URL is ignored. Browsers accept **up to 6 URLs**
 Set in the **New Workspace** wizard — *Choose* (image) → *Set up* (name/URL) →
 optional *Network* / *Access* / *Apps* → *Review* — or via the API. A first
 launch only needs a name and an image; everything else has a safe default. The
-*Apps* step is shown for desktops only.
+*Apps* step is shown for desktop and app images; its proot-apps and AppImages
+fields for desktops only, since they add launchers to a desktop menu that a
+single-app image doesn't have.
 
 | Option | Default | What it does |
 |---|---|---|
@@ -52,10 +54,10 @@ launch only needs a name and an image; everything else has a safe default. The
 | **Wayland streaming** | on | Stream over Wayland (`PIXELFLUX_WAYLAND=true`) — Smithay plus labwc. Turn off to force the X11/Xvfb fallback. Required for GPU hardware encode. |
 | **GPU acceleration** | off | Hardware VAAPI video encode on the host GPU. Requires the admin GPU toggle **and** Wayland streaming. See [GPU acceleration](#gpu-acceleration). |
 | **Clear stale browser lock** | off | URL-capable images only: at boot, remove a leftover single-instance lock (`SingletonLock`/`SingletonCookie`/`SingletonSocket` for the Chromium family, `lock`/`.parentlock` for Firefox) from the saved `/config` profile. An unclean halt leaves one behind and the browser then exits on the next boot — the desktop streams but no browser appears. Only lock files are removed, never profile data. |
-| **Docker (dev)** | off | Run `docker` inside the workspace via a privileged nested daemon. Desktops on the local zone only; requires the admin Docker toggle. |
-| **Install packages** | — | Distro packages installed at boot (via `universal-package-install`). |
-| **proot-apps** | — | LinuxServer proot-apps to install at boot. |
-| **AppImages** | — | AppImage URLs to download, extract, and add to the menu. |
+| **Docker (dev)** | off | Run `docker` inside the workspace via a privileged nested daemon. Desktop and app workspaces on the local zone only; requires the admin Docker toggle. |
+| **Install packages** | — | Distro packages installed at boot (via `universal-package-install`). Desktop and app workspaces. |
+| **proot-apps** | — | LinuxServer proot-apps to install at boot. Desktops only. |
+| **AppImages** | — | AppImage URLs to download, extract, and add to the menu. Desktops only. |
 | **Tailscale exit node / accept routes / accept DNS** | accept routes & DNS on | Per-launch Tailscale options (Tailscale workspaces only). |
 
 ## Persistent vs. ephemeral storage

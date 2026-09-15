@@ -1480,8 +1480,11 @@ class DockerManager:
             # Per-workspace package installation (applies to both launch paths).
             self._apply_username(env, volumes, ws)
             self._apply_package_env(env, ws.install_packages)
-            self._apply_proot_apps(env, volumes, ws.proot_apps)
-            self._apply_appimages(env, volumes, ws.appimages)
+            # Launchers only exist on a desktop; rows from before that rule (or a
+            # workspace whose image was retyped) may still carry them.
+            if ws.kind == "desktop":
+                self._apply_proot_apps(env, volumes, ws.proot_apps)
+                self._apply_appimages(env, volumes, ws.appimages)
             self._apply_ssh_key(ws, volumes)
             self._apply_core_dump_cleanup(volumes)
             self._apply_cove_theme(volumes)

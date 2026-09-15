@@ -34,7 +34,8 @@ _seq = itertools.count()
 
 def _make_ws(client, *, status="running", workspace_type="desktop", proot_apps=None):
     n = next(_seq)
-    image_id = add_image(name=f"Desktop {n}", image_type="desktop")
+    # The type lives on the image: a workspace's own copy is ignored (see Workspace.kind).
+    image_id = add_image(name=f"Image {n}", image_type=workspace_type)
     resp = client.post("/api/workspaces", json={"name": f"apps-{n}", "image_id": image_id})
     assert resp.status_code == 201, resp.text
     ws_id = resp.json()["id"]
@@ -43,7 +44,6 @@ def _make_ws(client, *, status="running", workspace_type="desktop", proot_apps=N
         ws = db.get(Workspace, ws_id)
         ws.status = status
         ws.container_id = f"cove-ws-{ws_id}"
-        ws.workspace_type = workspace_type
         ws.proot_apps = proot_apps
         db.commit()
     finally:

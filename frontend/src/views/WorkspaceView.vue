@@ -161,7 +161,7 @@
       <iframe
         :src="streamUrl"
         class="workspace-frame"
-        allow="autoplay; clipboard-read; clipboard-write; fullscreen; camera; microphone"
+        allow="autoplay; clipboard-read; clipboard-write; fullscreen; camera; microphone; screen-wake-lock"
         allowfullscreen
       />
       <!-- CRT scanline / flicker overlay (pointer-events:none so the stream stays

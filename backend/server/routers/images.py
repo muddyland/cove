@@ -62,6 +62,13 @@ def upsert_catalog(db: Session, specs: list[dict], reset: bool = False) -> dict:
         if spec.get("description") and row.description != spec["description"]:
             row.description = spec["description"]
             changed = True
+        # A curated single-app image still typed "desktop" predates the app type
+        # (older seeds had no other). That's a known-wrong seed rather than an
+        # admin choice, and it offers desktop-only features (proot-apps, menu
+        # launchers) the image can't use, so correct it on every sync.
+        if spec.get("image_type") == "app" and row.image_type == "desktop":
+            row.image_type = "app"
+            changed = True
         if reset:
             # Force curated launch metadata back to catalog defaults, correcting
             # rows that drifted from an older seed (e.g. an app typed as desktop).

@@ -135,6 +135,7 @@
         :docker-enabled="dockerPolicy.enabled && form.zone_id === 0"
         :pkg-error="pkgErr"
         :app-image-error="appImageErr"
+        :launchers="launchersAvailable"
       />
     </section>
 
@@ -299,7 +300,10 @@ const urlRequired = computed(() => selectedImage.value?.image_type === 'link')
 const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
 // Package installs / proot-apps / AppImages / Docker-in-Docker only apply to a
 // full desktop — hide the whole Apps step for browser, link, and single-app images.
-const appsStepAvailable = computed(() => selectedImage.value?.image_type === 'desktop')
+// Packages and Docker work on desktops and single-app images; proot-apps and
+// AppImages only add desktop menu launchers, so they need a full desktop.
+const appsStepAvailable = computed(() => ['desktop', 'app'].includes(selectedImage.value?.image_type ?? ''))
+const launchersAvailable = computed(() => selectedImage.value?.image_type === 'desktop')
 
 // Inline validation (owned here so it's available whichever step is mounted).
 const dnsErr = computed(() => dnsError(form.custom_dns, form.dns_servers))
@@ -336,9 +340,9 @@ const accessSummary = computed(() => {
 })
 const appsSummary = computed(() => {
   const parts: string[] = []
-  if (form.proot_apps.length) parts.push(`${form.proot_apps.length} proot-app(s)`)
+  if (launchersAvailable.value && form.proot_apps.length) parts.push(`${form.proot_apps.length} proot-app(s)`)
   if (form.install_packages.trim()) parts.push('packages')
-  if (form.appimages.trim()) parts.push('AppImages')
+  if (launchersAvailable.value && form.appimages.trim()) parts.push('AppImages')
   return parts.join(', ')
 })
 
@@ -437,7 +441,7 @@ async function launch() {
   if (!form.image_id) { step.value = 'choose'; return }
   if (!form.name.trim() || (urlRequired.value && !form.target_url.trim())) { step.value = 'basics'; return }
   if (dnsErr.value) { customizing.value = true; step.value = 'network'; return }
-  if (appsStepAvailable.value && (pkgErr.value || appImageErr.value)) {
+  if (appsStepAvailable.value && (pkgErr.value || (launchersAvailable.value && appImageErr.value))) {
     customizing.value = true; step.value = 'apps'; return
   }
   error.value = ''
@@ -474,8 +478,8 @@ async function launch() {
       use_docker: form.use_docker,
       shared_profile: form.shared_profile,
       ...(form.install_packages.trim() ? { install_packages: form.install_packages.trim() } : {}),
-      ...(form.proot_apps.length ? { proot_apps: form.proot_apps.join(' ') } : {}),
-      ...(form.appimages.trim() ? { appimages: form.appimages.trim() } : {}),
+      ...(launchersAvailable.value && form.proot_apps.length ? { proot_apps: form.proot_apps.join(' ') } : {}),
+      ...(launchersAvailable.value && form.appimages.trim() ? { appimages: form.appimages.trim() } : {}),
     })
     const name = form.name
     open.value = false

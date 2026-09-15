@@ -308,7 +308,7 @@ class WorkspaceOut(BaseModel):
             user_id=ws.user_id,
             name=ws.name,
             status=ws.status,
-            workspace_type=ws.workspace_type,
+            workspace_type=ws.kind,
             container_id=ws.container_id,
             container_name=ws.container_name,
             zone_id=ws.zone_id,

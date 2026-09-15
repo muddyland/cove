@@ -22,13 +22,13 @@
       </p>
     </div>
 
-    <div class="form-group">
+    <div v-if="launchers" class="form-group">
       <label><Box :size="13" />proot-apps</label>
       <ProotAppsSelect v-model="form.proot_apps" />
       <p class="hint">Portable apps via LinuxServer <code>proot-apps</code>. Select one or more.</p>
     </div>
 
-    <div class="form-group">
+    <div v-if="launchers" class="form-group">
       <label><Download :size="13" />AppImage apps</label>
       <textarea v-model="form.appimages" rows="2" placeholder="https://example.com/App.AppImage" />
       <p v-if="appImageError" class="field-error">{{ appImageError }}</p>
@@ -52,13 +52,16 @@ export interface AppsForm {
   use_docker: boolean
 }
 
-defineProps<{
+withDefaults(defineProps<{
   form: AppsForm
   dockerEnabled?: boolean
+  // proot-apps and AppImages add launchers to a desktop's menu; app images have
+  // no menu to launch them from, so they're only offered on full desktops.
+  launchers?: boolean
   // Validation owned by the parent (see utils/workspaceForm) and passed in.
   pkgError?: string
   appImageError?: string
-}>()
+}>(), { launchers: true })
 </script>
 
 <style scoped>

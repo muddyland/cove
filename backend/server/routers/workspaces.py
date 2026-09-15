@@ -157,8 +157,18 @@ def _validate_appimage_list(raw: str) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid AppImage URL: {tok!r}")
 
 
-def _validate_app_fields(install_packages, proot_apps, appimages) -> None:
-    """Validate the per-workspace package/app inputs (no-ops on None/empty)."""
+def _validate_app_fields(kind: str, install_packages, proot_apps, appimages) -> None:
+    """Validate the per-workspace package/app inputs (no-ops on None/empty).
+
+    proot-apps and AppImages only add launchers to a desktop's menu, so they're
+    refused for every other kind: an app, browser or link image runs one program
+    with no menu to launch them from, and they'd still download at every boot.
+    """
+    if kind != "desktop" and ((proot_apps or "").strip() or (appimages or "").strip()):
+        raise HTTPException(
+            status_code=400,
+            detail="proot-apps and AppImages are only available on desktop workspaces",
+        )
     if install_packages:
         _validate_package_list(install_packages, "install_packages")
     if proot_apps:
@@ -351,7 +361,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     if image.image_type == "link" and not target_url:
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
 
-    _validate_app_fields(body.install_packages, body.proot_apps, body.appimages)
+    _validate_app_fields(image.image_type, body.install_packages, body.proot_apps, body.appimages)
 
     _validate_auto_remove(body.auto_remove, body.ephemeral)
     _validate_routing(db, user.id, body.use_tailscale, body.use_gluetun)
@@ -526,8 +536,10 @@ def clone_workspace(
         custom_dns=src.custom_dns,
         dns_servers=src.dns_servers,
         install_packages=src.install_packages,
-        proot_apps=src.proot_apps,
-        appimages=src.appimages,
+        # Menu launchers mean nothing on an app/browser image (see
+        # _validate_app_fields), so a clone onto one leaves them behind.
+        proot_apps=src.proot_apps if image.image_type == "desktop" else None,
+        appimages=src.appimages if image.image_type == "desktop" else None,
         allow_sudo=src.allow_sudo,
         inject_ssh_key=src.inject_ssh_key,
         pixelflux_wayland=src.pixelflux_wayland,
@@ -975,7 +987,7 @@ def update_workspace(
             data["target_url"], link=ws.workspace_type == "link"
         )
     _validate_app_fields(
-        data.get("install_packages"), data.get("proot_apps"), data.get("appimages")
+        ws.kind, data.get("install_packages"), data.get("proot_apps"), data.get("appimages")
     )
     # Validate the effective routing choice (incoming value, else current).
     _validate_routing(

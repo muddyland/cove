@@ -109,7 +109,7 @@ def _manager(ws):
 
 
 def _require_desktop(ws: Workspace, *, allow_creating: bool = False) -> None:
-    if ws.workspace_type != "desktop":
+    if ws.kind != "desktop":
         raise HTTPException(status_code=400, detail="proot-apps are only available on desktop workspaces")
     states = ("running", "creating") if allow_creating else ("running",)
     if ws.status not in states or not ws.container_id:
@@ -326,11 +326,11 @@ def my_proot_tasks(user: CurrentUser, db: DbSession):
     rows = db.scalars(
         select(Workspace).where(
             Workspace.user_id == user.id,
-            Workspace.workspace_type == "desktop",
             Workspace.status.in_(("running", "creating")),
             Workspace.container_id.is_not(None),
         )
     ).all()
+    rows = [ws for ws in rows if ws.kind == "desktop"]
     if not rows:
         return []
     targets = [(SimpleNamespace(id=ws.id, zone_id=ws.zone_id, container_id=ws.container_id), ws.name) for ws in rows]

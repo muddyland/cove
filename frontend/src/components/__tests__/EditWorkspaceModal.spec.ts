@@ -116,6 +116,52 @@ describe('EditWorkspaceModal', () => {
   })
 })
 
+describe('Apps fields by workspace kind', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+    vi.mocked(prootApi.list).mockResolvedValue({ apps: ['firefox'] })
+    vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
+    vi.mocked(workspacesApi.gpuPolicy).mockResolvedValue({ enabled: false })
+    vi.mocked(workspacesApi.dockerPolicy).mockResolvedValue({ enabled: false })
+    updateMock.mockResolvedValue({ ...desktopWs })
+  })
+
+  it('offers packages but not launchers on an app, and clears stale launchers on save', async () => {
+    const appWs: Workspace = {
+      ...desktopWs,
+      workspace_type: 'app',
+      install_packages: 'git',
+      proot_apps: 'firefox',
+      appimages: 'https://x.io/A.AppImage',
+    }
+    const wrapper = mount(EditWorkspaceModal, { props: { modelValue: true, ws: appWs } })
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).toContain('Install packages')
+    expect(text).not.toContain('proot-apps')
+    expect(text).not.toContain('AppImage')
+
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    const [, payload] = updateMock.mock.calls[0]
+    expect(payload.install_packages).toBe('git')
+    expect(payload.proot_apps).toBe('')
+    expect(payload.appimages).toBe('')
+  })
+
+  it('keeps launchers on a desktop', async () => {
+    const wrapper = mount(EditWorkspaceModal, {
+      props: { modelValue: true, ws: { ...desktopWs, proot_apps: 'firefox' } },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('proot-apps')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateMock.mock.calls[0][1].proot_apps).toBe('firefox')
+  })
+})
+
 describe('auto_remove ("discard when stopped")', () => {
   const browserWs: Workspace = {
     ...desktopWs,

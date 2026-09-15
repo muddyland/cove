@@ -280,6 +280,13 @@ class Workspace(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="workspaces")
     image: Mapped["WorkspaceImage"] = relationship("WorkspaceImage", back_populates="workspaces")
+
+    @property
+    def kind(self) -> str:
+        """The workspace's type as its image defines it *now*. ``workspace_type``
+        is a copy taken at creation, so it goes stale when an admin retypes the
+        image or a catalog reset corrects one (an app seeded as ``desktop``)."""
+        return self.image.image_type if self.image is not None else self.workspace_type
     zone: Mapped[Optional["Zone"]] = relationship("Zone")
 
 

@@ -45,6 +45,7 @@
           :docker-enabled="dockerPolicy.enabled && ws.zone_id === 0"
           :pkg-error="pkgErr"
           :app-image-error="appImageErr"
+          :launchers="launchersAvailable"
         />
       </template>
 
@@ -91,8 +92,10 @@ const urlCapable = computed(
   () => props.ws.workspace_type === 'browser' || props.ws.workspace_type === 'link',
 )
 const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
-// Apps (packages/proot/AppImages/Docker) only apply to full desktops.
-const appsAvailable = computed(() => props.ws.workspace_type === 'desktop')
+// Packages and Docker work on desktops and single-app images (from the app's own
+// terminal); proot-apps and AppImages only add desktop menu launchers.
+const appsAvailable = computed(() => props.ws.workspace_type === 'desktop' || props.ws.workspace_type === 'app')
+const launchersAvailable = computed(() => props.ws.workspace_type === 'desktop')
 
 const dnsErr = computed(() => dnsError(form.custom_dns, form.dns_servers))
 const pkgErr = computed(() => packagesError(form.install_packages))
@@ -213,7 +216,7 @@ onMounted(() => {
 
 async function handleSubmit() {
   error.value = ''
-  const invalid = dnsErr.value || (appsAvailable.value && (pkgErr.value || appImageErr.value))
+  const invalid = dnsErr.value || (appsAvailable.value && (pkgErr.value || (launchersAvailable.value && appImageErr.value)))
   if (invalid) {
     error.value = invalid
     return
@@ -249,8 +252,10 @@ async function handleSubmit() {
       use_docker: form.use_docker,
       shared_profile: form.shared_profile,
       install_packages: form.install_packages.trim(),
-      proot_apps: form.proot_apps.join(' '),
-      appimages: form.appimages.trim(),
+      // Cleared rather than kept on other kinds: the server refuses them there,
+      // and older rows may still carry them from before that rule.
+      proot_apps: launchersAvailable.value ? form.proot_apps.join(' ') : '',
+      appimages: launchersAvailable.value ? form.appimages.trim() : '',
     })
     open.value = false
     ui.toast('Workspace updated', 'success')

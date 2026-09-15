@@ -9,6 +9,15 @@
 - **Background tasks in the navbar.** proot-apps installs, updates and removals —
   including the ones a workspace runs at boot — show in a tasks menu with
   progress and logs, across all of your running workspaces.
+- **proot-apps and AppImages are desktop-only, end to end.** A workspace's type
+  now follows its image, so one created while its image was mistyped (a curated
+  app like VSCodium seeded as `desktop`) no longer offers the Apps dialog or
+  launcher fields. The API refuses them for app, browser and link workspaces, a
+  clone onto such an image drops them, and launch skips them on older rows.
+  Catalog sync corrects a curated app still typed `desktop`. App workspaces now
+  get the Apps step for packages and Docker (usable from the app's terminal).
+- The stream iframe allows `screen-wake-lock`, which Selkies requests to keep
+  the screen awake; it was logging a permissions-policy violation.
 - The boot-time proot-apps install now runs entirely as the desktop user; it
   previously appended its log in `/config` as root.
 - **Removed the in-browser thumbnail refresh.** An open workspace no longer
