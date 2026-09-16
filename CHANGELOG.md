@@ -18,6 +18,13 @@
   none of them. Firefox previously received Chromium flags that did nothing.
 - **Dark mode stands on its own again** in the launcher, rather than only under
   kiosk, and starts on when the browser you're launching from is in dark mode.
+  Previously the form only sent it when kiosk was on, so "dark without kiosk"
+  silently did nothing; the flags themselves always worked.
+- **Browser workspaces no longer offer sudo or SSH-key injection.** Neither means
+  anything without a terminal, and sudo would drop the container's
+  no-new-privileges for nothing. They're hidden in the launcher and the edit
+  form, refused on create/edit, and ignored at launch for rows that already carry
+  them. The extension drops its sudo toggle for the same reason.
 - **One launcher.** *Deploy Node* and *Open Website* are now a single **Launch**
   flow that asks what you want — Desktop, Browser or App — and then shows only
   the images of that kind. Browser launches keep the URL entry and options the

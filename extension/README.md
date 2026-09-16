@@ -18,7 +18,7 @@ button to send the current page. A small launcher window asks:
 | **Network** | **Direct**, **VPN** (Gluetun), or **Tailscale**. Routes you have not configured are shown disabled, with the reason |
 | **Ephemeral** | **On by default** — nothing is saved and the profile is discarded when the workspace stops |
 | **Discard when stopped** | **On by default** — `docker run --rm` for workspaces: the record is deleted when it halts, so opening links does not fill your grid with cards that can only start blank. Requires ephemeral, and follows it automatically |
-| **Advanced** | Kiosk mode, dark mode, LAN access, custom DNS, Tailscale exit node, GPU, sudo, Wayland, and the workspace name. The kiosk and dark options appear only for browsers that honour them — Cove reports that per image, so e.g. Firefox offers kiosk but not dark, and Vivaldi offers neither |
+| **Advanced** | Kiosk mode, dark mode, LAN access, custom DNS, Tailscale exit node, GPU, Wayland, and the workspace name. The kiosk and dark options appear only for browsers that honour them — Cove reports that per image, so e.g. Firefox offers kiosk but not dark, and Vivaldi offers neither |
 | **Dark mode** | **Follows this browser.** If you browse dark, the workspace opens dark, so a link does not flash white at you. Untick it to override — and an override is what gets remembered, so following the browser stays live |
 
 Tick **Remember these as my defaults** and the next link opens with the same

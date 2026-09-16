@@ -38,7 +38,12 @@
       />
 
       <div class="section-head">Access</div>
-      <AccessFields :form="form" :gpu-enabled="gpuPolicy.enabled" :show-browser-lock="urlCapable" />
+      <AccessFields
+        :form="form"
+        :gpu-enabled="gpuPolicy.enabled"
+        :show-browser-lock="urlCapable"
+        :permissions="!urlCapable"
+      />
 
       <template v-if="appsAvailable">
         <div class="section-head">Apps</div>
@@ -251,8 +256,8 @@ async function handleSubmit() {
             custom_dns: form.custom_dns,
             dns_servers: form.custom_dns ? form.dns_servers.trim() : '',
           }),
-      allow_sudo: form.allow_sudo,
-      inject_ssh_key: form.inject_ssh_key,
+      allow_sudo: urlCapable.value ? undefined : form.allow_sudo,
+      inject_ssh_key: urlCapable.value ? undefined : form.inject_ssh_key,
       pixelflux_wayland: form.pixelflux_wayland,
       clear_browser_lock: form.clear_browser_lock,
       gpu_accel: form.gpu_accel,

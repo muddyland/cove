@@ -1529,7 +1529,9 @@ class DockerManager:
                 # workspace itself opts out of sudo.
                 hardening = self._build_hardening(
                     no_new_privileges_setting=get_workspace_no_new_privileges(db),
-                    allow_sudo=ws.allow_sudo,
+                    # Never for a browser/link workspace: nothing there can use
+                    # sudo, so dropping no-new-privileges would only cost.
+                    allow_sudo=ws.allow_sudo and ws.takes_permissions,
                 )
 
                 # Custom DNS: forwarders for the workspace resolver. Only for
@@ -2824,7 +2826,7 @@ class DockerManager:
         when the workspace opts out or the owner has no key on file. Mutates
         ``volumes`` in place.
         """
-        if not ws.inject_ssh_key:
+        if not ws.inject_ssh_key or not ws.takes_permissions:
             return
         user = ws.user
         if not user or not user.ssh_private_key:

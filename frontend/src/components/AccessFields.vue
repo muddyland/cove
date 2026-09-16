@@ -1,5 +1,6 @@
 <template>
   <div class="access-fields">
+    <template v-if="permissions">
     <div class="group-label"><ShieldCheck :size="12" />Permissions</div>
 
     <ToggleRow v-model="form.inject_ssh_key">
@@ -19,6 +20,8 @@
         Settings, which overrides this choice.
       </template>
     </ToggleRow>
+
+    </template>
 
     <div class="group-label"><FolderSync :size="12" />Storage</div>
 
@@ -83,12 +86,16 @@ export interface AccessForm {
   shared_profile: boolean
 }
 
-defineProps<{
+withDefaults(defineProps<{
   form: AccessForm
   gpuEnabled?: boolean
   // Browser-only; hidden for desktop/app workspaces.
   showBrowserLock?: boolean
-}>()
+  // In-container permissions (SSH key, sudo). Hidden for browser/link
+  // workspaces: one kiosk-ish program, no terminal to use either, and sudo
+  // there only drops the container's no-new-privileges for nothing.
+  permissions?: boolean
+}>(), { permissions: true })
 </script>
 
 <style scoped>

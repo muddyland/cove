@@ -108,7 +108,10 @@ export function buildLaunchPayload({ name, imageId, targetUrl, network = 'direct
     kiosk_dark: !!a.dark && !!f.dark,
 
     lan_access: !!a.lanAccess,
-    allow_sudo: !!a.allowSudo,
+    // No sudo: this only ever launches browser workspaces, which have no
+    // terminal to use it — and asking for it drops the container's
+    // no-new-privileges hardening for nothing. Cove refuses it there too.
+    allow_sudo: false,
     gpu_accel: !!a.gpuAccel,
     clear_browser_lock: !!a.clearBrowserLock,
     pixelflux_wayland: a.wayland === undefined ? true : !!a.wayland,
@@ -186,7 +189,7 @@ export async function errorDetail(response) {
  */
 export function hasNonDefaultAdvanced(advanced) {
   const a = advanced || {};
-  const flags = ['kiosk', 'kioskMenu', 'lanAccess', 'customDns', 'gpuAccel', 'allowSudo', 'clearBrowserLock'];
+  const flags = ['kiosk', 'kioskMenu', 'lanAccess', 'customDns', 'gpuAccel', 'clearBrowserLock'];
   if (flags.some((k) => a[k])) return true;
   // dark is tri-state and only stored when it overrides the browser, so it
   // counts as a deviation whichever way it was set — including to false.

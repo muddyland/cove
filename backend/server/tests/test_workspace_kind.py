@@ -99,3 +99,48 @@ def test_catalog_sync_corrects_an_app_seeded_as_desktop(client, monkeypatch):
         db.close()
     assert types["VSCodium"] == "app"
     assert types["Custom"] == "desktop"  # not curated: left alone
+
+
+# ── in-container permissions ───────────────────────────────────────────────────
+
+def test_browser_workspaces_get_no_sudo_or_ssh_key(client, fake_docker_manager):
+    """A browser runs one kiosk-ish program with no terminal: an injected key has
+    nothing to use it, and sudo would only drop no-new-privileges."""
+    setup_admin(client)
+    browser = add_image(name="Chromium", image_type="browser", url_env="CHROME_CLI")
+    body = {"name": "b", "image_id": browser, "allow_sudo": True, "inject_ssh_key": True}
+    ws = client.post("/api/workspaces", json=body).json()
+    assert ws["allow_sudo"] is False
+    assert ws["inject_ssh_key"] is False
+
+    # And they can't be switched on later either.
+    _set(Workspace, ws["id"], status="stopped")
+    edited = client.patch(f"/api/workspaces/{ws['id']}", json={"allow_sudo": True, "inject_ssh_key": True})
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["allow_sudo"] is False
+    assert edited.json()["inject_ssh_key"] is False
+
+
+def test_desktops_and_apps_keep_them(client, fake_docker_manager):
+    setup_admin(client)
+    for kind in ("desktop", "app"):
+        image = add_image(name=f"Img {kind}", image_type=kind)
+        ws = client.post(
+            "/api/workspaces",
+            json={"name": f"w-{kind}", "image_id": image, "allow_sudo": True, "inject_ssh_key": True},
+        ).json()
+        assert ws["allow_sudo"] is True, kind
+        assert ws["inject_ssh_key"] is True, kind
+
+
+def test_launch_never_drops_hardening_for_a_browser(client, fake_docker_manager):
+    """Older rows may still carry allow_sudo; the launch path applies the rule."""
+    from server.docker_manager import DockerManager
+
+    ws = Workspace(workspace_type="browser", allow_sudo=True, inject_ssh_key=True)
+    ws.image = WorkspaceImage(image_type="browser", url_env="CHROME_CLI")
+    assert ws.takes_permissions is False
+    hardening = DockerManager._build_hardening(
+        no_new_privileges_setting=False, allow_sudo=ws.allow_sudo and ws.takes_permissions
+    )
+    assert "no-new-privileges:true" in hardening["security_opt"]

@@ -49,8 +49,8 @@ single-app image doesn't have.
 | **Route through Gluetun (VPN)** | off | Egress via a per-workspace VPN sidecar. Requires an uploaded config. One active Gluetun workspace per user. |
 | **Custom DNS** + **DNS servers** | off | Use specific resolvers (≤6 IPs) instead of Docker/host DNS. Ignored for Tailscale workspaces. |
 | **LAN access** | off | Opt in to direct LAN egress. Only effective if the admin enabled LAN access and configured subnets. |
-| **Allow sudo** | off | Permit in-container `sudo`. Overridden if the admin force-disables sudo globally. |
-| **Inject SSH key** | on | Copy your account SSH key into `~/.ssh`. No-op if you have no key on file. |
+| **Allow sudo** | off | Permit in-container `sudo`. Overridden if the admin force-disables sudo globally. **Desktop and app workspaces only** — a browser has no terminal to use it, and granting it would only drop the container's `no-new-privileges`. |
+| **Inject SSH key** | on | Copy your account SSH key into `~/.ssh`. No-op if you have no key on file. **Desktop and app workspaces only** — nothing in a browser workspace would use it. |
 | **Wayland streaming** | on | Stream over Wayland (`PIXELFLUX_WAYLAND=true`) — Smithay plus labwc. Turn off to force the X11/Xvfb fallback. Required for GPU hardware encode. |
 | **GPU acceleration** | off | Hardware VAAPI video encode on the host GPU. Requires the admin GPU toggle **and** Wayland streaming. See [GPU acceleration](#gpu-acceleration). |
 | **Clear stale browser lock** | off | URL-capable images only: at boot, remove a leftover single-instance lock (`SingletonLock`/`SingletonCookie`/`SingletonSocket` for the Chromium family, `lock`/`.parentlock` for Firefox) from the saved `/config` profile. An unclean halt leaves one behind and the browser then exits on the next boot — the desktop streams but no browser appears. Only lock files are removed, never profile data. |

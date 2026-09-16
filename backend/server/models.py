@@ -282,6 +282,17 @@ class Workspace(Base):
     image: Mapped["WorkspaceImage"] = relationship("WorkspaceImage", back_populates="workspaces")
 
     @property
+    def takes_permissions(self) -> bool:
+        """Whether in-container permissions (sudo, an SSH key) mean anything here.
+
+        A browser or link workspace runs one kiosk-ish program with no terminal:
+        an injected key has nothing to use it, and sudo only drops
+        no-new-privileges for no gain. Desktops and single-app images (VSCodium's
+        terminal, say) genuinely use both.
+        """
+        return self.kind not in ("browser", "link")
+
+    @property
     def kind(self) -> str:
         """The workspace's type as its image defines it *now*. ``workspace_type``
         is a copy taken at creation, so it goes stale when an admin retypes the

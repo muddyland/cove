@@ -145,7 +145,7 @@ function applyDefaults(d) {
   const adv = d.advanced || {};
   $('ephemeral').checked = d.ephemeral === undefined ? true : !!d.ephemeral;
   $('autoRemove').checked = d.autoRemove === undefined ? true : !!d.autoRemove;
-  for (const k of ['kiosk', 'kioskMenu', 'lanAccess', 'customDns', 'gpuAccel', 'allowSudo', 'clearBrowserLock']) {
+  for (const k of ['kiosk', 'kioskMenu', 'lanAccess', 'customDns', 'gpuAccel', 'clearBrowserLock']) {
     $(k).checked = !!adv[k];
   }
 
@@ -197,7 +197,6 @@ function collectAdvanced() {
     dnsServers: $('dnsServers').value,
     tsExitNode: $('tsExitNode').value,
     gpuAccel: $('gpuAccel').checked,
-    allowSudo: $('allowSudo').checked,
     clearBrowserLock: $('clearBrowserLock').checked,
     wayland: $('wayland').checked,
   };

@@ -157,6 +157,11 @@ def _validate_appimage_list(raw: str) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid AppImage URL: {tok!r}")
 
 
+def _takes_permissions(kind: str) -> bool:
+    """See Workspace.takes_permissions — the same rule, from an image type."""
+    return kind not in ("browser", "link")
+
+
 def _validate_app_fields(kind: str, install_packages, proot_apps, appimages) -> None:
     """Validate the per-workspace package/app inputs (no-ops on None/empty).
 
@@ -396,8 +401,11 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         install_packages=body.install_packages or None,
         proot_apps=body.proot_apps or None,
         appimages=body.appimages or None,
-        allow_sudo=body.allow_sudo,
-        inject_ssh_key=body.inject_ssh_key,
+        # Meaningless on a browser/link workspace (no terminal to use them), and
+        # sudo there only weakens the container's hardening — so they're stored
+        # off rather than kept as settings that quietly do nothing.
+        allow_sudo=body.allow_sudo and _takes_permissions(image.image_type),
+        inject_ssh_key=body.inject_ssh_key and _takes_permissions(image.image_type),
         pixelflux_wayland=body.pixelflux_wayland,
         clear_browser_lock=body.clear_browser_lock,
         gpu_accel=body.gpu_accel,
@@ -540,8 +548,8 @@ def clone_workspace(
         # _validate_app_fields), so a clone onto one leaves them behind.
         proot_apps=src.proot_apps if image.image_type == "desktop" else None,
         appimages=src.appimages if image.image_type == "desktop" else None,
-        allow_sudo=src.allow_sudo,
-        inject_ssh_key=src.inject_ssh_key,
+        allow_sudo=src.allow_sudo and _takes_permissions(image.image_type),
+        inject_ssh_key=src.inject_ssh_key and _takes_permissions(image.image_type),
         pixelflux_wayland=src.pixelflux_wayland,
         clear_browser_lock=src.clear_browser_lock,
         gpu_accel=src.gpu_accel,
@@ -1004,6 +1012,12 @@ def update_workspace(
         data.get("gpu_accel", ws.gpu_accel),
         data.get("pixelflux_wayland", ws.pixelflux_wayland),
     )
+
+    if not ws.takes_permissions:
+        # Same rule as create: a browser has no terminal for an SSH key, and sudo
+        # there only drops hardening.
+        data.pop("allow_sudo", None)
+        data.pop("inject_ssh_key", None)
 
     nullable_text = {"target_url", "ts_exit_node", "install_packages", "proot_apps", "appimages", "dns_servers"}
     prev_url = ws.target_url

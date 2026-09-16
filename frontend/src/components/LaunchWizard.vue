@@ -149,6 +149,7 @@
         :form="form"
         :gpu-enabled="gpuPolicy.enabled"
         :show-browser-lock="urlCapable"
+        :permissions="!urlCapable"
       />
     </section>
 
@@ -392,8 +393,10 @@ const networkSummary = computed(() => {
 })
 const accessSummary = computed(() => {
   const parts: string[] = []
-  parts.push(form.inject_ssh_key ? 'SSH key' : 'no SSH key')
-  if (form.allow_sudo) parts.push('sudo')
+  if (!urlCapable.value) {
+    parts.push(form.inject_ssh_key ? 'SSH key' : 'no SSH key')
+    if (form.allow_sudo) parts.push('sudo')
+  }
   if (form.gpu_accel) parts.push('GPU')
   if (form.use_docker) parts.push('Docker')
   if (form.shared_profile) parts.push('shared profile')
@@ -533,8 +536,8 @@ async function launch() {
             custom_dns: form.custom_dns,
             ...(form.custom_dns && form.dns_servers.trim() ? { dns_servers: form.dns_servers.trim() } : {}),
           }),
-      allow_sudo: form.allow_sudo,
-      inject_ssh_key: form.inject_ssh_key,
+      allow_sudo: !urlCapable.value && form.allow_sudo,
+      inject_ssh_key: !urlCapable.value && form.inject_ssh_key,
       pixelflux_wayland: form.pixelflux_wayland,
       clear_browser_lock: form.clear_browser_lock,
       gpu_accel: form.gpu_accel,
