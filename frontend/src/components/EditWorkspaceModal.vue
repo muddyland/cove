@@ -11,13 +11,15 @@
         <textarea v-model="form.target_url" rows="2" placeholder="https://example.com" />
         <p class="hint">One URL per line — each opens in its own tab (up to 6).</p>
       </div>
-      <ToggleRow v-if="urlCapable && urlCount <= 1" v-model="form.kiosk">Kiosk mode (full-screen, no browser chrome)</ToggleRow>
+      <ToggleRow v-if="urlCapable && ws.browser.dark" v-model="form.kiosk_dark">Dark mode</ToggleRow>
+      <ToggleRow v-if="showKiosk" v-model="form.kiosk">
+        {{ ws.browser.kiosk ? 'Kiosk mode (full-screen, no browser chrome)' : 'Start full-screen' }}
+      </ToggleRow>
       <p v-if="urlCapable && urlCount > 1" class="hint">
         Multiple tabs open full-screen with a tab bar — kiosk lock is unavailable.
       </p>
-      <template v-if="urlCapable && urlCount <= 1 && form.kiosk">
+      <template v-if="showKiosk && form.kiosk && ws.browser.kiosk && ws.browser.fullscreen">
         <div class="ts-field toggles">
-          <ToggleRow v-model="form.kiosk_dark">Dark mode</ToggleRow>
           <ToggleRow v-model="form.kiosk_menu">Allow right-click / refresh menu</ToggleRow>
         </div>
       </template>
@@ -92,6 +94,10 @@ const urlCapable = computed(
   () => props.ws.workspace_type === 'browser' || props.ws.workspace_type === 'link',
 )
 const urlCount = computed(() => form.target_url.trim().split(/\s+/).filter(Boolean).length)
+// Only offer start-up options this browser honours (see catalog.browser_features).
+const showKiosk = computed(
+  () => urlCapable.value && urlCount.value <= 1 && (props.ws.browser.kiosk || props.ws.browser.fullscreen),
+)
 // Packages and Docker work on desktops and single-app images (from the app's own
 // terminal); proot-apps and AppImages only add desktop menu launchers.
 const appsAvailable = computed(() => props.ws.workspace_type === 'desktop' || props.ws.workspace_type === 'app')
@@ -227,7 +233,8 @@ async function handleSubmit() {
       name: form.name,
       target_url: urlCapable.value ? form.target_url : undefined,
       kiosk: urlCapable.value ? (urlCount.value <= 1 ? form.kiosk : false) : undefined,
-      kiosk_dark: urlCapable.value ? (urlCount.value <= 1 ? form.kiosk_dark : false) : undefined,
+      // Dark rendering is independent of the kiosk window (and of tab count).
+      kiosk_dark: urlCapable.value ? (props.ws.browser.dark && form.kiosk_dark) : undefined,
       kiosk_menu: urlCapable.value ? (urlCount.value <= 1 ? form.kiosk_menu : false) : undefined,
       ephemeral: urlCapable.value ? form.ephemeral : undefined,
       use_tailscale: form.use_tailscale,

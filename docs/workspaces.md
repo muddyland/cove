@@ -13,7 +13,7 @@ The type comes from the chosen image:
 |---|---|---|
 | **Desktop** | Webtop (XFCE/KDE/MATE on Ubuntu/Debian/Arch/Fedora/Alpine), Kali | No |
 | **App** | Single-application Selkies GUI images — VSCodium, Blender, GIMP, Krita, Inkscape, Audacity, Calibre, digiKam, Obsidian, Kdenlive, FreeCAD, darktable | No |
-| **Browser** | Chromium, Brave, Firefox, Edge | Yes — booted at the given URL(s) |
+| **Browser** | Chromium, Brave, Firefox, Edge, Helium, Vivaldi, Opera | Yes — booted at the given URL(s) |
 | **Link** (legacy) | custom catalog entries | Yes — required |
 
 All images are LinuxServer.io, Selkies-based, and persist to `/config`. They serve
@@ -39,8 +39,8 @@ single-app image doesn't have.
 | **Name** | — | Display name; also sanitized into the storage directory name. Required. |
 | **Image** | — | Catalog image to run. Must be enabled. Required. |
 | **Target URL(s)** | — | Startup URL(s) for browser/link images; one per line, http/https only, up to 6. |
-| **Kiosk mode** | off | Single-URL browser only: full-screen, no chrome (`--kiosk`). |
-| **Dark mode** | off | Kiosk only: forces page dark mode. |
+| **Kiosk mode** | off | Single-URL browser only: full-screen, no chrome (`--kiosk`). Offered only where the browser honours it — see [browser start-up options](#browser-start-up-options). |
+| **Dark mode** | follows your browser | Forces page dark mode (`--force-dark-mode`) — independent of kiosk. Starts on when the browser you launch from is in dark mode, so a link doesn't flash white. Chromium-family browsers only. |
 | **Allow right-click / refresh menu** | off | Kiosk only: uses `--start-fullscreen` instead of a hard `--kiosk` lock. |
 | **Ephemeral** | off | No persistent `/config` mount; all data wiped on halt. (Offered for URL-capable images.) |
 | **Discard when stopped** | off | `docker run --rm` semantics: the workspace *record* is deleted once its container stops, so the card leaves the grid instead of lingering as one that can only ever start blank. **Requires Ephemeral** — it is rejected on a persistent workspace, whose saved home would be destroyed by an ordinary Halt (that is Purge's job, and Purge asks). Applies to the admin **max runtime** auto-stop too. |
@@ -59,6 +59,29 @@ single-app image doesn't have.
 | **proot-apps** | — | LinuxServer proot-apps to install at boot. Desktops only. |
 | **AppImages** | — | AppImage URLs to download, extract, and add to the menu. Desktops only. |
 | **Tailscale exit node / accept routes / accept DNS** | accept routes & DNS on | Per-launch Tailscale options (Tailscale workspaces only). |
+
+### Browser start-up options
+
+Kiosk mode, dark mode and the "allow the menu" variant are browser flags, and not
+every image honours them — so the launcher only offers what the chosen browser
+actually supports, rather than passing a flag that does nothing.
+
+| Browser | Kiosk (`--kiosk`) | Full-screen (`--start-fullscreen`) | Dark mode |
+|---|---|---|---|
+| Chromium, Brave, Edge, **Helium**, **Opera** | yes | yes | yes |
+| Firefox | yes | no | no |
+| **Vivaldi** | no | no | no |
+
+Verified by launching each image and inspecting the window it produced:
+
+- **Firefox** takes Firefox flags, not Chromium ones. It has `--kiosk`, but no
+  `--start-fullscreen` and no dark-mode switch, so only Kiosk mode is offered.
+- **Vivaldi** honours none of them: LinuxServer's wrapper passes
+  `--start-maximized` ahead of Cove's flags, and Vivaldi accepts `--kiosk` but
+  ignores it (a long-standing Vivaldi limitation). A fresh Vivaldi profile also
+  shows its own setup wizard before the startup URL opens.
+- An image Cove doesn't recognise (an admin's own catalog entry) is assumed to
+  take Chromium flags, which is what these images almost always are.
 
 ## Persistent vs. ephemeral storage
 

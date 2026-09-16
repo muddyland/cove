@@ -17,6 +17,22 @@ export interface AuthConfig {
 
 export type ImageType = 'desktop' | 'browser' | 'link' | 'app'
 
+export interface ExtensionInfo {
+  // False when a build ships without the vendored extension.
+  available: boolean
+  version: string | null
+  size_bytes: number
+  filename: string
+}
+
+export interface BrowserFeatures {
+  // Start-up options this browser image honours; the launcher hides the rest
+  // rather than passing a flag the browser ignores.
+  kiosk: boolean
+  fullscreen: boolean
+  dark: boolean
+}
+
 export interface WorkspaceImage {
   id: number
   name: string
@@ -28,6 +44,9 @@ export interface WorkspaceImage {
   enabled: boolean
   logo_url: string | null
   created_at: string
+  // Which start-up options this image's browser honours (all false for a
+  // non-browser image).
+  browser: BrowserFeatures
 }
 
 export type WorkspaceStatus = 'creating' | 'running' | 'stopping' | 'migrating' | 'stopped' | 'error'
@@ -155,6 +174,7 @@ export interface Workspace {
   // window for uncapturable images passed). Connect on this, not on status: a
   // stream opened before Selkies renders never recovers without a reload.
   connectable: boolean
+  browser: BrowserFeatures
   use_tailscale: boolean
   use_gluetun: boolean
   ephemeral: boolean

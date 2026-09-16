@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open in Cove — Options</title>
+  <link rel="stylesheet" href="launch.css" />
+  <style>
+    body { min-width: 0; }
+    main { max-width: 540px; margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 10px; }
+    h2 { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin: 22px 0 2px; }
+    p.note { font-size: 11px; color: var(--muted); margin: 0; }
+    .row { display: flex; gap: 8px; }
+    .row .go { width: auto; padding: 8px 14px; white-space: nowrap; }
+    .secondary { background: var(--section); color: var(--text); border: 1px solid var(--border); }
+    .secondary:hover:not(:disabled) { border-color: var(--accent); box-shadow: none; }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <img src="../icons/icon-48.png" alt="" width="18" height="18" />
+    <h1>Open in Cove — Options</h1>
+  </header>
+
+  <main>
+    <h2>Server</h2>
+    <label class="field">
+      <span class="label">Cove address</span>
+      <div class="row">
+        <input id="baseUrl" type="text" placeholder="cove.example.com" spellcheck="false" />
+        <button id="save" class="go">Save</button>
+      </div>
+    </label>
+    <p class="note">The extension asks for permission to talk to this one host, and nothing else.</p>
+    <p class="status" id="server-status" role="status"></p>
+
+    <h2>Account</h2>
+    <p class="status" id="auth-status" role="status"></p>
+
+    <div id="signin" hidden>
+      <p class="note" id="signin-note"></p>
+      <div class="row" style="margin-top:8px">
+        <button id="open-login" class="go"></button>
+        <button id="connect" class="go secondary">I've signed in — connect</button>
+      </div>
+
+      <details id="password-block" hidden style="margin-top:12px">
+        <summary>Sign in with a password instead</summary>
+        <div class="adv">
+          <p class="note">Local accounts only. An SSO account has no password here — use the button above.</p>
+          <label class="field">
+            <span class="label">Username</span>
+            <input id="username" type="text" autocomplete="username" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span class="label">Password</span>
+            <input id="password" type="password" autocomplete="current-password" />
+          </label>
+          <button id="login" class="go">Sign in</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="row" id="session-actions" hidden>
+      <button id="recheck" class="go secondary">Re-check</button>
+      <button id="signout" class="go secondary">Forget token</button>
+    </div>
+
+    <details style="margin-top:14px">
+      <summary>Advanced</summary>
+      <div class="adv">
+        <label class="field">
+          <span class="label">Session cookie name</span>
+          <input id="cookieName" type="text" spellcheck="false" />
+        </label>
+        <p class="note">
+          Only change this if your Cove sets <code>COVE_COOKIE_SESSION_NAME</code>.
+          The extension reads this cookie to adopt your existing browser session.
+        </p>
+        <button id="save-cookie" class="go secondary">Save</button>
+      </div>
+    </details>
+
+    <p class="note" style="margin-top:16px">
+      Only an access token is stored, never a password. It is refreshed
+      automatically, and changing your Cove password revokes it immediately.
+    </p>
+  </main>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

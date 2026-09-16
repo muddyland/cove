@@ -99,6 +99,7 @@ python-jose for JWTs. Key modules:
 | `/api/users` | Per-user Tailscale config. |
 | `/api/files` | Per-user file browser (list/upload/download/delete) confined to the user's storage. |
 | `/api` (proot) | proot-apps catalog; per-workspace installed apps, update status and background tasks; `/proot-tasks` for the navbar. |
+| `/api/extension` | The "Open in Cove" browser extension as a zip, built in memory from `extension/` (vendored by `scripts/vendor-extension.sh`) and cached until those files change. |
 
 ### Frontend (`frontend/src/`)
 

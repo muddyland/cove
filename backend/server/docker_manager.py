@@ -161,7 +161,7 @@ def _apps_script() -> str:
     raise ProotUnavailable("app driver script is missing")
 
 
-def _build_browser_cli(ws) -> str:
+def _build_browser_cli(ws, url_env: str | None = None) -> str:
     """Assemble the browser CLI string (the *_CLI env value) for a URL workspace.
 
     ``target_url`` may hold several whitespace/newline-separated URLs; the browser
@@ -169,20 +169,38 @@ def _build_browser_cli(ws) -> str:
     (http/https + host, no whitespace/control chars), so the space-joined result
     can't smuggle extra CLI args.
 
-    Chromium/Brave flags:
-      --kiosk           full-screen, locked (no context menu / shortcuts / tab bar)
+    Only flags this browser actually supports are passed (see
+    ``catalog.browser_features``); the rest are dropped, because an unsupported
+    flag is at best ignored and at worst parsed as something else. Firefox, for
+    one, takes none of the Chromium switches but its own ``--kiosk``.
+
+      --kiosk            full-screen, locked (no context menu / shortcuts / tab bar)
       --start-fullscreen full-screen but keeps the menu + tab bar
       --force-dark-mode --enable-features=WebContentsForceDark  force dark pages
     """
+    from server.catalog import browser_features
+
+    feats = browser_features(url_env)
     urls = (ws.target_url or "").split()
     flags = []
     if len(urls) > 1:
         # Multiple tabs need the tab bar — locked --kiosk would hide it, so we
         # never use it for multi-URL launches (use functional full-screen instead).
-        flags.append("--start-fullscreen")
+        if feats["fullscreen"]:
+            flags.append("--start-fullscreen")
     elif ws.kiosk:
-        flags.append("--start-fullscreen" if ws.kiosk_menu else "--kiosk")
-    if ws.kiosk_dark:
+        if ws.kiosk_menu:
+            # Asked to keep the menu: full-screen, or nothing at all. Falling back
+            # to the kiosk lock would take away the very thing that was asked for.
+            if feats["fullscreen"]:
+                flags.append("--start-fullscreen")
+        elif feats["kiosk"]:
+            flags.append("--kiosk")
+        elif feats["fullscreen"]:
+            # No kiosk lock in this browser (Vivaldi ignores the flag): full-screen
+            # is the closest thing it has.
+            flags.append("--start-fullscreen")
+    if ws.kiosk_dark and feats["dark"]:
         flags += ["--force-dark-mode", "--enable-features=WebContentsForceDark"]
     return " ".join([*flags, *urls])
 
@@ -1395,7 +1413,7 @@ class DockerManager:
             # (e.g. CHROME_CLI / BRAVE_CLI / FIREFOX_CLI), which is appended to the
             # browser command. Assemble kiosk/full-screen + dark-mode flags.
             if ws.target_url and image.url_env:
-                env[image.url_env] = _build_browser_cli(ws)
+                env[image.url_env] = _build_browser_cli(ws, image.url_env)
             elif ws.workspace_type == "link" and ws.target_url:
                 # Legacy webtop-based link workspaces use a custom init script.
                 env["LAUNCH_URL"] = ws.target_url

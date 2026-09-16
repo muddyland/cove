@@ -88,7 +88,7 @@ def list_images(user: CurrentUser, db: DbSession):
     images = db.scalars(
         select(WorkspaceImage).where(WorkspaceImage.enabled.is_(True)).order_by(WorkspaceImage.name)
     ).all()
-    return images
+    return [ImageOut.from_image(i) for i in images]
 
 
 @router.get("/pull-status", response_model=dict[int, str])
@@ -196,7 +196,7 @@ async def create_image(body: ImageCreate, user: AdminUser, db: DbSession):
     if image.logo_url:
         await refresh_image_icons(db, only_missing=True)
         db.refresh(image)
-    return image
+    return ImageOut.from_image(image)
 
 
 @router.patch("/{image_id}", response_model=ImageOut)
@@ -219,7 +219,7 @@ async def update_image(image_id: int, body: ImageUpdate, user: AdminUser, db: Db
     if logo_changed and image.logo_url:
         await refresh_image_icons(db, only_missing=True)
         db.refresh(image)
-    return image
+    return ImageOut.from_image(image)
 
 
 def _remove_docker_image(docker_image: str, zone_id: int = 0) -> None:

@@ -1,0 +1,109 @@
+/* Cove's palette, so the launcher reads as part of the same product. */
+:root {
+  --bg: #06060f;
+  --panel: #0b0b1e;
+  --section: #10102a;
+  --border: #1c1c42;
+  --text: #c8d8ff;
+  --muted: #7b8bb5;
+  --accent: #00f5ff;
+  --danger: #ff2055;
+  --ok: #00ff9d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 380px;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 ui-monospace, "Share Tech Mono", "Courier New", monospace;
+}
+
+.bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--accent);
+}
+.bar h1 {
+  flex: 1; margin: 0;
+  font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 6px rgba(0, 245, 255, 0.5);
+}
+.bar a { color: var(--muted); text-decoration: none; font-size: 15px; }
+.bar a:hover { color: var(--accent); }
+
+main { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+.field { display: block; border: 0; padding: 0; margin: 0; }
+.label {
+  display: block; margin-bottom: 4px;
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted);
+}
+
+input[type="text"], input[type="url"], input[type="password"], select {
+  width: 100%; padding: 7px 8px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  font: inherit;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 6px rgba(0, 245, 255, 0.3); }
+
+.segmented { display: flex; gap: 6px; }
+.segmented button {
+  flex: 1; padding: 7px 4px;
+  background: var(--section); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 3px;
+  font: inherit; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.segmented button:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.segmented button[aria-pressed="true"] {
+  color: var(--accent); border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(0, 245, 255, 0.35);
+}
+.segmented button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.hint { margin: 6px 0 0; font-size: 11px; color: var(--muted); min-height: 1em; }
+
+.toggle { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.toggle input { margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+.toggle strong { display: block; font-weight: normal; }
+.toggle em { display: block; font-style: normal; font-size: 11px; color: var(--muted); }
+.toggle.primary {
+  padding: 9px; border: 1px solid var(--border); border-radius: 3px; background: var(--section);
+}
+.toggle.sub, .field.sub { margin-left: 20px; }
+
+details { border: 1px solid var(--border); border-radius: 3px; background: var(--panel); }
+summary {
+  padding: 8px 10px; cursor: pointer;
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted);
+}
+summary:hover { color: var(--accent); }
+.adv { display: flex; flex-direction: column; gap: 10px; padding: 4px 10px 12px; }
+
+.go {
+  padding: 10px; width: 100%;
+  background: var(--accent); color: #06060f;
+  border: none; border-radius: 3px;
+  font: inherit; font-weight: bold; letter-spacing: 1.5px; text-transform: uppercase;
+  cursor: pointer;
+}
+.go:hover:not(:disabled) { box-shadow: 0 0 12px rgba(0, 245, 255, 0.5); }
+.go:disabled { opacity: 0.5; cursor: default; }
+
+.status { margin: 0; min-height: 1.4em; font-size: 11px; color: var(--muted); }
+.status.error { color: var(--danger); }
+.status.ok { color: var(--ok); }
+
+.centered { padding: 32px 16px; text-align: center; color: var(--muted); display: flex; flex-direction: column; gap: 14px; }
+
+/* Shown in the collapsed Advanced summary, so a default derived from the
+   browser is visible without forcing the panel open on every launch. */
+.adv-note { margin: 0 0 4px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.summary-note { color: var(--accent); text-transform: none; letter-spacing: 0; }
+.summary-note:not(:empty)::before { content: " · "; color: var(--muted); }

@@ -27,6 +27,9 @@ COPY --from=frontend-build /app/dist ./static
 COPY scripts/ ./scripts/
 # Product docs served by the in-app reader (/api/docs).
 COPY docs/ ./docs/
+# The browser extension offered for download (/api/extension), vendored from its
+# own repo by scripts/vendor-extension.sh.
+COPY extension/ ./extension/
 
 RUN chmod +x ./scripts/*.sh
 

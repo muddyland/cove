@@ -217,7 +217,7 @@ compromised agent cannot forge session/refresh tokens.
 
 ## 7. Running workspaces on a zone
 
-- **Launch:** the **Launch Workspace** and **Open Website** modals show a **Zone**
+- **Launch:** the launcher shows a **Zone**
   selector once at least one remote zone is enrolled (it's hidden when only Local
   exists). Defaults to **Local**. (API: `zone_id` on `POST /api/workspaces`.)
   Websites opened on a remote zone are forced **ephemeral** — no browser data is

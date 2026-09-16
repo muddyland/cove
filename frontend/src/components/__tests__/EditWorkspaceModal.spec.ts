@@ -59,6 +59,7 @@ const desktopWs: Workspace = {
   error_message: null,
   preview_at: null,
   connectable: false,
+  browser: { kiosk: false, fullscreen: false, dark: false },
   favicon_at: null,
   use_tailscale: false,
   use_gluetun: false,

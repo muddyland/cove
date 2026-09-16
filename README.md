@@ -60,13 +60,16 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 ### 🖥️ Workspaces
 
 - **One-click launch** — spin up a desktop or browser container and stream it straight to your browser.
-- **Open-a-website flow** — paste a URL, pick a browser, and Cove boots a kiosk-style browser pointed at it (web-app delivery), with optional dark mode and menu/full-screen variants.
+- **One launcher** — a single flow asks what you want (desktop, browser or app), then shows only images of that kind. Browsers can boot straight at up to six URLs, kiosk-style for web-app delivery, with dark mode and full-screen variants offered only where that browser honours them.
+- **Seven browsers** — Chromium, Brave, Firefox, Edge, Helium, Vivaldi and Opera.
 - **In-stream controls** — fullscreen, a CRT toggle, HALT, and a **quick-switch menu** to jump between (or boot) other nodes without leaving the stream.
 - **Live dashboard** — workspaces split into Active/Offline, with per-container **CPU & memory** on running cards and the **Tailscale IP** shown (and copyable) for tailnet nodes.
 - **Screen previews** — every running card shows a still of what's actually on that node's screen, captured from its own stream (X11 and Wayland alike). Doubles as the readiness check: a node isn't "running" until its stream renders a real frame. Previews are dropped the moment a workspace halts, and a workspace can't be connected to until its stream has rendered that first frame.
 - **Per-workspace apps** — install distro packages (`universal-package-install`), LinuxServer **proot-apps**, and **AppImages** (auto-extracted with a desktop launcher) at launch, then **manage them from the UI**: see what's installed, which proot-apps have a newer build, update/install/remove either kind, and watch it run in a **background tasks** menu.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
 - **Persistent storage** — per-workspace home directories that survive restarts (or go fully ephemeral, wiped on halt).
+
+- **Browser extension** — *Open in Cove* sends any link from your own Chrome-based browser into a disposable Cove browser workspace. Served by your own server from **Preferences → Browser extension**, no store or internet needed.
 
 ### 🌐 Networking & privacy
 

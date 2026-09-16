@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Open in Cove",
+  "version": "0.1.0",
+  "description": "Open links in a disposable Cove browser workspace \u2014 pick the browser, the network route, and kiosk/dark options. For Chrome-based browsers.",
+  "icons": {
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Open this page in Cove",
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "options_page": "src/options.html",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "cookies"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ]
+}

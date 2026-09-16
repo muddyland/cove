@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Cove serves the browser extension.** *Open in Cove* is vendored into the image
+  and offered under **Preferences → Browser extension** as a zip, with install
+  steps — no store, no internet access needed. It is for Chrome-based browsers;
+  the Firefox manifest entry it carried was never a build anyone ran. The
+  extension now also hides start-up options the chosen browser ignores, the same
+  way the launcher does.
+
+- **Helium, Vivaldi and Opera** join the browser catalog (run **Admin → Images →
+  Sync LinuxServer** to pick them up).
+- **Start-up options follow the browser.** Kiosk mode, dark mode and the
+  "allow the menu" variant are only offered where the chosen browser honours
+  them, and unsupported flags are no longer passed. Verified per image: Firefox
+  takes its own `--kiosk` but has no full-screen or dark switch; Vivaldi honours
+  none of them. Firefox previously received Chromium flags that did nothing.
+- **Dark mode stands on its own again** in the launcher, rather than only under
+  kiosk, and starts on when the browser you're launching from is in dark mode.
+- **One launcher.** *Deploy Node* and *Open Website* are now a single **Launch**
+  flow that asks what you want — Desktop, Browser or App — and then shows only
+  the images of that kind. Browser launches keep the URL entry and options the
+  old website flow had, including remote-zone launches always being ephemeral.
+
 - **Manage AppImages from the Apps dialog.** A workspace's installed AppImages
   are listed with their size and source URL, and can be installed (paste a URL),
   updated (paste the URL to install over one — the new copy is swapped in only

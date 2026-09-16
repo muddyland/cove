@@ -12,20 +12,34 @@
       </li>
     </ol>
 
-    <!-- Step 1: Choose an image -->
-    <section v-if="step === 'choose'" class="wizard-step">
+    <!-- Step 1: What to launch -->
+    <section v-if="step === 'kind'" class="wizard-step">
+      <div class="kinds" role="listbox" aria-label="What to launch">
+        <button
+          v-for="k in KINDS"
+          :key="k.value"
+          type="button"
+          class="kind-card"
+          role="option"
+          :aria-selected="kind === k.value"
+          :class="{ selected: kind === k.value, empty: !countFor(k.value) }"
+          @click="pickKind(k.value)"
+        >
+          <component :is="k.icon" :size="22" class="kind-icon" />
+          <span class="kind-name">{{ k.label }}</span>
+          <span class="kind-desc">{{ k.desc }}</span>
+          <span class="kind-count">{{ countFor(k.value) }} image{{ countFor(k.value) === 1 ? '' : 's' }}</span>
+        </button>
+      </div>
+      <p v-if="!images.length" class="hint empty">
+        No images yet — an admin can add them from Admin → Images.
+      </p>
+    </section>
+
+    <!-- Step 2: Choose an image -->
+    <section v-else-if="step === 'choose'" class="wizard-step">
       <div class="chooser-controls">
         <input v-model="search" class="search" type="search" placeholder="Search images…" aria-label="Search images" />
-        <div class="chips">
-          <button
-            v-for="f in typeFilters"
-            :key="f.value"
-            type="button"
-            class="chip"
-            :class="{ on: typeFilter === f.value }"
-            @click="typeFilter = f.value"
-          >{{ f.label }}</button>
-        </div>
       </div>
       <p v-if="!filteredImages.length" class="hint empty">No images match. An admin can add images from Admin → Images.</p>
       <div v-else class="gallery" role="listbox" aria-label="Images">
@@ -78,16 +92,26 @@
         <p class="hint">One URL per line — each opens in its own tab (up to 6).</p>
         <p v-if="showError('url')" class="field-error">A target URL is required for this image.</p>
       </div>
-      <ToggleRow v-if="urlCapable && urlCount <= 1" v-model="form.kiosk">Kiosk mode (full-screen, no browser chrome)</ToggleRow>
-      <p v-if="urlCapable && urlCount > 1" class="hint">
+      <ToggleRow v-if="urlCapable && browserFeatures.dark" v-model="form.kiosk_dark" @update:model-value="darkTouched = true">
+        Dark mode
+        <template v-if="darkFollowsBrowser" #hint>
+          On, matching this browser. Pages without a dark theme are rendered dark.
+        </template>
+      </ToggleRow>
+      <ToggleRow v-if="showKiosk" v-model="form.kiosk">
+        {{ browserFeatures.kiosk ? 'Kiosk mode (full-screen, no browser chrome)' : 'Start full-screen' }}
+      </ToggleRow>
+      <p v-if="urlCapable && urlCount > 1 && browserFeatures.fullscreen" class="hint">
         Multiple tabs open full-screen with a tab bar — kiosk lock is unavailable (it would hide the tabs).
       </p>
-      <template v-if="urlCapable && urlCount <= 1 && form.kiosk">
+      <template v-if="showKiosk && form.kiosk && browserFeatures.kiosk && browserFeatures.fullscreen">
         <div class="ts-field toggles">
-          <ToggleRow v-model="form.kiosk_dark">Dark mode</ToggleRow>
           <ToggleRow v-model="form.kiosk_menu">Allow right-click / refresh menu</ToggleRow>
         </div>
       </template>
+      <p v-if="urlCapable && !browserFeatures.kiosk && !browserFeatures.fullscreen" class="hint">
+        {{ selectedImage?.name }} ignores start-up window flags, so it opens in its normal window.
+      </p>
       <template v-if="urlCapable">
         <ToggleRow v-model="form.ephemeral">
           Ephemeral (no saved data — wiped when halted)
@@ -157,9 +181,10 @@
 
     <!-- Footer navigation -->
     <div class="wizard-footer">
-      <NeonButton v-if="step !== 'choose'" type="button" variant="secondary" @click="goBack">Back</NeonButton>
+      <NeonButton v-if="step !== 'kind'" type="button" variant="secondary" @click="goBack">Back</NeonButton>
       <span class="spacer" />
-      <template v-if="step === 'choose'">
+      <template v-if="step === 'kind'" />
+      <template v-else-if="step === 'choose'">
         <NeonButton type="button" variant="primary" :disabled="!form.image_id" @click="goNext">Next</NeonButton>
       </template>
       <template v-else-if="step === 'basics'">
@@ -208,8 +233,9 @@ import type { DockerPolicy, GpuPolicy, ImageType, LanPolicy, WorkspaceImage } fr
 
 const open = defineModel<boolean>({ default: false })
 
-type StepKey = 'choose' | 'basics' | 'network' | 'access' | 'apps' | 'review'
+type StepKey = 'kind' | 'choose' | 'basics' | 'network' | 'access' | 'apps' | 'review'
 const STEPS: { key: StepKey; label: string }[] = [
+  { key: 'kind', label: 'Launch' },
   { key: 'choose', label: 'Choose' },
   { key: 'basics', label: 'Set up' },
   { key: 'network', label: 'Network' },
@@ -217,7 +243,7 @@ const STEPS: { key: StepKey; label: string }[] = [
   { key: 'apps', label: 'Apps' },
   { key: 'review', label: 'Review' },
 ]
-const step = ref<StepKey>('choose')
+const step = ref<StepKey>('kind')
 // The linear "early launch" path skips the Network/Access/Apps steps; they only
 // appear once the user opts into Customize, so the rail shows either 3 or 6 steps.
 const CUSTOMIZE_STEPS = new Set<StepKey>(['network', 'access', 'apps'])
@@ -244,14 +270,35 @@ const error = ref('')
 const submitted = ref(false)
 const nameEdited = ref(false)
 const search = ref('')
-const typeFilter = ref<ImageType | 'all'>('all')
-const typeFilters: { label: string; value: ImageType | 'all' }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Desktop', value: 'desktop' },
-  { label: 'App', value: 'app' },
-  { label: 'Browser', value: 'browser' },
-  { label: 'Link', value: 'link' },
+
+// What to launch, asked before anything else: it decides which images are worth
+// showing and which questions the rest of the wizard needs to ask.
+type Kind = 'desktop' | 'browser' | 'app'
+const KINDS: { value: Kind; label: string; desc: string; icon: any }[] = [
+  { value: 'desktop', label: 'Desktop', desc: 'A full Linux desktop you can install things into.', icon: Monitor },
+  { value: 'browser', label: 'Browser', desc: 'A browser, optionally opening straight to a site.', icon: Globe },
+  { value: 'app', label: 'App', desc: 'One application streamed on its own (VSCodium, GIMP…).', icon: AppWindow },
 ]
+const kind = ref<Kind>('desktop')
+
+// Dark mode starts on when this browser is dark: opening a link from a dark
+// browser into a workspace that flashes white is what that avoids. The launcher
+// extension does the same. Touching the toggle makes it your choice.
+const prefersDark = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-color-scheme: dark)').matches
+const darkTouched = ref(false)
+const darkFollowsBrowser = computed(() => !darkTouched.value && prefersDark && form.kiosk_dark)
+// "Link" images are the legacy URL type; they belong with the browsers.
+const kindOf = (t: ImageType) => (t === 'link' ? 'browser' : t)
+function countFor(k: Kind) {
+  return images.value.filter(i => kindOf(i.image_type) === k).length
+}
+function pickKind(k: Kind) {
+  if (kind.value !== k) {
+    kind.value = k
+    form.image_id = ''
+  }
+  step.value = 'choose'
+}
 
 const store = useWorkspacesStore()
 const zonesStore = useZonesStore()
@@ -264,7 +311,7 @@ const form = reactive({
   zone_id: 0 as number,
   target_url: '',
   kiosk: false,
-  kiosk_dark: false,
+  kiosk_dark: prefersDark,
   kiosk_menu: false,
   use_tailscale: false,
   use_gluetun: false,
@@ -313,7 +360,7 @@ const appImageErr = computed(() => appImagesError(form.appimages))
 const filteredImages = computed(() => {
   const q = search.value.trim().toLowerCase()
   return images.value.filter(img => {
-    if (typeFilter.value !== 'all' && img.image_type !== typeFilter.value) return false
+    if (kindOf(img.image_type) !== kind.value) return false
     if (!q) return true
     return (
       img.name.toLowerCase().includes(q) ||
@@ -323,6 +370,20 @@ const filteredImages = computed(() => {
 })
 
 const zoneName = computed(() => zonesStore.items.find(z => z.id === form.zone_id)?.name ?? 'Local')
+
+// Which start-up options this browser actually honours — the server works them
+// out per image (see catalog.browser_features), so an option that would be
+// ignored is never offered.
+const browserFeatures = computed(
+  () => selectedImage.value?.browser ?? { kiosk: false, fullscreen: false, dark: false },
+)
+const showKiosk = computed(
+  () => urlCapable.value && urlCount.value <= 1 && (browserFeatures.value.kiosk || browserFeatures.value.fullscreen),
+)
+
+// A workspace on a remote zone keeps nothing on the agent's storage, so it is
+// always ephemeral (the old Open Website flow did the same).
+const forcedEphemeral = computed(() => urlCapable.value && form.zone_id !== 0)
 const networkSummary = computed(() => {
   if (form.use_tailscale) return 'Tailscale' + (form.ts_exit_node ? ` (exit: ${form.ts_exit_node})` : '')
   if (form.use_gluetun) return 'Gluetun VPN'
@@ -367,7 +428,8 @@ function goToNetwork() {
   step.value = 'network'
 }
 function goBack() {
-  if (step.value === 'basics') step.value = 'choose'
+  if (step.value === 'choose') step.value = 'kind'
+  else if (step.value === 'basics') step.value = 'choose'
   else if (step.value === 'network') step.value = 'basics'
   else if (step.value === 'access') step.value = 'network'
   else if (step.value === 'apps') step.value = 'access'
@@ -409,15 +471,15 @@ onMounted(async () => {
 })
 
 function resetForm() {
-  step.value = 'choose'
+  step.value = 'kind'
   customizing.value = false
   submitted.value = false
   nameEdited.value = false
   search.value = ''
-  typeFilter.value = 'all'
+  kind.value = 'desktop'
   Object.assign(form, {
     name: '', image_id: '', zone_id: 0, target_url: '',
-    kiosk: false, kiosk_dark: false, kiosk_menu: false,
+    kiosk: false, kiosk_dark: prefersDark, kiosk_menu: false,
     use_tailscale: false, use_gluetun: false, ephemeral: false, auto_remove: false, lan_access: false,
     ts_exit_node: '', ts_accept_routes: true, ts_accept_dns: true,
     custom_dns: false, dns_servers: '', allow_sudo: false, inject_ssh_key: true,
@@ -454,11 +516,12 @@ async function launch() {
       zone_id: form.zone_id,
       target_url: urlCapable.value && form.target_url ? form.target_url : undefined,
       kiosk: urlCapable.value && urlCount.value <= 1 ? form.kiosk : false,
-      kiosk_dark: urlCapable.value && urlCount.value <= 1 && form.kiosk ? form.kiosk_dark : false,
+      // Independent of kiosk: forcing dark pages has nothing to do with the window.
+      kiosk_dark: urlCapable.value && browserFeatures.value.dark ? form.kiosk_dark : false,
       kiosk_menu: urlCapable.value && urlCount.value <= 1 && form.kiosk ? form.kiosk_menu : false,
       use_tailscale: form.use_tailscale,
       use_gluetun: form.use_gluetun,
-      ephemeral: urlCapable.value ? form.ephemeral : false,
+      ephemeral: urlCapable.value ? (forcedEphemeral.value || form.ephemeral) : false,
       lan_access: form.lan_access,
       ...(form.use_tailscale
         ? {
@@ -521,6 +584,21 @@ async function launch() {
 .step-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Chooser */
+.kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kind-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: 16px; cursor: pointer; text-align: left;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); transition: all 0.15s;
+}
+.kind-card:hover { border-color: var(--accent); }
+.kind-card.selected { border-color: var(--accent); box-shadow: var(--glow-sm); }
+.kind-card.empty { opacity: 0.55; }
+.kind-icon { color: var(--accent); }
+.kind-name { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+.kind-desc { font-size: 12px; line-height: 1.45; color: var(--text-muted); }
+.kind-count { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--text-muted); }
+
 .chooser-controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 .search { width: 100%; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }

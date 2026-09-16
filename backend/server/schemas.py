@@ -70,6 +70,16 @@ class ImageUpdate(BaseModel):
     enabled: Optional[bool] = None
 
 
+class BrowserFeatures(BaseModel):
+    """Startup options this browser image can honour (see catalog.browser_features).
+    The launcher hides the ones it can't, rather than passing a flag the browser
+    ignores."""
+
+    kiosk: bool = False  # --kiosk: full-screen with the UI locked away
+    fullscreen: bool = False  # --start-fullscreen: full-screen, menu kept
+    dark: bool = False  # forced dark page rendering
+
+
 class ImageOut(BaseModel):
     id: int
     name: str
@@ -81,8 +91,17 @@ class ImageOut(BaseModel):
     url_env: Optional[str] = None
     logo_url: Optional[str] = None
     created_at: datetime
+    browser: BrowserFeatures = BrowserFeatures()
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_image(cls, image) -> "ImageOut":
+        from server.catalog import browser_features
+
+        out = cls.model_validate(image)
+        out.browser = BrowserFeatures(**browser_features(image.url_env))
+        return out
 
 
 # ── Workspaces ────────────────────────────────────────────────────────────────
@@ -282,6 +301,9 @@ class WorkspaceOut(BaseModel):
     # arrangement as preview_at: the PNG is served from GET /{id}/favicon.png and
     # this field is what tells the UI to ask for it instead of the browser logo.
     favicon_at: Optional[datetime]
+    # What startup options this workspace's browser supports, so the edit form can
+    # hide the ones it doesn't (empty for a non-browser workspace).
+    browser: BrowserFeatures = BrowserFeatures()
     # Running and ready for a client: its stream has produced a first frame (or
     # the fallback window for uncapturable images has passed). Clients wait on
     # this rather than status, since a stream opened too early never recovers.
@@ -291,6 +313,7 @@ class WorkspaceOut(BaseModel):
 
     @classmethod
     def from_workspace(cls, ws) -> "WorkspaceOut":
+        from server.catalog import browser_features
         from server.config import get_settings
         from server.preview import is_connectable
 
@@ -348,6 +371,7 @@ class WorkspaceOut(BaseModel):
             preview_at=ws.preview_at,
             favicon_at=ws.favicon_at,
             connectable=is_connectable(ws),
+            browser=BrowserFeatures(**browser_features(ws.image.url_env if ws.image else None)),
         )
 
 
@@ -584,6 +608,15 @@ class ProotTaskLogOut(BaseModel):
 
 
 # ── AppImages ─────────────────────────────────────────────────────────────────
+
+class ExtensionOut(BaseModel):
+    """The browser extension this deployment ships (Preferences → Browser extension)."""
+
+    available: bool
+    version: Optional[str]
+    size_bytes: int
+    filename: str
+
 
 class AppImageOut(BaseModel):
     slug: str  # install directory, derived from the URL it came from

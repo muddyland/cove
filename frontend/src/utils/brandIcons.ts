@@ -1,7 +1,7 @@
-// Brand marks used across the launch flows, inlined as single SVG paths
-// (Simple Icons — CC0) so they ship with the bundle: no CDN or external request,
-// and they tint via `currentColor`. Shared so the deploy-node wizard and the
-// Open Website modal render the same marks from one copy.
+// Brand marks used across the UI, inlined as single SVG paths (Simple Icons —
+// CC0) so they ship with the bundle: no CDN or external request, and they tint
+// via `currentColor`. Shared so every place that names a network mode renders
+// the same marks from one copy.
 
 export const TAILSCALE_ICON =
   'M24 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-9 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6-6a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 24a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm18 .5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-3 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM3 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z'

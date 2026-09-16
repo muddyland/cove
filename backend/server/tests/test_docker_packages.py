@@ -149,20 +149,20 @@ def _ws(**kw):
 
 
 def test_browser_cli_plain_url():
-    assert _build_browser_cli(_ws()) == "https://x.io"
+    assert _build_browser_cli(_ws(), "CHROME_CLI") == "https://x.io"
 
 
 def test_browser_cli_kiosk_locked():
-    assert _build_browser_cli(_ws(kiosk=True)) == "--kiosk https://x.io"
+    assert _build_browser_cli(_ws(kiosk=True), "CHROME_CLI") == "--kiosk https://x.io"
 
 
 def test_browser_cli_kiosk_menu_uses_fullscreen():
     # The right-click/refresh menu needs functional full-screen, not locked kiosk.
-    assert _build_browser_cli(_ws(kiosk=True, kiosk_menu=True)) == "--start-fullscreen https://x.io"
+    assert _build_browser_cli(_ws(kiosk=True, kiosk_menu=True), "CHROME_CLI") == "--start-fullscreen https://x.io"
 
 
 def test_browser_cli_kiosk_dark_mode():
-    assert _build_browser_cli(_ws(kiosk=True, kiosk_dark=True)) == (
+    assert _build_browser_cli(_ws(kiosk=True, kiosk_dark=True), "CHROME_CLI") == (
         "--kiosk --force-dark-mode --enable-features=WebContentsForceDark https://x.io"
     )
 
@@ -483,7 +483,7 @@ def test_gluetun_env_wireguard_override_and_no_ovpn_keys():
 
 def test_browser_cli_multiple_urls_opens_tabs_fullscreen():
     ws = _ws(target_url="https://a.io https://b.io https://c.io", kiosk=True, kiosk_menu=False)
-    cli = _build_browser_cli(ws)
+    cli = _build_browser_cli(ws, "CHROME_CLI")
     # Locked --kiosk is NOT used for multi-URL (it hides the tab bar).
     assert "--kiosk" not in cli.split()
     assert "--start-fullscreen" in cli
@@ -491,7 +491,7 @@ def test_browser_cli_multiple_urls_opens_tabs_fullscreen():
 
 
 def test_browser_cli_single_url_unchanged():
-    assert _build_browser_cli(_ws(target_url="https://x.io", kiosk=True)) == "--kiosk https://x.io"
+    assert _build_browser_cli(_ws(target_url="https://x.io", kiosk=True), "CHROME_CLI") == "--kiosk https://x.io"
 
 
 def test_target_url_lan_ips_multiple():
@@ -800,3 +800,35 @@ def test_cleanup_docker_sidecar_noop_when_absent():
     # Neither container nor volume exists — must not raise.
     dm._cleanup_docker_sidecar(7)
     assert dm._client.volumes.removed == []
+
+
+# ── browser feature support ────────────────────────────────────────────────────
+
+def test_browser_cli_firefox_gets_only_flags_it_has():
+    """Firefox takes its own --kiosk, but no --start-fullscreen and no dark switch;
+    passing Chromium flags would at best do nothing."""
+    assert _build_browser_cli(_ws(kiosk=True), "FIREFOX_CLI") == "--kiosk https://x.io"
+    assert _build_browser_cli(_ws(kiosk=True, kiosk_dark=True), "FIREFOX_CLI") == "--kiosk https://x.io"
+    # "keep the menu" wants full-screen, which Firefox has no flag for.
+    assert _build_browser_cli(_ws(kiosk=True, kiosk_menu=True), "FIREFOX_CLI") == "https://x.io"
+    multi = _build_browser_cli(_ws(target_url="https://a.io https://b.io"), "FIREFOX_CLI")
+    assert multi == "https://a.io https://b.io"
+
+
+def test_browser_cli_vivaldi_gets_no_flags():
+    """Vivaldi ignores --kiosk, and LinuxServer's wrapper forces --start-maximized
+    ahead of --start-fullscreen, so neither does anything. Verified by running the
+    image; Cove sends the URL alone rather than flags that do nothing."""
+    assert _build_browser_cli(_ws(kiosk=True), "VIVALDI_CLI") == "https://x.io"
+    assert _build_browser_cli(_ws(kiosk=True, kiosk_menu=True, kiosk_dark=True), "VIVALDI_CLI") == "https://x.io"
+
+
+def test_browser_cli_new_chromium_images_behave_like_chromium():
+    for env in ("HELIUM_CLI", "OPERA_CLI", "MSEDGE_CLI", "BRAVE_CLI"):
+        assert _build_browser_cli(_ws(kiosk=True), env) == "--kiosk https://x.io"
+        assert _build_browser_cli(_ws(kiosk=True, kiosk_menu=True), env) == "--start-fullscreen https://x.io"
+
+
+def test_browser_cli_unknown_image_keeps_chromium_behaviour():
+    # An admin's own browser entry: assume Chromium flags, as Cove always did.
+    assert _build_browser_cli(_ws(kiosk=True), "SOMETHING_CLI") == "--kiosk https://x.io"

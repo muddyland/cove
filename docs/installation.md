@@ -29,7 +29,7 @@ Then open <http://localhost>:
 
 1. You land on the **first-run setup** screen — create the initial admin account (username + a password of at least 8 characters).
 2. On first start, Cove auto-populates the image catalog from the LinuxServer.io API. If the host was offline, run **Admin → Images → Sync LinuxServer** later.
-3. Click **Deploy Node** to launch a desktop, or **Open Website** to launch a browser pointed at a URL.
+3. Click **Launch**, then pick **Desktop**, **Browser** (optionally pointed straight at a URL) or **App**.
 
 > The first launch of any image pulls it from `lscr.io` and can take several
 > minutes. The workspace shows **Booting / Provisioning** until the container is

@@ -150,6 +150,8 @@ entries expire per **trash retention (days)** and are swept hourly; see
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/api/proot-apps` | auth | List installable proot-app names. |
+| GET | `/api/extension` | auth | Whether this build ships the "Open in Cove" browser extension, and its version/size. |
+| GET | `/api/extension/download` | auth | The extension as a zip (`ETag`, `304` on revalidation). `404` when the build doesn't include it. |
 | GET | `/api/proot-tasks` | auth | proot-apps tasks across your own running desktop workspaces (the navbar tasks menu). |
 | GET | `/api/health` | public | Health check. |
 | GET | `/api/docs` | auth | List the bundled documentation pages (`slug`, `title`, `scope`). Non-admins receive only `scope: "user"` pages. |

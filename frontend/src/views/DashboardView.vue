@@ -6,8 +6,7 @@
         <p class="subtitle">{{ store.items.length }} node{{ store.items.length !== 1 ? 's' : '' }} allocated</p>
       </div>
       <div class="header-actions">
-        <NeonButton variant="secondary" @click="showWebsite = true"><Globe :size="15" /> OPEN WEBSITE</NeonButton>
-        <NeonButton variant="primary" @click="showLaunch = true"><Plus :size="15" /> DEPLOY NODE</NeonButton>
+        <NeonButton variant="primary" @click="showLaunch = true"><Plus :size="15" /> LAUNCH</NeonButton>
       </div>
     </div>
 
@@ -18,7 +17,7 @@
     <div v-else-if="!store.items.length" class="empty-state">
       <MonitorOff class="empty-icon" :size="64" :stroke-width="1.25" />
       <p class="mono">no nodes allocated</p>
-      <NeonButton variant="primary" @click="showLaunch = true"><Plus :size="15" /> DEPLOY FIRST NODE</NeonButton>
+      <NeonButton variant="primary" @click="showLaunch = true"><Plus :size="15" /> LAUNCH YOUR FIRST NODE</NeonButton>
     </div>
 
     <template v-else>
@@ -43,7 +42,6 @@
     </template>
 
     <LaunchWizard v-model="showLaunch" />
-    <OpenWebsiteModal v-model="showWebsite" />
   </AppShell>
 </template>
 
@@ -52,16 +50,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import WorkspaceCard from '@/components/WorkspaceCard.vue'
 import LaunchWizard from '@/components/LaunchWizard.vue'
-import OpenWebsiteModal from '@/components/OpenWebsiteModal.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { Globe, Plus, MonitorOff, Activity, PowerOff } from 'lucide-vue-next'
+import { Plus, MonitorOff, Activity, PowerOff } from 'lucide-vue-next'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useZonesStore } from '@/stores/zones'
 
 const store = useWorkspacesStore()
 const zonesStore = useZonesStore()
 const showLaunch = ref(false)
-const showWebsite = ref(false)
 
 // Live/transitioning nodes float to the top (with stats); idle ones sit below.
 const ACTIVE = new Set(['running', 'creating', 'stopping', 'migrating'])

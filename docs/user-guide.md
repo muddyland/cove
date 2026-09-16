@@ -26,10 +26,9 @@ The dashboard ("Workspace Grid") lists **your own** workspaces, split into
 - Actions: **Connect**, **Apps**, **Logs**, **Halt**, and **Purge** (delete),
   plus **Edit**, **Clone** and **Migrate** on a stopped one.
 
-Two launch buttons sit at the top:
-
-- **Deploy Node** — launch a desktop or browser workspace (opens the Launch modal).
-- **Open Website** — the quick "open a URL in a browser" flow.
+**Launch** at the top opens the one launcher for everything: it asks what you
+want — a **Desktop**, a **Browser**, or an **App** — then shows only the images of
+that kind.
 
 ## Screen previews
 
@@ -51,8 +50,8 @@ Previews are served only to you (or an admin). See
 
 ## Launching a desktop
 
-1. Click **Deploy Node**.
-2. Give it a **name** and pick an **image** (e.g. a Webtop XFCE/KDE/MATE variant, or Kali).
+1. Click **Launch** and choose **Desktop**.
+2. Pick an **image** (e.g. a Webtop XFCE/KDE/MATE variant, or Kali) and give it a **name**.
 3. Optionally expand the extra options (apps, networking, sudo, SSH) — see [Workspaces → Launch options](workspaces.md#launch-options).
 4. Click **Launch**. Cove creates the container and takes you to the workspace view, which shows a **Booting / Provisioning** screen until the desktop is ready, then streams it into the page.
 
@@ -63,13 +62,17 @@ The first launch of an image pulls it from `lscr.io` and can take a few minutes.
 Browser images (Chromium, Brave, Firefox, Edge) can boot straight to one or more
 URLs — a lightweight way to deliver a web app:
 
-1. Click **Open Website** (or choose a browser image in **Deploy Node**).
-2. Enter one URL per line — **up to 6**; each opens in its own tab. Multiple tabs open full-screen with a tab bar.
-3. Pick the **browser**.
-4. Options for a single URL:
+1. Click **Launch** and choose **Browser**.
+2. Pick the **browser** (Chromium, Brave, Firefox, Edge, Helium, Vivaldi or Opera).
+3. Enter one URL per line — **up to 6**; each opens in its own tab. Multiple tabs open full-screen with a tab bar.
+4. Options for a single URL, shown only where that browser supports them (see
+   [Workspaces → browser start-up options](workspaces.md#browser-start-up-options)):
    - **Kiosk mode** — full-screen with no browser chrome.
-   - **Dark mode** — forces the page into dark mode (kiosk only).
    - **Allow right-click / refresh menu** — keeps a minimal menu instead of a hard kiosk lock.
+
+   **Dark mode** sits on its own (it applies with or without kiosk) and starts
+   **on when your own browser is in dark mode**, so an opened link doesn't flash
+   white at you. Untick it to override.
 5. Optionally tick **Ephemeral** (no saved data — cookies/history/downloads wiped on halt) or **Route through Tailscale**.
 6. Click **Launch**.
 
@@ -157,6 +160,35 @@ days**) decides how long an item is kept before Cove purges it automatically, an
 the Trash tab shows the countdown per item. Set to `0`, nothing auto-expires and
 the trash is kept until you empty it — see
 [Administration → Settings](administration.md#settings).
+
+## The browser extension
+
+**Open in Cove** adds a right-click action to the browser on your own machine:
+send any link to a fresh Cove browser workspace instead of opening it locally.
+You pick the browser, the network route (direct, VPN or Tailscale) and the
+start-up options, and the page loads in a container.
+
+**It is for Chrome-based browsers** — Chrome, Edge, Brave, Vivaldi, Opera, Helium
+and other Chromium forks. There is no Firefox build.
+
+Download it from **Preferences → Browser extension** (your Cove server ships the
+zip, so this works with no internet access), then:
+
+1. **Unzip it somewhere it can stay** — Chrome loads an unpacked extension from
+   that folder every time it starts, so deleting the folder uninstalls it.
+2. Open `chrome://extensions` (Edge `edge://extensions`, Brave
+   `brave://extensions`, and so on).
+3. Turn on **Developer mode**.
+4. Click **Load unpacked** and pick the unzipped folder — the one holding
+   `manifest.json`.
+5. Open the extension's **options** and enter your Cove address.
+
+To update later, unzip the new version over the same folder and press **Reload**
+on the extension's card.
+
+It signs in as you without a password, including for SSO accounts: it reads your
+existing Cove session and presents it as a bearer token, so the identity provider
+flow happens in a normal browser tab. Only an access token is ever stored.
 
 ## Preferences
 

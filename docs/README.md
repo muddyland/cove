@@ -20,7 +20,7 @@ If you're new here, start with **[Installation](installation.md)**, then skim th
 - **[Deployment & HTTPS](deployment.md)** — production HTTPS with Let's Encrypt (TLS-ALPN and DNS-01), wildcard certificates, and per-workspace subdomain isolation.
 
 ### Using Cove
-- **[User guide](user-guide.md)** — navigation, the dashboard, launching desktops, the "open a website" browser flow, in-stream controls, managing a workspace's apps, the file browser, and per-user preferences.
+- **[User guide](user-guide.md)** — navigation, the dashboard, launching desktops, launching browsers straight at a URL, in-stream controls, managing a workspace's apps, the file browser, and per-user preferences.
 - **[Workspaces](workspaces.md)** — workspace types, every launch option, persistent vs. ephemeral storage, per-workspace apps (including managing proot-apps and AppImages in a running workspace), SSH-key injection, hardening, and the full workspace lifecycle.
 - **[Networking & routing](networking.md)** — the per-workspace egress policy, LAN access, custom DNS, Tailscale routing, and Gluetun VPN routing.
 

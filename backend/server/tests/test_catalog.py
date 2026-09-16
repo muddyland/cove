@@ -56,6 +56,24 @@ def _fake_images():
             "tags": [{"tag": "latest", "desc": "VSCodium"}],
         },
         {
+            "name": "helium",
+            "deprecated": False,
+            "description": "Helium browser",
+            "tags": [{"tag": "latest", "desc": "Helium"}],
+        },
+        {
+            "name": "vivaldi",
+            "deprecated": False,
+            "description": "Vivaldi browser",
+            "tags": [{"tag": "latest", "desc": "Vivaldi"}],
+        },
+        {
+            "name": "opera",
+            "deprecated": False,
+            "description": "Opera browser",
+            "tags": [{"tag": "latest", "desc": "Opera"}],
+        },
+        {
             # Should be skipped entirely.
             "name": "deprecated-thing",
             "deprecated": True,
@@ -144,3 +162,20 @@ def test_linuxserver_base_name_variants():
     assert f("docker.io/library/nginx:1.25") is None
     assert f("nginx") is None
     assert f("") is None
+
+
+def test_new_browser_specs_and_their_features():
+    specs = catalog._build_specs(_fake_images())
+    by_name = {s["name"]: s for s in specs}
+    for name, env in (("Helium", "HELIUM_CLI"), ("Vivaldi", "VIVALDI_CLI"), ("Opera", "OPERA_CLI")):
+        assert by_name[name]["image_type"] == "browser"
+        assert by_name[name]["url_env"] == env
+        assert by_name[name]["internal_port"] == catalog.WEBTOP_PORT
+
+    # Verified by launching the images — see the table in catalog.BROWSER_FEATURES.
+    assert catalog.browser_features("HELIUM_CLI") == {"kiosk": True, "fullscreen": True, "dark": True}
+    assert catalog.browser_features("OPERA_CLI") == {"kiosk": True, "fullscreen": True, "dark": True}
+    assert catalog.browser_features("VIVALDI_CLI") == {"kiosk": False, "fullscreen": False, "dark": False}
+    assert catalog.browser_features("FIREFOX_CLI") == {"kiosk": True, "fullscreen": False, "dark": False}
+    # An image with no startup-URL variable isn't a browser at all.
+    assert catalog.browser_features(None) == {"kiosk": False, "fullscreen": False, "dark": False}

@@ -29,7 +29,50 @@ BROWSERS: dict[str, tuple[str, str]] = {
     "brave": ("Brave", "BRAVE_CLI"),
     "firefox": ("Firefox", "FIREFOX_CLI"),
     "msedge": ("Edge", "MSEDGE_CLI"),
+    "helium": ("Helium", "HELIUM_CLI"),
+    "vivaldi": ("Vivaldi", "VIVALDI_CLI"),
+    "opera": ("Opera", "OPERA_CLI"),
 }
+
+# Which startup options each browser can actually honour, keyed by its CLI env
+# var. Cove hides the ones an image doesn't support rather than passing a flag
+# that is silently ignored (or worse, taken as a URL).
+#
+#   kiosk       --kiosk: full-screen with the whole UI locked away
+#   fullscreen  --start-fullscreen: full-screen keeping the tab bar + menu
+#   dark        --force-dark-mode --enable-features=WebContentsForceDark
+#
+# Verified by launching each image and inspecting the window it produced:
+#
+#   helium   --kiosk → full-screen + undecorated, --start-fullscreen → full-screen,
+#            and --force-dark-mode really did render the page dark.
+#   opera    --kiosk and --start-fullscreen both → full-screen, no browser chrome.
+#   vivaldi  neither works. LinuxServer's wrapper passes --start-maximized ahead of
+#            our flags and Vivaldi's own UI wins: the window comes up merely
+#            maximized, and --kiosk is accepted but ignored (a long-standing Vivaldi
+#            limitation). A fresh profile also shows Vivaldi's setup wizard before
+#            the startup URL opens, so none of these options are offered.
+#   firefox  --kiosk → full-screen. It takes Firefox flags, not Chromium ones, so it
+#            has no --start-fullscreen and no dark-mode switch.
+_CHROMIUM_FEATURES = {"kiosk": True, "fullscreen": True, "dark": True}
+BROWSER_FEATURES: dict[str, dict[str, bool]] = {
+    "CHROME_CLI": _CHROMIUM_FEATURES,
+    "BRAVE_CLI": _CHROMIUM_FEATURES,
+    "MSEDGE_CLI": _CHROMIUM_FEATURES,
+    "HELIUM_CLI": _CHROMIUM_FEATURES,
+    "OPERA_CLI": _CHROMIUM_FEATURES,
+    "VIVALDI_CLI": {"kiosk": False, "fullscreen": False, "dark": False},
+    "FIREFOX_CLI": {"kiosk": True, "fullscreen": False, "dark": False},
+}
+
+
+def browser_features(url_env: str | None) -> dict[str, bool]:
+    """What startup options a browser image supports. An image Cove doesn't know
+    (an admin's own entry) is assumed Chromium-flavoured, which is what these
+    images overwhelmingly are — and what Cove did for every image before."""
+    if not url_env:
+        return {"kiosk": False, "fullscreen": False, "dark": False}
+    return BROWSER_FEATURES.get(url_env.strip().upper(), _CHROMIUM_FEATURES)
 
 # Single-application GUI images (LinuxServer's Selkies apps: one desktop app
 # streamed to the browser on port 3000, persisting to /config). They launch

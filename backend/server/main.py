@@ -21,6 +21,7 @@ from server.routers import (
     auth,
     docs,
     enroll,
+    extension,
     files,
     images,
     internal,
@@ -429,6 +430,7 @@ def create_app() -> FastAPI:
     app.include_router(files.router)
     app.include_router(proot.router)
     app.include_router(docs.router)
+    app.include_router(extension.router)
 
     @app.get("/api/health")
     def health():

@@ -173,6 +173,41 @@
           </template>
         </div>
       </section>
+
+      <section v-if="extension.available" class="panel">
+        <h3>// BROWSER EXTENSION</h3>
+        <div class="form">
+          <p class="hint">
+            <strong>Open in Cove</strong> adds a right-click action to your own browser:
+            send any link to a fresh Cove browser workspace instead of opening it here.
+            You pick the browser, the network route (direct, VPN or Tailscale) and the
+            start-up options, and the page loads in a container.
+          </p>
+          <p class="hint">
+            <strong>For Chrome-based browsers</strong> — Chrome, Edge, Brave, Vivaldi,
+            Opera, Helium and other Chromium forks. There is no Firefox build.
+          </p>
+
+          <div class="ext-actions">
+            <NeonButton variant="primary" @click="downloadExtension">
+              <Download :size="14" /> Download{{ extension.version ? ` v${extension.version}` : '' }}
+            </NeonButton>
+            <span class="hint">{{ extSize }} · unpacked extension (zip)</span>
+          </div>
+
+          <ol class="steps-list">
+            <li>Unzip it somewhere it can stay — your browser loads the extension from that folder every time it starts.</li>
+            <li>Open <code>chrome://extensions</code> (Edge <code>edge://extensions</code>, Brave <code>brave://extensions</code>…).</li>
+            <li>Turn on <strong>Developer mode</strong>.</li>
+            <li>Click <strong>Load unpacked</strong> and pick the unzipped folder — the one holding <code>manifest.json</code>.</li>
+            <li>Open the extension's <strong>options</strong> and enter this Cove address: <code>{{ coveOrigin }}</code></li>
+          </ol>
+          <p class="hint">
+            To update later, unzip the new version over the same folder and press
+            <strong>Reload</strong> on the extension's card.
+          </p>
+        </div>
+      </section>
     </div>
 
     <ConfirmModal
@@ -198,14 +233,32 @@ import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import { Download } from 'lucide-vue-next'
 import { authApi } from '@/api/auth'
+import { extensionApi } from '@/api/extension'
 import { usersApi, type GluetunUpdate } from '@/api/users'
-import type { SshKeyConfig } from '@/types'
+import type { ExtensionInfo, SshKeyConfig } from '@/types'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 
 const ui = useUiStore()
 const auth = useAuthStore()
+
+// The browser extension this deployment ships, if any (a build may omit it).
+const extension = ref<ExtensionInfo>({ available: false, version: null, size_bytes: 0, filename: '' })
+const coveOrigin = window.location.origin
+const extSize = computed(() => {
+  const kb = extension.value.size_bytes / 1024
+  return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`
+})
+
+async function downloadExtension() {
+  try {
+    await extensionApi.download(extension.value.filename)
+  } catch (e: any) {
+    ui.toast(e?.message || 'Download failed', 'error')
+  }
+}
 
 // SSO (OIDC) accounts have no local password — hide the change-password panel.
 const isLocalUser = computed(() => auth.user?.auth_provider === 'local')
@@ -251,6 +304,9 @@ const ts = reactive({
 })
 
 onMounted(async () => {
+  // Best-effort: a deployment without the extension just doesn't show the panel.
+  extensionApi.info().then(info => { extension.value = info }).catch(() => {})
+
   try {
     const cfg = await usersApi.getTailscale()
     ts.enabled = cfg.enabled
@@ -478,6 +534,13 @@ async function doRemove() {
   margin-bottom: 0;
 }
 .checkbox-row input { width: auto; margin: 0; }
+.ext-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.steps-list {
+  margin: 4px 0 0; padding-left: 20px;
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; line-height: 1.55; color: var(--text-muted);
+}
+.steps-list code { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
 .hint {
   color: var(--text-muted);
   font-family: var(--font-mono);
