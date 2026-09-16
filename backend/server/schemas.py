@@ -560,6 +560,7 @@ class ProotTaskCreate(BaseModel):
 
 class ProotTaskOut(BaseModel):
     id: str
+    kind: str = "proot"  # proot | appimage
     op: str
     state: str  # queued | running | done | failed | interrupted
     exit_code: Optional[int]
@@ -580,6 +581,32 @@ class WorkspaceProotTasksOut(BaseModel):
 
 class ProotTaskLogOut(BaseModel):
     output: str
+
+
+# ── AppImages ─────────────────────────────────────────────────────────────────
+
+class AppImageOut(BaseModel):
+    slug: str  # install directory, derived from the URL it came from
+    name: str
+    # Where it was downloaded from. None for one installed before Cove recorded
+    # provenance — updating that one needs a URL from the user.
+    url: Optional[str]
+    size_kb: int
+    installed_at: Optional[int]  # epoch seconds, from the workspace clock
+
+
+class AppImagesOut(BaseModel):
+    apps: list[AppImageOut]
+
+
+class AppImageTaskCreate(BaseModel):
+    op: str = Field(pattern="^(install|update|remove)$")
+    # install: the URLs to download. update: `slug` plus the `url` that replaces
+    # it. remove: the slugs to delete.
+    urls: list[str] = Field(default_factory=list, max_length=10)
+    slug: Optional[str] = None
+    url: Optional[str] = None
+    slugs: list[str] = Field(default_factory=list, max_length=20)
 
 
 # ── Files ─────────────────────────────────────────────────────────────────────

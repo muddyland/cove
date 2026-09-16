@@ -16,7 +16,7 @@ import { useTasksStore } from '@/stores/tasks'
 
 function task(overrides: Partial<ProotTask> = {}): ProotTask {
   return {
-    id: '000000000001-ab', op: 'update', state: 'running', exit_code: null, apps: ['firefox'],
+    id: '000000000001-ab', kind: 'proot', op: 'update', state: 'running', exit_code: null, apps: ['firefox'],
     failed_apps: [], current_app: 'firefox', done_count: 0, created_at: 1, started_at: 2, finished_at: null,
     ...overrides,
   }

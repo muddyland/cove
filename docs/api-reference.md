@@ -60,6 +60,8 @@ cookies.
 | GET | `/api/workspaces/{id}/proot-apps/tasks` | owner/admin | The workspace's proot-apps tasks (`queued`/`running`/`done`/`failed`/`interrupted`). |
 | GET | `/api/workspaces/{id}/proot-apps/tasks/{task_id}/log` | owner/admin | Tail (64 KB) of one task's output. |
 | POST | `/api/workspaces/{id}/proot-apps/tasks/clear` | owner/admin | Forget finished tasks. |
+| GET | `/api/workspaces/{id}/appimages` | owner/admin | Installed AppImages: slug, name, source URL (null if unknown), size, install time. |
+| POST | `/api/workspaces/{id}/appimages/tasks` | owner/admin | Queue an AppImage task → `202`: `{"op":"install","urls":[…]}`, `{"op":"update","slug":…,"url":…}` (the URL replaces that app), or `{"op":"remove","slugs":[…]}`. Updates the saved `appimages` list. URLs are downloaded **by the workspace**, never by Cove. |
 
 The `proot-apps` endpoints run a short command inside the workspace, so each workspace (2) and each caller (4) gets only a few at a time; beyond that they answer `429`.
 

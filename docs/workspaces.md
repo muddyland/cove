@@ -73,14 +73,20 @@ are best-effort (they never fail the boot):
 
 - **Install packages** — adds the `universal-package-install` Docker Mod and installs your distro packages.
 - **proot-apps** — installs the named [proot-apps](https://github.com/linuxserver/proot-apps). Installs run **in the background** so the desktop comes up promptly; apps appear in the menu as each finishes (progress in the navbar's tasks menu, and appended to `/config/.cove-proot-apps.log`). Already-installed apps are skipped — booting never updates them; see below.
-- **AppImages** — downloads each URL and, because the containers are hardened (no FUSE), **extracts** it rather than FUSE-mounting, then writes a desktop launcher. Electron apps launch with `--no-sandbox`. Background install, logged to `/config/.cove-appimages.log`.
+- **AppImages** — downloads each URL and, because the containers are hardened (no FUSE), **extracts** it rather than FUSE-mounting, then writes a desktop launcher. Electron apps launch with `--no-sandbox`. Background install, logged to `/config/.cove-appimages.log`. Already-installed ones are skipped; manage them later from the Apps dialog (below).
 
 When packages or proot-apps are requested, the workspace shows a **Provisioning**
 screen ("this can take a few minutes") until the desktop is ready.
 
-### Managing proot-apps in a running workspace
+### Managing apps in a running workspace
 
 **Actions → Apps** on a running desktop (or **Apps** in the stream page's menu)
+manages both kinds of app in that workspace: proot-apps in one section,
+AppImages in the other.
+
+#### proot-apps
+
+The dialog
 lists the proot-apps installed in it (with each app's icon from the LinuxServer
 catalog) and whether each is **up to date** or has an
 **update available**. Cove compares the build each app was installed from with the
@@ -104,6 +110,30 @@ An update deletes the old copy before downloading the new one — that's how
 proot-apps works — so if the download fails, the app is left uninstalled. Install
 it again from the same dialog (it's still in the saved list, so the next boot
 retries it too).
+
+#### AppImages
+
+The **AppImages** section lists what's installed, with each app's size and the
+URL it came from. From there you can:
+
+- **Add** — paste one or more AppImage URLs; each is downloaded in the workspace,
+  extracted, and given a desktop launcher.
+- **Update** — paste the URL to install over an app, usually the same link with a
+  newer version in it. There is no "update available" check: an AppImage is just a
+  file at a URL, with no reliable version to compare against.
+- **Remove** — deletes the extracted files and the menu entry.
+
+Unlike a proot-app update, an AppImage update is **swapped in only once the new
+download extracts successfully**, so a failed or interrupted update leaves the
+working app in place.
+
+Installing, updating and removing all keep the workspace's saved AppImage list in
+step, matching entries by the file name their URL ends in — the same name the
+install directory gets. So a URL you update to is what a rebuild or a migration
+reinstalls.
+
+Cove itself never fetches these URLs: the workspace downloads them, where the
+[egress rules](#networking) already apply.
 
 ## SSH-key injection
 

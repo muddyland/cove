@@ -28,6 +28,7 @@
       </p>
       <p v-if="checkNote" class="note">{{ checkNote }}</p>
 
+      <span class="section-label">proot-apps</span>
       <LoadingSpinner v-if="!state && loading" block />
       <div v-else-if="state && !state.apps.length" class="note">No proot-apps installed yet.</div>
       <ul v-else-if="state" class="app-list">
@@ -86,6 +87,64 @@
         </div>
       </div>
 
+      <div class="section" data-test="appimages">
+        <div class="section-head">
+          <span class="section-label">AppImages</span>
+          <button type="button" class="add-toggle" :aria-expanded="addingImage" @click="addingImage = !addingImage">
+            <Plus :size="13" /> Add <ChevronDown :size="12" class="chev" :class="{ flip: addingImage }" />
+          </button>
+        </div>
+
+        <LoadingSpinner v-if="!images && imagesLoading" block :size="16" />
+        <p v-else-if="imagesError" class="note error">{{ imagesError }}</p>
+        <p v-else-if="images && !images.length" class="note">No AppImages installed.</p>
+        <ul v-else-if="images" class="app-list">
+          <li v-for="img in images" :key="img.slug" class="app-row">
+            <div class="app-main">
+              <AppIcon :size="22" />
+              <span class="app-name">{{ img.name }}</span>
+              <span v-if="img.size_kb" class="chip muted">{{ fmtSize(img.size_kb) }}</span>
+              <span v-if="!img.url" class="chip muted" title="Installed before Cove recorded where it came from — updating asks for a URL">source unknown</span>
+              <a v-else class="src" :href="img.url" target="_blank" rel="noopener noreferrer" :title="img.url">{{ shortUrl(img.url) }}</a>
+            </div>
+            <div class="app-actions">
+              <template v-if="busy.has(img.slug)">
+                <span class="busy"><Loader2 :size="13" class="spin" /> {{ busy.get(img.slug) }}</span>
+              </template>
+              <template v-else>
+                <NeonButton variant="primary" :disabled="!!starting" @click="askUpdateImage(img)">
+                  <ArrowUpCircle :size="13" /> Update
+                </NeonButton>
+                <NeonButton variant="ghost" class="remove" :disabled="!!starting" @click="askRemoveImage(img)">
+                  <Trash2 :size="13" /> Remove
+                </NeonButton>
+              </template>
+            </div>
+          </li>
+        </ul>
+
+        <div v-if="addingImage" class="add-body">
+          <textarea
+            v-model="newImageUrls"
+            rows="2"
+            placeholder="https://example.com/App-1.2-x86_64.AppImage"
+          />
+          <p v-if="newImageError" class="field-error">{{ newImageError }}</p>
+          <p v-else class="hint">
+            One AppImage URL per line. Each is downloaded in the workspace, extracted, and given a
+            desktop launcher.
+          </p>
+          <div class="add-actions">
+            <NeonButton
+              variant="success"
+              :disabled="!newImageUrls.trim() || !!starting"
+              :loading="starting === 'appimage-install'"
+              @click="installImages"
+            ><Download :size="13" /> Install</NeonButton>
+          </div>
+        </div>
+      </div>
+
       <div class="tasks">
         <div class="tasks-head">
           <span class="section-label">Background tasks</span>
@@ -112,6 +171,35 @@
     :loading="starting === `remove:${pendingRemove}`"
     @confirm="confirmRemove"
   />
+  <ConfirmModal
+    v-model="removeImageOpen"
+    title="Remove AppImage"
+    :message="`Remove ${pendingImage?.name ?? ''} from '${ws.name}'? Its extracted files and menu entry are deleted, and it's dropped from the saved list.`"
+    confirm-label="REMOVE"
+    :loading="starting === `appimage-remove`"
+    @confirm="confirmRemoveImage"
+  />
+
+  <BaseModal v-model="updateImageOpen" :title="`Update ${pendingImage?.name ?? 'AppImage'}`" width="560px">
+    <form class="update-form" @submit.prevent="confirmUpdateImage">
+      <p class="hint">
+        Paste the URL to install over it — usually the same link with a newer version. The current
+        app is only replaced once the download extracts successfully.
+      </p>
+      <input v-model="updateUrl" type="url" placeholder="https://example.com/App-1.3-x86_64.AppImage" />
+      <p v-if="updateError" class="field-error">{{ updateError }}</p>
+      <div class="add-actions">
+        <NeonButton type="button" variant="secondary" @click="updateImageOpen = false">Cancel</NeonButton>
+        <NeonButton
+          type="submit"
+          variant="primary"
+          :disabled="!updateUrl.trim()"
+          :loading="starting === 'appimage-update'"
+        ><ArrowUpCircle :size="13" /> Update</NeonButton>
+      </div>
+    </form>
+  </BaseModal>
+
   <TaskLogModal v-model="logOpen" :ws-id="ws.id" :task="logTask" :workspace-name="ws.name" />
 </template>
 
@@ -131,7 +219,7 @@ import { workspacesApi } from '@/api/workspaces'
 import { isActiveTask, OP_ACTIVE, useTasksStore } from '@/stores/tasks'
 import { useUiStore } from '@/stores/ui'
 import { useWorkspacesStore } from '@/stores/workspaces'
-import type { ProotApp, ProotApps, ProotTask, ProotTaskOp, Workspace } from '@/types'
+import type { AppImageApp, ProotApp, ProotApps, ProotTask, ProotTaskOp, Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
 const open = defineModel<boolean>({ default: false })
@@ -151,6 +239,17 @@ const confirmOpen = ref(false)
 const pendingRemove = ref('')
 const logOpen = ref(false)
 const logTask = ref<ProotTask | null>(null)
+const images = ref<AppImageApp[] | null>(null)
+const imagesLoading = ref(false)
+const imagesError = ref('')
+const addingImage = ref(false)
+const newImageUrls = ref('')
+const newImageError = ref('')
+const pendingImage = ref<AppImageApp | null>(null)
+const removeImageOpen = ref(false)
+const updateImageOpen = ref(false)
+const updateUrl = ref('')
+const updateError = ref('')
 let unsubscribe: (() => void) | null = null
 
 const wsTasks = computed(() => {
@@ -200,6 +299,115 @@ function digestTitle(app: ProotApp) {
   const short = (d: string | null) => (d ? d.replace('sha256:', '').slice(0, 12) : '—')
   if (!app.installed_digest) return ''
   return `installed ${short(app.installed_digest)} · latest ${short(app.latest_digest)}`
+}
+
+function fmtSize(kb: number) {
+  return kb >= 1024 ? `${(kb / 1024).toFixed(0)} MB` : `${kb} KB`
+}
+
+/** Just the file name, so a long URL doesn't push the row's actions off screen. */
+function shortUrl(url: string) {
+  const file = url.split('?')[0].replace(/\/+$/, '').split('/').pop()
+  return file || url
+}
+
+// Kept in step with APPIMAGE_URL_RE in the backend (and the driver script): the
+// characters URLs are made of, nothing a shell or a line-based file reads as
+// structure. The server validates too — this is just a better error.
+const URL_RE = /^https?:\/\/[A-Za-z0-9._~%-]+(:\d{1,5})?(\/[A-Za-z0-9._~%!*+,:@/?&=#()-]*)?$/
+
+function badUrls(list: string[]): string[] {
+  return list.filter(u => !URL_RE.test(u) || u.length > 2048)
+}
+
+async function loadImages() {
+  imagesLoading.value = true
+  try {
+    images.value = (await prootApi.appImages(props.ws.id)).apps
+    imagesError.value = ''
+  } catch (e: any) {
+    imagesError.value = e?.message || 'Failed to load AppImages.'
+  } finally {
+    imagesLoading.value = false
+  }
+}
+
+/** Run an AppImage task, then refresh what the dialog and dashboard show. */
+async function startImage(tag: string, run: () => Promise<unknown>, done: string) {
+  if (starting.value) return false
+  starting.value = tag
+  try {
+    await run()
+    ui.toast(done, 'info')
+    tasks.kick()
+    const fresh = await workspacesApi.get(props.ws.id)
+    const idx = workspaces.items.findIndex(w => w.id === fresh.id)
+    if (idx !== -1) workspaces.items[idx] = fresh
+    return true
+  } catch (e: any) {
+    ui.toast(e?.message || 'Failed to start the task', 'error')
+    return false
+  } finally {
+    starting.value = null
+  }
+}
+
+async function installImages() {
+  const urls = newImageUrls.value.split(/\s+/).filter(Boolean)
+  const bad = badUrls(urls)
+  if (bad.length) {
+    newImageError.value = `Not a usable AppImage URL: ${bad[0]}`
+    return
+  }
+  newImageError.value = ''
+  const ok = await startImage(
+    'appimage-install',
+    () => prootApi.installAppImages(props.ws.id, urls),
+    `Installing ${urls.length} AppImage${urls.length === 1 ? '' : 's'} — follow it in the tasks menu`,
+  )
+  if (ok) {
+    newImageUrls.value = ''
+    addingImage.value = false
+  }
+}
+
+function askUpdateImage(img: AppImageApp) {
+  pendingImage.value = img
+  updateUrl.value = img.url ?? ''
+  updateError.value = ''
+  updateImageOpen.value = true
+}
+
+async function confirmUpdateImage() {
+  const img = pendingImage.value
+  const url = updateUrl.value.trim()
+  if (!img) return
+  if (badUrls([url]).length) {
+    updateError.value = 'That is not a usable AppImage URL.'
+    return
+  }
+  const ok = await startImage(
+    'appimage-update',
+    () => prootApi.updateAppImage(props.ws.id, img.slug, url),
+    `Updating ${img.name} — follow it in the tasks menu`,
+  )
+  if (ok) updateImageOpen.value = false
+}
+
+function askRemoveImage(img: AppImageApp) {
+  pendingImage.value = img
+  removeImageOpen.value = true
+}
+
+async function confirmRemoveImage() {
+  const img = pendingImage.value
+  if (!img) return
+  const ok = await startImage(
+    'appimage-remove',
+    () => prootApi.removeAppImages(props.ws.id, [img.slug]),
+    `Removing ${img.name} — follow it in the tasks menu`,
+  )
+  if (ok) removeImageOpen.value = false
 }
 
 async function load() {
@@ -285,13 +493,20 @@ watch(open, value => {
   state.value = null
   error.value = ''
   adding.value = false
+  addingImage.value = false
   toInstall.value = []
+  newImageUrls.value = ''
+  newImageError.value = ''
+  images.value = null
   load()
+  loadImages()
 })
 
-// Reload the app list when a task finishes, so versions and chips are current.
+// Reload both lists when a task finishes, so what's installed stays current.
 watch(() => tasks.finishedTick, () => {
-  if (open.value) load()
+  if (!open.value) return
+  load()
+  loadImages()
 })
 
 onUnmounted(() => unsubscribe?.())
@@ -343,6 +558,17 @@ onUnmounted(() => unsubscribe?.())
 .chev.flip { transform: rotate(180deg); }
 .add-body { display: flex; flex-direction: column; gap: 8px; }
 .add-actions { display: flex; justify-content: flex-end; }
+
+.section { display: flex; flex-direction: column; gap: 8px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.src {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34ch;
+}
+.src:hover { color: var(--accent); }
+.update-form { display: flex; flex-direction: column; gap: 10px; }
+.update-form .add-actions { gap: 8px; }
+.field-error { font-size: 11px; color: var(--red); margin: 0; }
 
 .tasks { display: flex; flex-direction: column; gap: 8px; }
 .tasks-head { display: flex; align-items: center; justify-content: space-between; min-height: 30px; }

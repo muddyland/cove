@@ -4,7 +4,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { ProotApps, Workspace } from '@/types'
 
 vi.mock('@/api/proot', () => ({
-  prootApi: { list: vi.fn(), installed: vi.fn(), startTask: vi.fn(), allTasks: vi.fn(), clearTasks: vi.fn(), taskLog: vi.fn() },
+  prootApi: {
+    list: vi.fn(), installed: vi.fn(), startTask: vi.fn(), allTasks: vi.fn(), clearTasks: vi.fn(), taskLog: vi.fn(),
+    appImages: vi.fn(), installAppImages: vi.fn(), updateAppImage: vi.fn(), removeAppImages: vi.fn(),
+  },
 }))
 vi.mock('@/api/workspaces', () => ({
   workspacesApi: { get: vi.fn() },
@@ -55,6 +58,10 @@ describe('ProotAppsModal', () => {
     vi.mocked(prootApi.list).mockResolvedValue({ apps: [] })
     vi.mocked(prootApi.startTask).mockResolvedValue({} as any)
     vi.mocked(workspacesApi.get).mockResolvedValue(ws)
+    vi.mocked(prootApi.appImages).mockResolvedValue({ apps: [] })
+    vi.mocked(prootApi.installAppImages).mockResolvedValue({} as any)
+    vi.mocked(prootApi.updateAppImage).mockResolvedValue({} as any)
+    vi.mocked(prootApi.removeAppImages).mockResolvedValue({} as any)
   })
 
   it('shows each app with its update status', async () => {
@@ -113,7 +120,7 @@ describe('ProotAppsModal', () => {
   it('hides actions for apps in a running task', async () => {
     vi.mocked(prootApi.allTasks).mockResolvedValue([{
       workspace_id: 5, workspace_name: 'desk',
-      tasks: [{ id: 't', op: 'update', state: 'running', exit_code: null, apps: ['firefox'], failed_apps: [],
+      tasks: [{ id: 't', kind: 'proot', op: 'update', state: 'running', exit_code: null, apps: ['firefox'], failed_apps: [],
         current_app: 'firefox', done_count: 0, created_at: 1, started_at: 1, finished_at: null }],
     }])
     const wrapper = await mountOpen()
@@ -128,5 +135,79 @@ describe('ProotAppsModal', () => {
     await wrapper.findAll('button').find(b => b.text() === 'Update')!.trigger('click')
     await flushPromises()
     expect(toastMock).toHaveBeenCalledWith('Too many app tasks', 'error')
+  })
+})
+
+describe('AppImages section', () => {
+  const img = {
+    slug: 'Foo-1.2_x86_64',
+    name: 'Foo',
+    url: 'https://apps.example.com/Foo-1.2_x86_64.AppImage',
+    size_kb: 2048,
+    installed_at: 1789500000,
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(prootApi.installed).mockResolvedValue(listing)
+    vi.mocked(prootApi.allTasks).mockResolvedValue([])
+    vi.mocked(prootApi.list).mockResolvedValue({ apps: [] })
+    vi.mocked(workspacesApi.get).mockResolvedValue(ws)
+    vi.mocked(prootApi.appImages).mockResolvedValue({ apps: [img] })
+    vi.mocked(prootApi.installAppImages).mockResolvedValue({} as any)
+    vi.mocked(prootApi.updateAppImage).mockResolvedValue({} as any)
+    vi.mocked(prootApi.removeAppImages).mockResolvedValue({} as any)
+  })
+
+  it('lists installed AppImages with their size and source', async () => {
+    const wrapper = await mountOpen()
+    expect(prootApi.appImages).toHaveBeenCalledWith(5)
+    const text = wrapper.text()
+    expect(text).toContain('Foo')
+    expect(text).toContain('2 MB')
+    expect(text).toContain('Foo-1.2_x86_64.AppImage')
+  })
+
+  it('installs from pasted URLs and rejects bad ones before calling the server', async () => {
+    const wrapper = await mountOpen()
+    const section = wrapper.get('[data-test="appimages"]')
+    await section.findAll('button').find(b => b.text().includes('Add'))!.trigger('click')
+    const box = section.find('textarea')
+
+    await box.setValue('ftp://x.io/A.AppImage')
+    await section.findAll('button').find(b => b.text().includes('Install'))!.trigger('click')
+    await flushPromises()
+    expect(prootApi.installAppImages).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Not a usable AppImage URL')
+
+    await box.setValue('https://x.io/A.AppImage\nhttps://x.io/B.AppImage')
+    await section.findAll('button').find(b => b.text().includes('Install'))!.trigger('click')
+    await flushPromises()
+    expect(prootApi.installAppImages).toHaveBeenCalledWith(5, ['https://x.io/A.AppImage', 'https://x.io/B.AppImage'])
+  })
+
+  it('updates one by URL, prefilled with where it came from', async () => {
+    const wrapper = await mountOpen()
+    const section = wrapper.get('[data-test="appimages"]')
+    await section.findAll('button').find(b => b.text() === 'Update')!.trigger('click')
+    await flushPromises()
+    const input = wrapper.findAll('input').find(i => (i.element as HTMLInputElement).type === 'url')!
+    expect((input.element as HTMLInputElement).value).toBe(img.url)
+
+    await input.setValue('https://apps.example.com/Foo-1.3_x86_64.AppImage')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    expect(prootApi.updateAppImage).toHaveBeenCalledWith(5, img.slug, 'https://apps.example.com/Foo-1.3_x86_64.AppImage')
+  })
+
+  it('removes one after confirming', async () => {
+    const wrapper = await mountOpen()
+    const section = wrapper.get('[data-test="appimages"]')
+    await section.findAll('button').find(b => b.text() === 'Remove')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find(b => b.text() === 'REMOVE')!.trigger('click')
+    await flushPromises()
+    expect(prootApi.removeAppImages).toHaveBeenCalledWith(5, [img.slug])
   })
 })

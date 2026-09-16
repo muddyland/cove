@@ -208,15 +208,18 @@ launch ──▶ creating ──▶ running ──▶ (halt) ──▶ stopped �
 wired by `docker_manager` and `scripts/`):
 
 - **Distro packages** → `universal-package-install` mod (`INSTALL_PACKAGES`).
-- **proot-apps** → `PROOT_APPS` + `scripts/install-proot-apps.sh`. The same
-  script is the in-workspace driver for the Apps dialog: the backend runs its text
-  via `docker exec` **as the desktop user** (never root — `/config` is
-  user-writable) to list apps and start/inspect install/update/remove tasks, and
-  treats everything it prints as untrusted.
-- **AppImages** → `COVE_APPIMAGES` + `scripts/install-appimages.sh`: downloads
-  (curl), extracts (`--appimage-extract`, no FUSE needed in these hardened
-  containers), and writes a `.desktop` launcher with `APPDIR` set and
-  `--no-sandbox` for Electron apps.
+- **proot-apps** → `PROOT_APPS`, **AppImages** → `COVE_APPIMAGES`, both driven by
+  `scripts/cove-apps.sh`. It is mounted twice under `custom-cont-init.d` (it picks
+  which list to install from the name it runs as) and is also the in-workspace
+  driver for the Apps dialog: the backend runs its text via `docker exec` **as the
+  desktop user** (never root — `/config` is user-writable) to list apps and
+  start/inspect install/update/remove tasks for either kind, and treats everything
+  it prints as untrusted. AppImage URLs are fetched by the workspace, not the
+  control plane.
+  AppImages are downloaded (curl), extracted (`--appimage-extract`, no FUSE needed
+  in these hardened containers) and given a `.desktop` launcher with `APPDIR` set
+  and `--no-sandbox` for Electron apps; an update extracts to a temporary
+  directory and swaps only on success.
 
 **Stop / start / purge**: halting removes the container (and any Tailscale
 sidecar + network); starting re-pulls and recreates; purge optionally deletes the

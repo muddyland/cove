@@ -77,6 +77,17 @@ export interface ProotApps {
   apps: ProotApp[]
 }
 
+export interface AppImageApp {
+  // Install directory, derived from the URL it came from.
+  slug: string
+  name: string
+  // Where it was downloaded from; null for one installed before Cove recorded
+  // provenance, so updating it needs a URL.
+  url: string | null
+  size_kb: number
+  installed_at: number | null
+}
+
 export interface ProotAppMeta {
   full_name: string | null
   icon_url: string | null
@@ -85,8 +96,11 @@ export interface ProotAppMeta {
 export type ProotTaskOp = 'install' | 'update' | 'remove'
 export type ProotTaskState = 'queued' | 'running' | 'done' | 'failed' | 'interrupted'
 
+export type AppKind = 'proot' | 'appimage'
+
 export interface ProotTask {
   id: string
+  kind: AppKind
   op: ProotTaskOp
   state: ProotTaskState
   exit_code: number | null

@@ -232,8 +232,8 @@ def test_apply_proot_apps_sets_env_and_mount():
     DockerManager._apply_proot_apps(env, volumes, "firefox, libreoffice")
     assert env["PROOT_APPS"] == "firefox libreoffice"
     # The bind source is the staged (host-resolvable) copy under the storage tree.
-    key = _helper_script_path("install-proot-apps.sh")
-    assert key.endswith("/.cove-scripts/install-proot-apps.sh")
+    key = _helper_script_path("cove-apps.sh")
+    assert key.endswith("/.cove-scripts/cove-apps.sh")
     assert volumes[key] == {
         "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
         "mode": "ro",
@@ -256,8 +256,9 @@ def test_apply_appimages_sets_env_and_mount():
         env, volumes, "https://x.io/A.AppImage\nhttps://y.io/B.AppImage"
     )
     assert env["COVE_APPIMAGES"] == "https://x.io/A.AppImage https://y.io/B.AppImage"
-    key = _helper_script_path("install-appimages.sh")
-    assert key.endswith("/.cove-scripts/install-appimages.sh")
+    # One driver serves both lists; it picks which by the name it's mounted as.
+    key = _helper_script_path("cove-apps.sh")
+    assert key.endswith("/.cove-scripts/cove-apps.sh")
     assert volumes[key] == {
         "bind": "/custom-cont-init.d/97-install-appimages.sh",
         "mode": "ro",

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Manage AppImages from the Apps dialog.** A workspace's installed AppImages
+  are listed with their size and source URL, and can be installed (paste a URL),
+  updated (paste the URL to install over one — the new copy is swapped in only
+  after it extracts, so a failed update keeps the working app) and removed. The
+  saved list follows along, so rebuilds and migrations reinstall what you have.
+  There is deliberately no update check: an AppImage URL carries no version to
+  compare. Cove never fetches these URLs itself — the workspace does, under its
+  egress rules.
+- `scripts/install-proot-apps.sh` and `scripts/install-appimages.sh` are now one
+  driver, `scripts/cove-apps.sh`, mounted under both init names; both app kinds
+  share one task queue per workspace.
+
 - **Manage proot-apps in a running workspace.** Actions → Apps lists installed
   proot-apps, flags the ones with an update available (compared against ghcr.io
   without downloading), and installs, updates or removes them. Booting still

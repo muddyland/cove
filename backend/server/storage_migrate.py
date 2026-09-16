@@ -41,7 +41,7 @@ class _ChunkSink:
 # Top-level entries regenerated on the destination at launch — left out of the
 # migration payload so it carries only real user data. ``proot-apps`` holds the
 # installed app trees (often many GB: full Chrome/Edge/etc.), which are
-# re-installed from the workspace's PROOT_APPS list by install-proot-apps.sh; one
+# re-installed from the workspace's PROOT_APPS list by cove-apps.sh; one
 # VDI home was 14 GB of proot-apps vs ~8 MB of actual config, and shipping it ran
 # the transfer long enough that the cross-segment connection dropped (HTTP 499).
 _MIGRATION_EXCLUDE_TOP = {"proot-apps"}

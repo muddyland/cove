@@ -138,19 +138,20 @@ def test_parse_listing_unknown_arch_is_none():
 
 
 def test_parse_tasks_drops_malformed_rows():
-    good = "TASK\t000000000001-ab\tupdate\trunning\t\t100\t101\t\t1\tgimp\tfirefox gimp\t\n"
+    good = "TASK\t000000000001-ab\tupdate\trunning\t\t100\t101\t\t1\tgimp\tfirefox gimp\t\tproot\n"
     bad = [
-        "TASK\t../x\tupdate\trunning\t\t100\t101\t\t1\t\tfirefox\t\n",  # id
-        "TASK\t000000000002-ab\trm -rf\trunning\t\t100\t101\t\t1\t\tfirefox\t\n",  # op
-        "TASK\t000000000003-ab\tupdate\tweird\t\t100\t101\t\t1\t\tfirefox\t\n",  # state
-        "TASK\t000000000004-ab\tupdate\tdone\t0\t100\t101\t102\t1\t\t\t\n",  # no apps
-        "TASK\t000000000005-ab\tupdate\tdone\t0\t100\t101\t102\t1\t\tfire$fox\t\n",  # app name
-        "TASK\t000000000006-ab\tupdate\tdone\t0\t100\t101\n",  # field count
+        "TASK\t../x\tupdate\trunning\t\t100\t101\t\t1\t\tfirefox\t\tproot\n",  # id
+        "TASK\t000000000002-ab\trm -rf\trunning\t\t100\t101\t\t1\t\tfirefox\t\tproot\n",  # op
+        "TASK\t000000000003-ab\tupdate\tweird\t\t100\t101\t\t1\t\tfirefox\t\tproot\n",  # state
+        "TASK\t000000000004-ab\tupdate\tdone\t0\t100\t101\t102\t1\t\t\t\tproot\n",  # no apps
+        "TASK\t000000000005-ab\tupdate\tdone\t0\t100\t101\t102\t1\t\tfire$fox\t\tproot\n",  # app name
+        "TASK\t000000000006-ab\tupdate\tdone\t0\t100\t101\tproot\n",  # field count
     ]
     tasks = proot_module.parse_tasks((good + "".join(bad)).encode())
     assert tasks == [
         {
             "id": "000000000001-ab",
+            "kind": "proot",
             "op": "update",
             "state": "running",
             "exit_code": None,
@@ -166,7 +167,7 @@ def test_parse_tasks_drops_malformed_rows():
 
 
 def test_parse_tasks_clamps_done_count():
-    raw = b"TASK\t000000000001-ab\tinstall\tdone\t0\t1\t2\t3\t99\t\tfirefox\t\n"
+    raw = b"TASK\t000000000001-ab\tinstall\tdone\t0\t1\t2\t3\t99\t\tfirefox\t\tproot\n"
     assert proot_module.parse_tasks(raw)[0]["done_count"] == 1
 
 
@@ -260,7 +261,7 @@ def catalog(monkeypatch):
 def test_installed_apps_report_updates(client, fake_docker_manager, monkeypatch, catalog):
     setup_admin(client)
     ws_id = _make_ws(client, proot_apps="firefox gimp blender")
-    fake_docker_manager.proot_command.return_value = (
+    fake_docker_manager.apps_command.return_value = (
         0, _listing(("firefox", OLD, 0), ("gimp", NEW, 0), ("krita", "", 1)),
     )
 
@@ -288,14 +289,14 @@ def test_installed_apps_report_updates(client, fake_docker_manager, monkeypatch,
     assert apps["krita"]["in_config"] is False
     # Saved but missing from disk.
     assert apps["blender"]["installed"] is False and apps["blender"]["in_config"] is True
-    fake_docker_manager.proot_command.assert_called_once()
-    assert fake_docker_manager.proot_command.call_args.args[1] == ["list"]
+    fake_docker_manager.apps_command.assert_called_once()
+    assert fake_docker_manager.apps_command.call_args.args[1] == ["list"]
 
 
 def test_installed_apps_without_check_skip_registry(client, fake_docker_manager, monkeypatch, catalog):
     setup_admin(client)
     ws_id = _make_ws(client)
-    fake_docker_manager.proot_command.return_value = (0, _listing(("firefox", OLD, 0)))
+    fake_docker_manager.apps_command.return_value = (0, _listing(("firefox", OLD, 0)))
 
     async def boom(apps, arch):
         raise AssertionError("registry should not be queried")
@@ -310,7 +311,7 @@ def test_installed_apps_without_check_skip_registry(client, fake_docker_manager,
 def test_update_checks_only_query_catalog_apps(client, fake_docker_manager, monkeypatch, catalog):
     setup_admin(client)
     ws_id = _make_ws(client)
-    fake_docker_manager.proot_command.return_value = (
+    fake_docker_manager.apps_command.return_value = (
         0, _listing(("firefox", OLD, 0), ("made-up-1", OLD, 0), ("made-up-2", OLD, 0)),
     )
     seen = []
@@ -331,7 +332,7 @@ def test_update_checks_only_query_catalog_apps(client, fake_docker_manager, monk
 def test_unresolved_catalog_app_reports_check_failed(client, fake_docker_manager, monkeypatch, catalog):
     setup_admin(client)
     ws_id = _make_ws(client)
-    fake_docker_manager.proot_command.return_value = (0, _listing(("firefox", OLD, 0), ("gimp", OLD, 0)))
+    fake_docker_manager.apps_command.return_value = (0, _listing(("firefox", OLD, 0), ("gimp", OLD, 0)))
 
     async def fake_latest(apps, arch):
         return {"firefox": NEW, "gimp": None}
@@ -344,7 +345,7 @@ def test_unresolved_catalog_app_reports_check_failed(client, fake_docker_manager
 def test_update_checks_skipped_without_catalog(client, fake_docker_manager, monkeypatch):
     setup_admin(client)
     ws_id = _make_ws(client)
-    fake_docker_manager.proot_command.return_value = (0, _listing(("firefox", OLD, 0)))
+    fake_docker_manager.apps_command.return_value = (0, _listing(("firefox", OLD, 0)))
 
     async def no_catalog():
         raise httpx.ConnectError("github down")
@@ -364,13 +365,13 @@ def test_installed_apps_require_running_desktop(client, fake_docker_manager):
     assert client.get(f"/api/workspaces/{stopped}/proot-apps").status_code == 409
     browser = _make_ws(client, workspace_type="browser")
     assert client.get(f"/api/workspaces/{browser}/proot-apps").status_code == 400
-    fake_docker_manager.proot_command.assert_not_called()
+    fake_docker_manager.apps_command.assert_not_called()
 
 
 def test_installed_apps_oversized_output_is_502(client, fake_docker_manager):
     setup_admin(client)
     ws_id = _make_ws(client)
-    fake_docker_manager.proot_command.return_value = (None, None)
+    fake_docker_manager.apps_command.return_value = (None, None)
     assert client.get(f"/api/workspaces/{ws_id}/proot-apps").status_code == 502
 
 
@@ -389,7 +390,7 @@ def test_other_users_cannot_touch_apps(client, fake_docker_manager):
     log_url = f"/api/workspaces/{ws_id}/proot-apps/tasks/000000000001-ab/log"
     assert client.get(log_url, headers=headers).status_code == 403
     assert client.get("/api/proot-tasks", headers=headers).json() == []
-    fake_docker_manager.proot_command.assert_not_called()
+    fake_docker_manager.apps_command.assert_not_called()
 
 
 # ── tasks ──────────────────────────────────────────────────────────────────────
@@ -397,15 +398,15 @@ def test_other_users_cannot_touch_apps(client, fake_docker_manager):
 def test_start_task_queues_runs_and_syncs_saved_list(client, fake_docker_manager):
     setup_admin(client)
     ws_id = _make_ws(client, proot_apps="firefox")
-    fake_docker_manager.proot_command.return_value = (0, b"")
+    fake_docker_manager.apps_command.return_value = (0, b"")
 
     resp = client.post(f"/api/workspaces/{ws_id}/proot-apps/tasks", json={"op": "install", "apps": ["gimp", "gimp"]})
     assert resp.status_code == 202, resp.text
     task = resp.json()
     assert task["state"] == "queued" and task["apps"] == ["gimp"]
 
-    start, run = fake_docker_manager.proot_command.call_args_list
-    assert start.args[1] == ["start", task["id"], "install", "gimp"]
+    start, run = fake_docker_manager.apps_command.call_args_list
+    assert start.args[1] == ["start", task["id"], "proot", "install", "gimp"]
     assert start.kwargs == {"detach": False}
     assert run.args[1] == ["run", task["id"]] and run.kwargs == {"detach": True}
     assert _saved_apps(ws_id) == "firefox gimp"
@@ -432,16 +433,16 @@ def test_start_task_rejects_bad_input(client, fake_docker_manager, body):
     ws_id = _make_ws(client)
     resp = client.post(f"/api/workspaces/{ws_id}/proot-apps/tasks", json=body)
     assert resp.status_code in (400, 422)
-    fake_docker_manager.proot_command.assert_not_called()
+    fake_docker_manager.apps_command.assert_not_called()
 
 
 def test_start_task_busy_is_429_and_leaves_config(client, fake_docker_manager):
     setup_admin(client)
     ws_id = _make_ws(client, proot_apps="firefox")
-    fake_docker_manager.proot_command.return_value = (3, b"")
+    fake_docker_manager.apps_command.return_value = (3, b"")
     resp = client.post(f"/api/workspaces/{ws_id}/proot-apps/tasks", json={"op": "remove", "apps": ["firefox"]})
     assert resp.status_code == 429
-    assert fake_docker_manager.proot_command.call_count == 1  # never ran
+    assert fake_docker_manager.apps_command.call_count == 1  # never ran
     assert _saved_apps(ws_id) == "firefox"
 
 
@@ -450,12 +451,12 @@ def test_task_log_validates_id_and_cleans_output(client, fake_docker_manager):
     ws_id = _make_ws(client)
     assert client.get(f"/api/workspaces/{ws_id}/proot-apps/tasks/..%2Fetc/log").status_code in (400, 404)
     assert client.get(f"/api/workspaces/{ws_id}/proot-apps/tasks/bad_id/log").status_code == 400
-    fake_docker_manager.proot_command.assert_not_called()
+    fake_docker_manager.apps_command.assert_not_called()
 
-    fake_docker_manager.proot_command.return_value = (0, b"a\r b\n")
+    fake_docker_manager.apps_command.return_value = (0, b"a\r b\n")
     resp = client.get(f"/api/workspaces/{ws_id}/proot-apps/tasks/000000000001-ab/log")
     assert resp.json() == {"output": " b\n"}
-    fake_docker_manager.proot_command.return_value = (4, b"")
+    fake_docker_manager.apps_command.return_value = (4, b"")
     assert client.get(f"/api/workspaces/{ws_id}/proot-apps/tasks/000000000001-ab/log").status_code == 404
 
 
@@ -464,19 +465,19 @@ def test_overview_lists_only_own_live_desktops(client, fake_docker_manager):
     running = _make_ws(client)
     _make_ws(client, status="stopped")
     _make_ws(client, workspace_type="browser")
-    row = "TASK\t000000000001-ab\tinstall\trunning\t\t1\t2\t\t0\tfirefox\tfirefox\t\n"
-    fake_docker_manager.proot_command.return_value = (0, row.encode())
+    row = "TASK\t000000000001-ab\tinstall\trunning\t\t1\t2\t\t0\tfirefox\tfirefox\t\tproot\n"
+    fake_docker_manager.apps_command.return_value = (0, row.encode())
 
     resp = client.get("/api/proot-tasks")
     assert resp.status_code == 200
     body = resp.json()
     assert [w["workspace_id"] for w in body] == [running]
     assert body[0]["tasks"][0]["current_app"] == "firefox"
-    assert fake_docker_manager.proot_command.call_count == 1
+    assert fake_docker_manager.apps_command.call_count == 1
 
     # Cached within the window: no second exec.
     client.get("/api/proot-tasks")
-    assert fake_docker_manager.proot_command.call_count == 1
+    assert fake_docker_manager.apps_command.call_count == 1
 
 
 def test_overview_survives_unreachable_workspace(client, fake_docker_manager):
@@ -484,7 +485,7 @@ def test_overview_survives_unreachable_workspace(client, fake_docker_manager):
 
     setup_admin(client)
     _make_ws(client)
-    fake_docker_manager.proot_command.side_effect = docker.errors.APIError("zone down")
+    fake_docker_manager.apps_command.side_effect = docker.errors.APIError("zone down")
     resp = client.get("/api/proot-tasks")
     assert resp.status_code == 200 and resp.json() == []
 
@@ -498,13 +499,13 @@ def test_overview_does_not_wait_for_a_hung_workspace(client, fake_docker_manager
         time.sleep(1.5)
         return 0, b""
 
-    fake_docker_manager.proot_command.side_effect = slow
+    fake_docker_manager.apps_command.side_effect = slow
     started = time.monotonic()
     assert client.get("/api/proot-tasks").json() == []
     assert time.monotonic() - started < 1.2
 
 
-# ── DockerManager.proot_command ────────────────────────────────────────────────
+# ── DockerManager.apps_command ────────────────────────────────────────────────
 
 def _frame(data: bytes, stream_id: int = 1) -> bytes:
     return struct.pack(">BxxxL", stream_id, len(data)) + data
@@ -552,9 +553,9 @@ def _ws(container_id="cove-ws-1"):
     return Workspace(id=1, container_id=container_id, zone_id=0)
 
 
-def test_proot_command_runs_as_desktop_user_with_args_as_argv():
+def test_apps_command_runs_as_desktop_user_with_args_as_argv():
     mgr, api, sock = _manager_with([_frame(b"ARCH\tx86"), _frame(b"_64\n"), _frame(b"noise", 2)], exit_code=0)
-    code, out = mgr.proot_command(_ws(), ["start", "000000000001-ab", "install", "firefox"])
+    code, out = mgr.apps_command(_ws(), ["start", "000000000001-ab", "install", "firefox"])
     assert (code, out) == (0, b"ARCH\tx86_64\n")  # stderr frames dropped
     assert sock.closed
     _, cmd = api.exec_create.call_args.args
@@ -562,26 +563,26 @@ def test_proot_command_runs_as_desktop_user_with_args_as_argv():
     assert "privileged" not in api.exec_create.call_args.kwargs
     assert cmd[:2] == ["sh", "-c"]
     assert cmd[3].startswith("#!/bin/bash")  # the script itself
-    assert cmd[4:] == ["cove-proot", "start", "000000000001-ab", "install", "firefox"]
+    assert cmd[4:] == ["cove-apps", "start", "000000000001-ab", "install", "firefox"]
 
 
-def test_proot_command_reassembles_frames_split_across_reads():
+def test_apps_command_reassembles_frames_split_across_reads():
     data = _frame(b"hello ") + _frame(b"world")
     mgr, _, _ = _manager_with([data[:3], data[3:11], data[11:]])
-    assert mgr.proot_command(_ws(), ["list"]) == (0, b"hello world")
+    assert mgr.apps_command(_ws(), ["list"]) == (0, b"hello world")
 
 
-def test_proot_command_caps_output(monkeypatch):
+def test_apps_command_caps_output(monkeypatch):
     import server.docker_manager as dm
 
     monkeypatch.setattr(dm, "_PROOT_EXEC_MAX_BYTES", 10)
     mgr, api, sock = _manager_with([_frame(b"x" * 6), _frame(b"x" * 6)])
-    assert mgr.proot_command(_ws(), ["list"]) == (None, None)
+    assert mgr.apps_command(_ws(), ["list"]) == (None, None)
     assert sock.closed
     api.exec_inspect.assert_not_called()
 
 
-def test_proot_command_silent_exec_cannot_hang(monkeypatch):
+def test_apps_command_silent_exec_cannot_hang(monkeypatch):
     """A process that never writes (e.g. SIGSTOPped by the user) must still
     release the thread: every read is bounded by the deadline."""
     import socket as pysocket
@@ -595,11 +596,11 @@ def test_proot_command_silent_exec_cannot_hang(monkeypatch):
         raise pysocket.timeout()
 
     mgr, _, sock = _manager_with([stall])
-    assert mgr.proot_command(_ws(), ["tasks"]) == (None, None)
+    assert mgr.apps_command(_ws(), ["tasks"]) == (None, None)
     assert sock.closed
 
 
-def test_proot_command_trickle_hits_deadline(monkeypatch):
+def test_apps_command_trickle_hits_deadline(monkeypatch):
     import server.docker_manager as dm
 
     monkeypatch.setattr(dm, "_PROOT_EXEC_DEADLINE", 0.05)
@@ -609,30 +610,30 @@ def test_proot_command_trickle_hits_deadline(monkeypatch):
         return b"."
 
     mgr, _, sock = _manager_with([slow] * 100)
-    assert mgr.proot_command(_ws(), ["tasks"]) == (None, None)
+    assert mgr.apps_command(_ws(), ["tasks"]) == (None, None)
     assert sock.closed
 
 
-def test_proot_command_detached_run():
+def test_apps_command_detached_run():
     mgr, api, _ = _manager_with([])
-    assert mgr.proot_command(_ws(), ["run", "000000000001-ab"], detach=True) == (0, b"")
+    assert mgr.apps_command(_ws(), ["run", "000000000001-ab"], detach=True) == (0, b"")
     _, cmd = api.exec_create.call_args.args
-    assert cmd[:2] == ["bash", "-c"] and cmd[3:] == ["cove-proot", "run", "000000000001-ab"]
+    assert cmd[:2] == ["bash", "-c"] and cmd[3:] == ["cove-apps", "run", "000000000001-ab"]
     assert api.exec_create.call_args.kwargs["user"] == "abc"
     api.exec_start.assert_called_once_with("e1", detach=True)
 
 
-def test_proot_command_missing_container():
+def test_apps_command_missing_container():
     import docker.errors
 
     from server.docker_manager import ProotUnavailable
 
     mgr, _, _ = _manager_with([])
     with pytest.raises(ProotUnavailable):
-        mgr.proot_command(_ws(container_id=None), ["list"])
+        mgr.apps_command(_ws(container_id=None), ["list"])
     mgr._client.containers.get.side_effect = docker.errors.NotFound("gone")
     with pytest.raises(ProotUnavailable):
-        mgr.proot_command(_ws(), ["list"])
+        mgr.apps_command(_ws(), ["list"])
 
 
 # ── abuse limits ───────────────────────────────────────────────────────────────
@@ -642,7 +643,7 @@ def test_driver_calls_per_workspace_are_limited(client, fake_docker_manager, mon
     ws_id = _make_ws(client)
     monkeypatch.setattr(proot_router, "_calls", {f"ws:{ws_id}": proot_router._MAX_CALLS_PER_WORKSPACE})
     assert client.get(f"/api/workspaces/{ws_id}/proot-apps/tasks").status_code == 429
-    fake_docker_manager.proot_command.assert_not_called()
+    fake_docker_manager.apps_command.assert_not_called()
 
 
 def test_driver_slots_are_released(client, fake_docker_manager, monkeypatch):
@@ -652,11 +653,11 @@ def test_driver_slots_are_released(client, fake_docker_manager, monkeypatch):
     ws_id = _make_ws(client)
     calls: dict = {}
     monkeypatch.setattr(proot_router, "_calls", calls)
-    fake_docker_manager.proot_command.side_effect = docker.errors.APIError("boom")
+    fake_docker_manager.apps_command.side_effect = docker.errors.APIError("boom")
     for _ in range(5):
         assert client.get(f"/api/workspaces/{ws_id}/proot-apps/tasks").status_code == 502
-    fake_docker_manager.proot_command.side_effect = None
-    fake_docker_manager.proot_command.return_value = (0, b"")
+    fake_docker_manager.apps_command.side_effect = None
+    fake_docker_manager.apps_command.return_value = (0, b"")
     assert client.get(f"/api/workspaces/{ws_id}/proot-apps/tasks").status_code == 200
     assert calls == {}
 

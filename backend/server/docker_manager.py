@@ -45,8 +45,7 @@ logger = logging.getLogger(__name__)
 # / bind-mounted from the host checkout).
 _SCRIPTS_SRC_DIR = "/app/scripts"
 _HELPER_SCRIPTS = (
-    "install-proot-apps.sh",
-    "install-appimages.sh",
+    "cove-apps.sh",
     "launch-url.sh",
     "install-ssh-key.sh",
     "install-username.sh",
@@ -151,14 +150,15 @@ class ProotUnavailable(RuntimeError):
     """The workspace has no container to run the proot-apps driver in."""
 
 
-def _proot_script() -> str:
-    """Text of the proot-apps driver, read fresh so an updated checkout applies
-    without a restart. Falls back to the repo copy when running from source."""
+def _apps_script() -> str:
+    """Text of the in-workspace app driver, read fresh so an updated checkout
+    applies without a restart. Falls back to the repo copy when running from
+    source."""
     for base in (Path(_SCRIPTS_SRC_DIR), Path(__file__).resolve().parents[2] / "scripts"):
-        path = base / "install-proot-apps.sh"
+        path = base / "cove-apps.sh"
         if path.is_file():
             return path.read_text()
-    raise ProotUnavailable("proot-apps driver script is missing")
+    raise ProotUnavailable("app driver script is missing")
 
 
 def _build_browser_cli(ws) -> str:
@@ -870,11 +870,11 @@ class DockerManager:
         container = self._client.containers.get(container_name)
         container.exec_run(cmd, detach=True)
 
-    def proot_command(
+    def apps_command(
         self, ws: Workspace, args: list[str], *, detach: bool = False
     ) -> "tuple[int | None, bytes | None]":
-        """Run the proot-apps driver script inside a workspace (see
-        ``scripts/install-proot-apps.sh``) and return ``(exit_code, output)``.
+        """Run the app driver script inside a workspace (see
+        ``scripts/cove-apps.sh``) and return ``(exit_code, output)``.
 
         The script travels as an argument rather than a mount, so containers
         launched before it existed can run it too. It always runs as the desktop
@@ -892,7 +892,7 @@ class DockerManager:
             raise ProotUnavailable("workspace container not found") from exc
         api = container.client.api
         if detach:
-            cmd = ["bash", "-c", _proot_script(), "cove-proot", *args]
+            cmd = ["bash", "-c", _apps_script(), "cove-apps", *args]
             exec_id = api.exec_create(container.id, cmd, user="abc", stdout=False, stderr=False)["Id"]
             api.exec_start(exec_id, detach=True)
             return 0, b""
@@ -902,7 +902,7 @@ class DockerManager:
             'if command -v timeout >/dev/null 2>&1; then exec timeout 20 bash -c "$0" "$@"; fi; '
             'exec bash -c "$0" "$@"'
         )
-        cmd = ["sh", "-c", wrapper, _proot_script(), "cove-proot", *args]
+        cmd = ["sh", "-c", wrapper, _apps_script(), "cove-apps", *args]
         exec_id = api.exec_create(container.id, cmd, user="abc", stdout=True, stderr=False)["Id"]
         deadline = time.monotonic() + _PROOT_EXEC_DEADLINE
         # The raw socket, not exec_start(stream=True): docker-py's stream reader
@@ -2753,7 +2753,8 @@ class DockerManager:
         if not apps:
             return
         env["PROOT_APPS"] = " ".join(apps)
-        volumes[_helper_script_path("install-proot-apps.sh")] = {
+        # The driver picks its list from the name it's invoked as (see the script).
+        volumes[_helper_script_path("cove-apps.sh")] = {
             "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
             "mode": "ro",
         }
@@ -2770,7 +2771,7 @@ class DockerManager:
         if not urls:
             return
         env["COVE_APPIMAGES"] = " ".join(urls)
-        volumes[_helper_script_path("install-appimages.sh")] = {
+        volumes[_helper_script_path("cove-apps.sh")] = {
             "bind": "/custom-cont-init.d/97-install-appimages.sh",
             "mode": "ro",
         }

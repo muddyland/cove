@@ -5,7 +5,7 @@ linuxserver/proot-apps repo. We fetch it once and cache it for the process
 lifetime (it changes rarely); failures degrade to an empty list.
 
 Installed apps and background tasks are reported by the driver script running
-inside a workspace (``scripts/install-proot-apps.sh``). That output comes from a
+inside a workspace (``scripts/cove-apps.sh``). That output comes from a
 container its user controls, so every parser here is strict: fields are
 validated against tight patterns and anything malformed is dropped.
 
@@ -33,8 +33,15 @@ _CATALOG_RETRY = 60
 _catalog_retry_at = 0.0
 
 APP_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+# An installed AppImage's directory name, derived from its URL by the driver.
+SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# Kept in step with URL_RE in scripts/cove-apps.sh: the characters URLs are made
+# of, and nothing a shell or a line-oriented file would read as structure.
+APPIMAGE_URL_RE = re.compile(r"^https?://[A-Za-z0-9._~%-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%!*+,:@/?&=#()-]*)?$")
+MAX_URL_LEN = 2048
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 TASK_OPS = ("install", "update", "remove")
+TASK_KINDS = ("proot", "appimage")
 TASK_STATES = ("queued", "running", "done", "failed", "interrupted")
 
 # Folder proot-apps extracts a default-repository app into.
@@ -207,10 +214,48 @@ def _epoch(value: str) -> int | None:
     return int(value) if _EPOCH_RE.match(value) else None
 
 
-def _app_list(value: str) -> list[str] | None:
+def _app_list(value: str, pattern: re.Pattern = APP_NAME_RE) -> list[str] | None:
     apps = value.split(" ") if value else []
-    if len(apps) > _MAX_TASK_APPS or not all(APP_NAME_RE.match(a) for a in apps):
+    if len(apps) > _MAX_TASK_APPS or not all(pattern.match(a) for a in apps):
         return None
+    return apps
+
+
+def appimage_slug(url: str) -> str:
+    """The install directory an AppImage URL maps to. Mirrors ``slug_for`` in
+    scripts/cove-apps.sh, so Cove can match a configured URL to an installed app
+    without asking the workspace."""
+    # rstrip("/") first: basename(1) ignores trailing slashes, so "https://x.io/"
+    # is "x.io" to the driver, and the two must agree or saved URLs stop matching
+    # their installed app.
+    file = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+    name = file.rsplit(".", 1)[0] if "." in file else file
+    slug = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:64]
+    return slug or "appimage"
+
+
+def parse_appimages(raw: bytes) -> list[dict]:
+    """Parse the driver's ``appimages`` output. Rows whose slug or recorded URL
+    doesn't validate are dropped; a missing URL is normal for an app installed
+    before Cove recorded provenance."""
+    apps: list[dict] = []
+    for fields in _lines(raw):
+        if fields[0] != "APPIMAGE" or len(fields) != 6 or len(apps) >= _MAX_APPS:
+            continue
+        _, slug, name, url, size_kb, installed = fields
+        if not SLUG_RE.match(slug):
+            continue
+        if url and not (len(url) <= MAX_URL_LEN and APPIMAGE_URL_RE.match(url)):
+            url = ""
+        apps.append(
+            {
+                "slug": slug,
+                "name": (name or slug)[:200],
+                "url": url or None,
+                "size_kb": _epoch(size_kb) or 0,
+                "installed_at": _epoch(installed),
+            }
+        )
     return apps
 
 
@@ -218,24 +263,28 @@ def parse_tasks(raw: bytes) -> list[dict]:
     """Parse the driver's ``tasks`` output. Malformed rows are dropped whole."""
     tasks: list[dict] = []
     for fields in _lines(raw):
-        if fields[0] != "TASK" or len(fields) != 12 or len(tasks) >= _MAX_TASKS:
+        if fields[0] != "TASK" or len(fields) != 13 or len(tasks) >= _MAX_TASKS:
             continue
-        (_, task_id, op, state, exit_code, created, started, finished, done, current, apps, failed) = fields
-        app_list = _app_list(apps)
-        failed_list = _app_list(failed)
+        (_, task_id, op, state, exit_code, created, started, finished, done, current, apps, failed, kind) = fields
+        kind = kind if kind in TASK_KINDS else "proot"
+        # An AppImage task names install directories, a proot one catalog apps.
+        pattern = SLUG_RE if kind == "appimage" else APP_NAME_RE
+        app_list = _app_list(apps, pattern)
+        failed_list = _app_list(failed, pattern)
         if (
             not TASK_ID_RE.match(task_id)
             or op not in TASK_OPS
             or state not in TASK_STATES
             or not app_list
             or failed_list is None
-            or (current and not APP_NAME_RE.match(current))
+            or (current and not pattern.match(current))
         ):
             continue
         done_count = _epoch(done) or 0
         tasks.append(
             {
                 "id": task_id,
+                "kind": kind,
                 "op": op,
                 "state": state,
                 "exit_code": _epoch(exit_code),

@@ -15,17 +15,25 @@ from server.deps import CurrentUser, DbSession
 from server.models import Workspace
 from server.proot import (
     APP_NAME_RE,
+    APPIMAGE_URL_RE,
+    MAX_URL_LEN,
+    SLUG_RE,
     TASK_ID_RE,
     app_metadata,
+    appimage_slug,
     clean_log,
     latest_digests,
     list_proot_apps,
+    parse_appimages,
     parse_listing,
     parse_tasks,
     split_apps,
 )
 from server.routers.workspaces import _audit, _get_workspace_or_404
 from server.schemas import (
+    AppImageOut,
+    AppImagesOut,
+    AppImageTaskCreate,
     ProotAppOut,
     ProotAppsOut,
     ProotTaskCreate,
@@ -38,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["proot"])
 
-# Driver exit codes (see scripts/install-proot-apps.sh).
+# Driver exit codes (see scripts/cove-apps.sh).
 _EXIT_INVALID = 2
 _EXIT_BUSY = 3
 _EXIT_NO_LOG = 4
@@ -110,7 +118,7 @@ def _manager(ws):
 
 def _require_desktop(ws: Workspace, *, allow_creating: bool = False) -> None:
     if ws.kind != "desktop":
-        raise HTTPException(status_code=400, detail="proot-apps are only available on desktop workspaces")
+        raise HTTPException(status_code=400, detail="Installed apps are only available on desktop workspaces")
     states = ("running", "creating") if allow_creating else ("running",)
     if ws.status not in states or not ws.container_id:
         raise HTTPException(status_code=409, detail="Start the workspace to manage its apps")
@@ -121,11 +129,11 @@ def _run(ws, args: list[str], *, detach: bool = False) -> tuple[int | None, byte
     from server.docker_manager import ProotUnavailable
 
     try:
-        return _manager(ws).proot_command(ws, args, detach=detach)
+        return _manager(ws).apps_command(ws, args, detach=detach)
     except ProotUnavailable as exc:
         raise HTTPException(status_code=409, detail="Workspace container is not available") from exc
     except (docker.errors.APIError, docker.errors.DockerException, OSError) as exc:
-        logger.warning("proot-apps driver failed for workspace %s: %s", ws.id, exc)
+        logger.warning("app driver failed for workspace %s: %s", ws.id, exc)
         raise HTTPException(status_code=502, detail="Could not reach the workspace") from exc
 
 
@@ -247,7 +255,7 @@ def start_proot_task(ws_id: int, body: ProotTaskCreate, user: CurrentUser, db: D
     task_id = f"{int(time.time()):012d}-{secrets.token_hex(4)}"
     target = _target(ws, db)
     with _driver_slot(target.id, user.id):
-        code, _ = _run(target, ["start", task_id, body.op, *apps])
+        code, _ = _run(target, ["start", task_id, "proot", body.op, *apps])
         if code == _EXIT_BUSY:
             raise HTTPException(status_code=429, detail="Too many app tasks are already running in this workspace")
         if code == _EXIT_INVALID:
@@ -277,6 +285,93 @@ def start_proot_task(ws_id: int, body: ProotTaskCreate, user: CurrentUser, db: D
     return ProotTaskOut(
         id=task_id, op=body.op, state="queued", exit_code=None, apps=apps, failed_apps=[],
         current_app=None, done_count=0, created_at=int(time.time()), started_at=None, finished_at=None,
+    )
+
+
+def _clean_url(raw: str) -> str:
+    url = (raw or "").strip()
+    if len(url) > MAX_URL_LEN or not APPIMAGE_URL_RE.match(url):
+        raise HTTPException(status_code=400, detail=f"Invalid AppImage URL: {raw[:80]!r}")
+    return url
+
+
+@router.get("/workspaces/{ws_id}/appimages", response_model=AppImagesOut)
+def workspace_appimages(ws_id: int, user: CurrentUser, db: DbSession):
+    """AppImages installed in a running desktop workspace, with where each came
+    from (null for one installed before Cove recorded that)."""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    _require_desktop(ws)
+    target = _target(ws, db)
+    with _driver_slot(target.id, user.id):
+        code, out = _run(target, ["appimages"])
+    if code != 0 or out is None:
+        raise HTTPException(status_code=502, detail="The workspace returned an unreadable AppImage list")
+    return AppImagesOut(apps=[AppImageOut(**a) for a in parse_appimages(out)])
+
+
+@router.post("/workspaces/{ws_id}/appimages/tasks", response_model=ProotTaskOut, status_code=202)
+def start_appimage_task(ws_id: int, body: AppImageTaskCreate, user: CurrentUser, db: DbSession, request: Request):
+    """Queue an AppImage install, update (the given URL replaces the app) or
+    remove. Cove never fetches these URLs itself — the workspace downloads them,
+    where the egress guard already applies."""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    _require_desktop(ws)
+
+    if body.op == "install":
+        urls = list(dict.fromkeys(_clean_url(u) for u in body.urls))
+        if not urls:
+            raise HTTPException(status_code=400, detail="No AppImage URLs given")
+        args = ["appimage", "install", *urls]
+        subjects = [appimage_slug(u) for u in urls]
+    elif body.op == "update":
+        if not body.slug or not SLUG_RE.match(body.slug):
+            raise HTTPException(status_code=400, detail="Invalid AppImage")
+        urls = [_clean_url(body.url or "")]
+        args = ["appimage", "update", body.slug, urls[0]]
+        subjects = [body.slug]
+    else:
+        subjects = list(dict.fromkeys(body.slugs))
+        if not subjects or not all(SLUG_RE.match(s) for s in subjects):
+            raise HTTPException(status_code=400, detail="Invalid AppImage")
+        urls = []
+        args = ["appimage", "remove", *subjects]
+
+    task_id = f"{int(time.time()):012d}-{secrets.token_hex(4)}"
+    target = _target(ws, db)
+    with _driver_slot(target.id, user.id):
+        code, _ = _run(target, ["start", task_id, *args])
+        if code == _EXIT_BUSY:
+            raise HTTPException(status_code=429, detail="Too many app tasks are already running in this workspace")
+        if code == _EXIT_INVALID:
+            raise HTTPException(status_code=400, detail="The workspace rejected the task")
+        if code != 0:
+            raise HTTPException(status_code=502, detail="Could not queue the task in the workspace")
+        _run(target, ["run", task_id], detach=True)
+    _forget_tasks(target.id)
+
+    # Keep the saved list in step: it is what a boot (and a migration) reinstalls
+    # from. Entries are matched by the slug their URL maps to, the same way the
+    # driver names install directories.
+    with _config_lock:
+        db.refresh(ws)
+        configured = split_apps(ws.appimages)
+        if body.op == "remove":
+            configured = [u for u in configured if appimage_slug(u) not in subjects]
+        else:
+            dropped = {s for s in subjects}
+            configured = [u for u in configured if appimage_slug(u) not in dropped]
+            configured += urls
+        ws.appimages = " ".join(configured) or None
+        db.commit()
+    _audit(
+        db, f"workspace.appimages.{body.op}", detail=f"{ws.public_id}: {' '.join(subjects)}",
+        user=user, request=request,
+    )
+
+    return ProotTaskOut(
+        id=task_id, kind="appimage", op=body.op, state="queued", exit_code=None, apps=subjects,
+        failed_apps=[], current_app=None, done_count=0, created_at=int(time.time()),
+        started_at=None, finished_at=None,
     )
 
 
