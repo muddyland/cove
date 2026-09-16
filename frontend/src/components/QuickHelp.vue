@@ -25,6 +25,10 @@
         <div><strong>Fullscreen</strong><p>Expand the stream to fill the screen. Press again — or Esc — to exit.</p></div>
       </li>
       <li>
+        <span class="quick-ic"><Package :size="15" /></span>
+        <div><strong>Apps</strong><p>On a desktop node: see the proot-apps and AppImages installed in it. Update or remove them, install more, and check which proot-apps have a newer build. Work runs in the background — you can close the dialog.</p></div>
+      </li>
+      <li>
         <span class="quick-ic"><Activity :size="15" /></span>
         <div><strong>Logs</strong><p>Open diagnostics: container logs, plus connection status for VPN / Tailscale nodes.</p></div>
       </li>
@@ -40,6 +44,14 @@
 
     <h4 class="quick-h">From the dashboard grid</h4>
     <ul class="quick-list">
+      <li>
+        <span class="quick-ic"><ListChecks :size="15" /></span>
+        <div><strong>Background tasks</strong><p>The checklist icon in the top bar tracks app installs, updates and removals across your running nodes — including the ones a node runs at boot. It spins with a count while work is in flight, and each task keeps its log.</p></div>
+      </li>
+      <li>
+        <span class="quick-ic"><Package :size="15" /></span>
+        <div><strong>Apps</strong><p>Same app manager as on the workspace screen, from a running desktop's <em>Actions</em> menu.</p></div>
+      </li>
       <li>
         <span class="quick-ic"><Pencil :size="15" /></span>
         <div><strong>Edit</strong><p>Change a node's settings (packages, VPN, DNS…). Stop it first — changes apply on the next boot.</p></div>
@@ -62,8 +74,8 @@
 
 <script setup lang="ts">
 import {
-  Activity, ArrowRightLeft, ChevronDown, CopyPlus, Download, Maximize,
-  MousePointer2, PanelLeft, Pencil, ScanLine, Square, Trash2,
+  Activity, ArrowRightLeft, ChevronDown, CopyPlus, Download, ListChecks, Maximize,
+  MousePointer2, Package, PanelLeft, Pencil, ScanLine, Square, Trash2,
 } from 'lucide-vue-next'
 </script>
 

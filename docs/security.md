@@ -18,6 +18,8 @@ assumes about its environment. For the deep architecture, see
 - Containers drop all Linux capabilities (re-adding only a minimal set), run with `no-new-privileges` unless the workspace explicitly requested sudo and the admin hasn't force-disabled it, and carry a process limit. See [Workspaces → hardening](workspaces.md#sudo--container-hardening).
 - The egress firewall **fails closed**: a workspace whose rules could not be installed ends in `error` rather than running unguarded, and connections opened before the rules landed are flushed.
 - User-supplied values that reach command lines (Tailscale exit node and login server, package and app names, target URLs, DNS servers, GPU render node) are validated against strict shapes.
+- **Managing apps inside a workspace** (the Apps dialog) runs the driver script as the **desktop user, never root** — `/config` is user-writable, so a root write there could be redirected through a planted symlink. Its output is treated as untrusted and re-validated by the backend, and calls are capped per workspace and per caller so a wedged container can't tie up server threads.
+- **AppImage URLs are fetched by the workspace, never by Cove.** The control plane only validates and stores them, so a workspace can't use an install as a way to make the backend request an address it couldn't reach itself. proot-app update checks do run from the control plane, but only against a fixed registry repository and only for names in the LinuxServer catalog.
 
 ## Stream authentication
 

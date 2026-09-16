@@ -11,6 +11,9 @@ After signing in you're in the SPA under `/app`. The top navigation has:
 - **Files** — browse your workspace storage.
 - **Preferences** — password, SSH key, Tailscale, Gluetun.
 - **Admin** (admins only) — Users, Sessions, Images, Audit, Settings. See [Administration](administration.md).
+- **Background tasks** (the checklist icon) — app installs, updates and removals
+  running inside your workspaces. It shows a spinner and a count while work is in
+  flight; open it for progress and each task's log. See [Managing apps](#managing-apps-in-a-workspace).
 
 ## The dashboard
 
@@ -20,7 +23,8 @@ The dashboard ("Workspace Grid") lists **your own** workspaces, split into
 - A live **CPU** and **memory** readout for the container.
 - The **status** (booting / provisioning / running / error).
 - For tailnet-routed workspaces, the **Tailscale IP** (copyable).
-- Actions: **Connect**, **Logs**, **Halt**, and **Purge** (delete).
+- Actions: **Connect**, **Apps**, **Logs**, **Halt**, and **Purge** (delete),
+  plus **Edit**, **Clone** and **Migrate** on a stopped one.
 
 Two launch buttons sit at the top:
 
@@ -76,10 +80,34 @@ While viewing a running workspace, a top bar provides:
 - **Quick-switch menu** — a dropdown next to the workspace name listing all your workspaces (running first). Jump between them, and **boot a stopped one in place** without returning to the dashboard.
 - **Fullscreen** (`FULL` / `WINDOW`) — expand the stream to fill the window.
 - **CRT** — a retro scanline/flicker overlay (cosmetic; per-user toggle).
+- **Apps** — on a desktop workspace, manage its proot-apps and AppImages (see [above](#managing-apps-in-a-workspace)).
 - **Logs** — opens diagnostics: container logs and (for tailnet workspaces) `tailscale status`.
 - **HALT** — stop and remove the container (persistent data is kept).
 - **APP / install** — install *this* workspace as its own PWA (its own icon and window). Handy for a single-purpose browser workspace.
 - **Connection indicators** — a lock icon when routed through a VPN (Gluetun), a network icon when routed through Tailscale (with the exit node in the tooltip).
+
+## Managing apps in a workspace
+
+**Actions → Apps** on a running desktop (or **Apps** in the stream page's menu)
+manages what's installed inside that workspace, without a terminal:
+
+- **proot-apps** — the list shows each app with its icon and whether it's **up to
+  date** or has an **update available**, compared against the LinuxServer
+  registry. Update one, update all, install more from the catalog, or remove one.
+- **AppImages** — the list shows each app's size and the URL it came from.
+  Install more by pasting URLs, update one by pasting the URL to install over it,
+  or remove it. There's no update check here: an AppImage URL carries no version
+  to compare, so you choose the link.
+
+Everything runs as a **background task** inside the workspace, one at a time. You
+can close the dialog; the **tasks** icon in the top bar tracks progress across all
+your workspaces and keeps each task's log. Installing or removing also updates the
+workspace's saved app lists, so a reboot or a migration reinstalls what you
+actually have.
+
+Booting a workspace installs anything missing from those saved lists but never
+updates what's already there — updates are always your call. For the details see
+[Workspaces → Managing apps](workspaces.md#managing-apps-in-a-running-workspace).
 
 ## The file browser
 

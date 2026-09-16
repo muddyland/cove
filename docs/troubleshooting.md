@@ -18,6 +18,8 @@ Common symptoms and fixes. For backend logs: `docker compose logs -f cove`.
 | **Tailscale/Gluetun workspace won't start** | The host needs `/dev/net/tun`. Confirm the user has a valid auth key / uploaded VPN config in Preferences. Only one active Gluetun workspace per user is allowed. |
 | **GPU workspace stutters / GPU errors** | Cove auto-detects the render-node group per host, so the classic GID mismatch is handled — but confirm **Wayland streaming** is on (required for HW encode), the host GPU isn't oversubscribed by several concurrent GPU workspaces, and the encoder is engaged on the host (`vainfo`, `radeontop`/`intel_gpu_top`). A workspace that errors with *"no render node…"* has GPU on but no usable device — turn GPU off or fix the render node. On a low-power shared iGPU, GPU off can be smoother. See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). Note that Wayland streaming is also what breaks cursor shapes ([below](#mouse-cursor-never-changes-shape)) — the two cannot both be satisfied. |
 | **Stream freezes every few seconds over the internet, then catches up in a burst; a refresh fixes it briefly** | An upstream reverse proxy (e.g. Nginx Proxy Manager) buffering the WebSocket stream on the WAN leg. Turn off proxy buffering and raise its timeouts for the workspace hosts. See [below](#stream-freezes-over-the-internet-behind-a-reverse-proxy). |
+| **An app install/update says "interrupted"** | Its task died with the container — a halt, a restart, or an out-of-memory kill mid-download. Nothing is half-installed (an AppImage update only swaps in after a clean extract), so start it again from **Actions → Apps**. |
+| **An app task won't start ("workspace is busy", 429)** | A workspace runs one app task at a time, at most three queued, and Cove caps how many driver calls it makes at once. Wait for the running task (tasks menu) and retry. |
 | **Mouse cursor never changes shape** | Not a theme problem. Selkies sends cursor shapes as stream metadata and skips that entirely on Wayland, which Cove uses by default. Turn **Wayland streaming** off for that workspace. See [below](#mouse-cursor-never-changes-shape). |
 | **Can't reach a LAN host from a workspace** | LAN access needs both the admin master toggle + allowed subnets **and** the per-workspace opt-in. Docker-internal/metadata ranges are always blocked. "Open a website" to a LAN host works via the per-URL `/32` exception. |
 | **Locked out after enabling OIDC-only** | A broken OIDC config disables OIDC-only automatically. To force recovery, set `COVE_OIDC_ONLY=false` on the server and restart. |
@@ -152,9 +154,10 @@ docker network ls --filter name=cove      # cove + per-workspace networks
 ```
 
 In-container install logs (inside the workspace's `/config`):
-`/config/.cove-proot-apps.log` and `/config/.cove-appimages.log`. proot-apps
-tasks started from the Apps dialog log only to the navbar's tasks menu (their
-state lives in `/tmp/cove-proot-apps-<uid>/` inside the running container).
+`/config/.cove-proot-apps.log` and `/config/.cove-appimages.log` hold what each
+boot installed. Tasks started from the Apps dialog log only to the navbar's tasks
+menu — their state lives in `/tmp/cove-apps-<uid>/` inside the running container,
+so it goes when the workspace halts.
 
 ## Full reset
 
