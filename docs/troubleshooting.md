@@ -20,6 +20,7 @@ Common symptoms and fixes. For backend logs: `docker compose logs -f cove`.
 | **Stream freezes every few seconds over the internet, then catches up in a burst; a refresh fixes it briefly** | An upstream reverse proxy (e.g. Nginx Proxy Manager) buffering the WebSocket stream on the WAN leg. Turn off proxy buffering and raise its timeouts for the workspace hosts. See [below](#stream-freezes-over-the-internet-behind-a-reverse-proxy). |
 | **An app install/update says "interrupted"** | Its task died with the container — a halt, a restart, or an out-of-memory kill mid-download. Nothing is half-installed (an AppImage update only swaps in after a clean extract), so start it again from **Actions → Apps**. |
 | **An app task won't start ("workspace is busy", 429)** | A workspace runs one app task at a time, at most three queued, and Cove caps how many driver calls it makes at once. Wait for the running task (tasks menu) and retry. |
+| **A browser shows its own welcome/setup screen instead of the link** | The browser's first-run experience on a fresh profile (Vivaldi's setup window, Opera's welcome tabs). Not a Cove or image setting. It happens once per profile, so a persistent workspace only needs it dismissed once; ephemeral ones hit it every launch — use Chromium or Helium there. See [below](#a-browser-opens-its-own-welcome-screen-instead-of-the-link). |
 | **Mouse cursor never changes shape** | Not a theme problem. Selkies sends cursor shapes as stream metadata and skips that entirely on Wayland, which Cove uses by default. Turn **Wayland streaming** off for that workspace. See [below](#mouse-cursor-never-changes-shape). |
 | **Can't reach a LAN host from a workspace** | LAN access needs both the admin master toggle + allowed subnets **and** the per-workspace opt-in. Docker-internal/metadata ranges are always blocked. "Open a website" to a LAN host works via the per-URL `/32` exception. |
 | **Locked out after enabling OIDC-only** | A broken OIDC config disables OIDC-only automatically. To force recovery, set `COVE_OIDC_ONLY=false` on the server and restart. |
@@ -144,6 +145,43 @@ workspace menu) from right after a freeze.
 If the proxy is configured correctly and it still stalls, the link itself can't
 carry the stream. Lower the frame rate or raise the H.264 CRF in the Selkies
 sidebar to cut bitrate.
+
+## A browser opens its own welcome screen instead of the link
+
+**Symptom.** A browser workspace (or an "Open in Cove" link) starts, but the page
+you asked for is behind the browser's own first-run screen. **Vivaldi** shows a
+modal *"Let's get you set up"* window — the requested URL is loaded behind it, so
+it looks like the link was ignored. **Opera** opens its welcome/onboarding tabs
+alongside the link. **Chromium** and **Helium** go straight to the URL.
+
+**Why.** This is the browser's own first-run experience, and it is tied to the
+*profile*, not to Cove. It fires once per fresh profile:
+
+- A **persistent** browser workspace shows it on its first launch only. Close the
+  welcome window/tabs once and it never comes back — the profile in `/config`
+  remembers.
+- An **ephemeral** workspace (the "Open in Cove" extension, or any workspace set
+  to discard its home) starts from an empty profile every time, so it shows every
+  time. If that flow matters more than the browser, use Chromium or Helium for
+  it — neither has a first-run screen.
+
+**There is no setting for it**, in Cove or in the image. LinuxServer's wrapper
+already passes `--no-first-run` to Vivaldi and exposes no environment variable
+for this; the container only forwards `VIVALDI_CLI` / `OPERA_CLI` to the browser.
+For the record, these were tested against the real images and did *not* suppress
+Vivaldi's wizard:
+
+- `--no-first-run` (already passed by the image) and a `First Run` sentinel file
+  in the user-data directory;
+- a managed enterprise policy in `/etc/vivaldi/policies/managed/`
+  (`PromotionalTabsEnabled`, `DefaultBrowserSettingEnabled`, `BrowserSignin`);
+- seeding a fresh profile's `Preferences` with
+  `vivaldi.startup.has_seen_welcome_page`, `first_seen_version` and
+  `vivaldi.welcome.read_pages`.
+
+Vivaldi decides this in its browser process, not from a pref Cove can pre-set.
+Kiosk and full-screen still apply to the window underneath, so on a persistent
+workspace the only cost is dismissing the screen once.
 
 ## Inspecting a workspace directly
 

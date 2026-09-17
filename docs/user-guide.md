@@ -186,6 +186,11 @@ zip, so this works with no internet access), then:
 To update later, unzip the new version over the same folder and press **Reload**
 on the extension's card.
 
+Each link opens in a brand-new workspace, so browsers that have a first-run
+screen (Vivaldi's setup window, Opera's welcome tabs) show it on *every* launch —
+they start from an empty profile each time. Chromium and Helium don't have one.
+See [Troubleshooting](troubleshooting.md#a-browser-opens-its-own-welcome-screen-instead-of-the-link).
+
 It signs in as you without a password, including for SSO accounts: it reads your
 existing Cove session and presents it as a bearer token, so the identity provider
 flow happens in a normal browser tab. Only an access token is ever stored.
