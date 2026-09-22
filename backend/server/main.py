@@ -126,8 +126,16 @@ async def lifespan(app: FastAPI):
         )
     if settings.oidc_enabled:
         try:
-            await oidc_module.fetch_discovery()
-            logger.info("OIDC discovery loaded from %s", settings.oidc_issuer)
+            discovery = await oidc_module.fetch_discovery()
+            # Log what was negotiated from the provider's metadata: when SSO
+            # breaks after an IdP change, these three lines are the diagnosis.
+            logger.info(
+                "OIDC discovery loaded from %s (pkce=%s, token_auth=%s, scopes=%r)",
+                settings.oidc_issuer,
+                oidc_module.pkce_enabled(discovery),
+                oidc_module.token_auth_method(discovery),
+                oidc_module.effective_scopes(),
+            )
         except Exception as exc:
             logger.warning("OIDC discovery failed: %s — OIDC may not work correctly", exc)
 

@@ -25,7 +25,7 @@ If you're new here, start with **[Installation](installation.md)**, then skim th
 - **[Networking & routing](networking.md)** — the per-workspace egress policy, LAN access, custom DNS, Tailscale routing, and Gluetun VPN routing.
 
 ### Operating Cove
-- **[Authentication](authentication.md)** — local accounts, sessions and tokens, OIDC/Authentik SSO, and OIDC-only mode.
+- **[Authentication](authentication.md)** — local accounts, sessions and tokens, OIDC/SSO against any provider, and OIDC-only mode.
 - **[Administration](administration.md)** — the admin UI: settings, user management, the image catalog, live sessions, and the audit log.
 - **[Zones (remote agents)](zones.md)** — running workspaces on remote agent nodes over mTLS: enrollment, the agent stack, networking, storage parity, migration, and troubleshooting.
 - **[Security model](security.md)** — how Cove isolates workspaces, protects credentials, and what trust assumptions it makes.

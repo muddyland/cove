@@ -81,7 +81,7 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 
 ### 🛡️ Security
 
-- **Authentication** — local accounts (bcrypt) *and* OIDC/Authentik SSO, with an optional **OIDC-only** mode that disables local login. Password management is hidden for SSO accounts.
+- **Authentication** — local accounts (bcrypt) *and* OIDC/SSO against any standards-compliant provider (Kanidm, Authentik, Keycloak, Entra ID, Okta, Google), with an optional **OIDC-only** mode that disables local login. Password management is hidden for SSO accounts.
 - **Defense in depth** — ForwardAuth-gated streams, per-workspace isolated Docker networks, split read-only/write Docker socket proxies, verified OIDC tokens, dropped capabilities, short-lived JWTs with refresh, real-client-IP rate limiting, audit logging, and optional at-rest DB encryption.
 
 ### ⚙️ Admin & catalog

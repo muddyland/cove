@@ -203,6 +203,10 @@ def get_env_summary(admin: AdminUser):
         EnvEntry(name="COVE_OIDC_PROVIDER_NAME", value=s.oidc_provider_name),
         EnvEntry(name="COVE_OIDC_CLIENT_ID", value=_opt(s.oidc_client_id)),
         EnvEntry(name="COVE_OIDC_ADMIN_GROUP", value=_opt(s.oidc_admin_group)),
+        EnvEntry(name="COVE_OIDC_GROUPS_CLAIM", value=s.oidc_groups_claim),
+        EnvEntry(name="COVE_OIDC_USERNAME_CLAIMS", value=s.oidc_username_claims),
+        EnvEntry(name="COVE_OIDC_PKCE", value=s.oidc_pkce),
+        EnvEntry(name="COVE_OIDC_TOKEN_AUTH_METHOD", value=s.oidc_token_auth_method),
         EnvEntry(name="OIDC enabled", value=str(s.oidc_enabled)),
         EnvEntry(
             name="DB encryption",

@@ -80,7 +80,7 @@ python-jose for JWTs. Key modules:
 | `models.py` | SQLAlchemy models: `User`, `WorkspaceImage`, `Workspace`, `UserTailscale`, `AppSetting`, `AuditLog`. |
 | `migrations.py` | Ordered, idempotent SQL migrations (+ a few Python data migrations) run at startup. ~20 migrations. |
 | `catalog.py` | LinuxServer.io API client: fetch image catalog, build specs, fetch project logos. |
-| `oidc.py` | OIDC discovery + token verification (JWKS), Authentik group → admin mapping. |
+| `oidc.py` | Provider-agnostic OIDC: discovery, PKCE, token verification (JWKS), group → admin mapping. |
 | `security.py` | Password hashing (bcrypt), JWT mint/verify, secret encryption (for Tailscale keys), username validation. |
 | `net.py` | Real-client-IP extraction from forwarded headers (for rate limiting / audit). |
 | `proot.py` | proot-apps: the catalog (GitHub contents API), strict parsers for the in-workspace driver's output, and update checks (installed layer digest vs. ghcr.io, cached). |
@@ -134,7 +134,7 @@ workspace can never obtain the powerful session/admin cookie.
 
 - **Local**: bcrypt password → short-lived access JWT (30 min) + refresh cookie
   (7 days). `tokens_valid_from` invalidates old tokens on password change.
-- **OIDC**: Authorization-code flow against an OIDC issuer (e.g. Authentik).
+- **OIDC**: Authorization-code flow (with PKCE where supported) against any OIDC issuer; endpoints, signing keys, PKCE and client-auth method all come from the issuer's discovery document.
   Tokens verified against the issuer's JWKS; a configured group claim grants
   admin. `COVE_OIDC_ONLY` disables local login entirely (gated on a working OIDC
   config so a typo can't lock everyone out).

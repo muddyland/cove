@@ -121,20 +121,26 @@ docker compose -f docker-compose.yml -f docker-compose.lan-tls.yml up -d
 
 Keep `COVE_WORKSPACE_DOMAIN` unset so one cert covers the app and every stream (subpath mode). See [Deployment → LAN / self-signed HTTPS](docs/deployment.md#lan--self-signed-https-no-public-domain).
 
-## 6. OIDC / Authentik SSO
+## 6. OIDC / SSO
 
 Set these in `.env` (then restart). When present, a "Sign in with …" button appears and is the primary login method; local login still works as a fallback.
 
 ```ini
-COVE_OIDC_ISSUER=https://auth.example.com/application/o/cove/
-COVE_OIDC_CLIENT_ID=...
+COVE_OIDC_ISSUER=https://idm.example.com/oauth2/openid/cove
+COVE_OIDC_CLIENT_ID=cove
 COVE_OIDC_CLIENT_SECRET=...
 COVE_OIDC_ADMIN_GROUP=cove-admins        # group claim → admin
-COVE_OIDC_PROVIDER_NAME=Authentik        # button label
+COVE_OIDC_PROVIDER_NAME=Kanidm           # button label (any provider works)
 COVE_OIDC_ONLY=false                      # true = disable local login entirely (SSO only)
 ```
 
 In your IdP, set the redirect URI to `https://<your-domain>/api/auth/oidc/callback`.
+
+`COVE_OIDC_ISSUER` must match what the provider's discovery document declares as
+`issuer`. Everything else — endpoints, signing keys, PKCE, client-auth method —
+is discovered automatically, so any standards-compliant provider works. Per-provider
+issuer formats and the handful of advanced overrides are in
+[Authentication → OIDC / SSO](docs/authentication.md#oidc--sso).
 
 `COVE_OIDC_ONLY=true` removes the local username/password form and local user
 creation (accounts are provisioned on first SSO login). It only takes effect when

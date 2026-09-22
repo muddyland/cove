@@ -195,6 +195,14 @@ def test_oidc_username_sanitizer_keeps_plain_names():
 
 
 def test_oidc_admin_group_string_claim_is_not_substring_match():
+    """A groups claim must never be matched as a substring.
+
+    The original hardening rejected *every* string-valued groups claim, because
+    ``"admin" in "not-admins"`` is a substring test. Making OIDC provider-generic
+    meant supporting the providers that legitimately send a delimited string, so
+    a string is now split on commas/whitespace and matched token-by-token — the
+    substring hazard is closed by exact matching, not by discarding the claim.
+    """
     from server.oidc import is_admin_from_claims
 
     get_settings.cache_clear()
@@ -202,8 +210,16 @@ def test_oidc_admin_group_string_claim_is_not_substring_match():
     get_settings.cache_clear()
     try:
         assert is_admin_from_claims({"groups": ["admin"]}) is True
+        # The substring hazard itself: still never a match.
         assert is_admin_from_claims({"groups": "not-admins"}) is False
-        assert is_admin_from_claims({"groups": "admin"}) is False
+        assert is_admin_from_claims({"groups": ["not-admins"]}) is False
+        assert is_admin_from_claims({"groups": "admins"}) is False
+        assert is_admin_from_claims({"groups": "superadmin"}) is False
+        # A delimited string is a list of whole group names.
+        assert is_admin_from_claims({"groups": "admin"}) is True
+        assert is_admin_from_claims({"groups": "users,admin"}) is True
+        assert is_admin_from_claims({"groups": "users admin"}) is True
+        assert is_admin_from_claims({"groups": "users,not-admins"}) is False
     finally:
         os.environ.pop("COVE_OIDC_ADMIN_GROUP", None)
         get_settings.cache_clear()

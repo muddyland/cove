@@ -276,9 +276,16 @@ async def oidc_login(request: Request):
     # A distinct nonce, sent to the IdP and echoed back in the id_token, binds
     # that token to this login attempt (defeats token replay/injection).
     nonce = oidc_module.generate_state()
+    # PKCE (RFC 7636): the verifier stays in an httpOnly cookie and only its
+    # SHA-256 challenge goes to the IdP, so an intercepted code can't be
+    # redeemed by anyone else. Required by some providers (Kanidm), which is why
+    # build_auth_url decides from discovery whether to include it at all.
+    code_verifier = oidc_module.generate_pkce_verifier()
     redirect_uri = str(request.base_url).rstrip("/") + "/api/auth/oidc/callback"
     # The state param sent to the IdP is the signed value.
-    auth_url = oidc_module.build_auth_url(redirect_uri=redirect_uri, state=signed, nonce=nonce)
+    auth_url = oidc_module.build_auth_url(
+        redirect_uri=redirect_uri, state=signed, nonce=nonce, code_verifier=code_verifier
+    )
     resp = RedirectResponse(url=auth_url)
     resp.set_cookie(
         "oidc_state",
@@ -292,6 +299,15 @@ async def oidc_login(request: Request):
     resp.set_cookie(
         "oidc_nonce",
         nonce,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=300,
+        path="/",
+    )
+    resp.set_cookie(
+        "oidc_verifier",
+        code_verifier,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
@@ -327,11 +343,24 @@ async def oidc_callback(
         raise HTTPException(status_code=400, detail="Missing nonce")
 
     redirect_uri = str(request.base_url).rstrip("/") + "/api/auth/oidc/callback"
-    token_response = await oidc_module.exchange_code(code=code, redirect_uri=redirect_uri)
+    token_response = await oidc_module.exchange_code(
+        code=code,
+        redirect_uri=redirect_uri,
+        code_verifier=request.cookies.get("oidc_verifier"),
+    )
     try:
         claims = await oidc_module.verify_id_token(token_response["id_token"], nonce=cookie_nonce)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid id_token") from exc
+
+    # Some providers put group membership (and occasionally the username) only in
+    # userinfo. Merge it UNDER the verified id_token claims so nothing fetched
+    # over a bearer call can override an identity claim we cryptographically
+    # verified — and only when the subject matches.
+    if settings.oidc_use_userinfo and token_response.get("access_token"):
+        extra = await oidc_module.fetch_userinfo(token_response["access_token"])
+        if extra and extra.get("sub") in (None, claims.get("sub")):
+            claims = {**extra, **claims}
 
     sub = claims.get("sub")
     if not sub:
@@ -365,6 +394,7 @@ async def oidc_callback(
     resp = RedirectResponse(url="/app")
     resp.delete_cookie("oidc_state", path="/")
     resp.delete_cookie("oidc_nonce", path="/")
+    resp.delete_cookie("oidc_verifier", path="/")
     _set_auth_cookies(resp, user)
     return resp
 

@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **OIDC works with any provider, not just Authentik.** Everything beyond the
+  issuer and client credentials is now read from the issuer's discovery
+  document, so Kanidm, Authentik, Keycloak, Entra ID, Okta and Google all work
+  from the same three settings. Concretely:
+  - **PKCE (S256)** is used whenever the provider advertises it, with the
+    verifier held in an httpOnly cookie. Kanidm *requires* PKCE and previously
+    rejected the login outright.
+  - **Token-endpoint client auth** follows `token_endpoint_auth_methods_supported`,
+    preferring HTTP Basic (the OIDC default, and the only method Kanidm accepts).
+    Cove previously always posted the secret in the request body.
+  - **Group matching** accepts every shape providers emit — bare names, SPNs
+    (`cove-admins@idm.example.com`), Keycloak paths (`/cove-admins`), object
+    entries and delimited strings — case-insensitively and always whole-value,
+    never as a substring. `COVE_OIDC_ADMIN_GROUP` takes a comma-separated list,
+    and `COVE_OIDC_GROUPS_CLAIM` takes a dotted path for nested claims
+    (Keycloak's `realm_access.roles`).
+  - **Usernames** come from a configurable claim list
+    (`COVE_OIDC_USERNAME_CLAIMS`) and `user@realm` is trimmed to `user`, so a
+    Kanidm SPN no longer becomes `alice-idm-example-com`.
+  - **The groups scope is only requested when an admin group is configured**, so
+    providers that reject unknown scopes don't fail login over data Cove has no
+    use for.
+  - **Userinfo claims are merged in** for providers that expose group membership
+    only there — underneath the verified ID-token claims, and only when the
+    subject matches, so a bearer-fetched claim can never override a verified one.
+  - **Discovery and JWKS are cached with a TTL** (`COVE_OIDC_METADATA_TTL_SECONDS`)
+    instead of forever, and an unknown `kid` forces one refetch — provider
+    signing-key rotation no longer locks everyone out until a restart.
+  - **Issuer mismatch fails loudly** at discovery instead of quietly accepting
+    either the configured or the advertised issuer at verification time.
+  - Startup logs the negotiated PKCE, client-auth method and scopes, which is the
+    first thing to look at when SSO breaks after changing providers.
+
+  Existing Authentik deployments need no config change. `COVE_OIDC_SCOPES` now
+  defaults to `openid email profile` (the groups scope is appended automatically),
+  and the `COVE_OIDC_PROVIDER_NAME` default in `docker-compose.yml` is now `SSO`
+  rather than `Authentik`.
+
 - **Cove serves the browser extension.** *Open in Cove* is vendored into the image
   and offered under **Preferences → Browser extension** as a zip, with install
   steps — no store, no internet access needed. It is for Chrome-based browsers;

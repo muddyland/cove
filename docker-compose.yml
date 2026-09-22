@@ -203,7 +203,19 @@ services:
       - COVE_OIDC_CLIENT_ID=${COVE_OIDC_CLIENT_ID:-}
       - COVE_OIDC_CLIENT_SECRET=${COVE_OIDC_CLIENT_SECRET:-}
       - COVE_OIDC_ADMIN_GROUP=${COVE_OIDC_ADMIN_GROUP:-}
-      - COVE_OIDC_PROVIDER_NAME=${COVE_OIDC_PROVIDER_NAME:-Authentik}
+      - COVE_OIDC_PROVIDER_NAME=${COVE_OIDC_PROVIDER_NAME:-SSO}
+      # Advanced knobs — only needed when a provider's discovery document
+      # under-reports what it supports. See .env.example for what each does.
+      - COVE_OIDC_DISCOVERY_URL=${COVE_OIDC_DISCOVERY_URL:-}
+      - COVE_OIDC_SCOPES=${COVE_OIDC_SCOPES:-openid email profile}
+      - COVE_OIDC_GROUPS_SCOPE=${COVE_OIDC_GROUPS_SCOPE:-groups}
+      - COVE_OIDC_GROUPS_CLAIM=${COVE_OIDC_GROUPS_CLAIM:-groups}
+      - COVE_OIDC_USERNAME_CLAIMS=${COVE_OIDC_USERNAME_CLAIMS:-preferred_username,email,sub}
+      - COVE_OIDC_USERNAME_STRIP_DOMAIN=${COVE_OIDC_USERNAME_STRIP_DOMAIN:-true}
+      - COVE_OIDC_PKCE=${COVE_OIDC_PKCE:-auto}
+      - COVE_OIDC_TOKEN_AUTH_METHOD=${COVE_OIDC_TOKEN_AUTH_METHOD:-auto}
+      - COVE_OIDC_USE_USERINFO=${COVE_OIDC_USE_USERINFO:-true}
+      - COVE_OIDC_METADATA_TTL_SECONDS=${COVE_OIDC_METADATA_TTL_SECONDS:-3600}
       # Set true to disable local username/password login + setup entirely and
       # go straight to the IdP (only takes effect when OIDC is configured).
       - COVE_OIDC_ONLY=${COVE_OIDC_ONLY:-false}

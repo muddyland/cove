@@ -122,6 +122,8 @@ class Settings(BaseSettings):
         "stream_signing_key",
         "agent_expected_client_cn",
         "agent_edge_client_cn",
+        "oidc_discovery_url",
+        "oidc_admin_group",
         mode="before",
     )
     @classmethod
@@ -137,12 +139,32 @@ class Settings(BaseSettings):
         """The host a workspace stream is served at in subdomain mode."""
         return f"{public_id}.{self.workspace_domain}"
 
-    # OIDC — all optional; OIDC is disabled when issuer is unset
+    # OIDC — all optional; OIDC is disabled when issuer is unset.
+    # Provider-agnostic: everything Cove needs beyond these is read from the
+    # issuer's discovery document. The overrides below exist only for providers
+    # whose metadata under-reports what they support.
     oidc_issuer: Optional[str] = None
     oidc_client_id: Optional[str] = None
     oidc_client_secret: Optional[str] = None
-    oidc_scopes: str = "openid email profile groups"
-    oidc_admin_group: Optional[str] = None
+    # Non-empty only when the discovery document does not live at
+    # {issuer}/.well-known/openid-configuration.
+    oidc_discovery_url: Optional[str] = None
+    # The groups scope is appended automatically when an admin group is set, so
+    # providers that reject unknown scopes aren't asked for data Cove won't use.
+    oidc_scopes: str = "openid email profile"
+    oidc_groups_scope: str = "groups"
+    oidc_admin_group: Optional[str] = None  # comma-separated; any match grants admin
+    oidc_groups_claim: str = "groups"  # dotted path, e.g. realm_access.roles
+    oidc_username_claims: str = "preferred_username,email,sub"
+    # Trims `user@realm` (Kanidm SPNs, emails) down to `user`.
+    oidc_username_strip_domain: bool = True
+    # "auto" follows the discovery document; "true"/"false" force it.
+    oidc_pkce: str = "auto"
+    oidc_token_auth_method: str = "auto"  # auto | client_secret_basic | client_secret_post
+    # Merge the userinfo endpoint's claims into the id_token's. Needed by
+    # providers that put group membership only in userinfo.
+    oidc_use_userinfo: bool = True
+    oidc_metadata_ttl_seconds: int = 3600  # discovery + JWKS cache; enables key rotation
     oidc_provider_name: str = "SSO"
     # When true (and OIDC is configured), local username/password login + setup
     # are disabled and the SPA goes straight to the IdP. Gated on oidc_enabled so

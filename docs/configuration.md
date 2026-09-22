@@ -60,9 +60,18 @@ file is [`.env.example`](../.env.example).
 | `COVE_OIDC_ISSUER` | _(unset)_ | OIDC issuer URL. OIDC is enabled only when issuer **and** client ID **and** secret are all set. |
 | `COVE_OIDC_CLIENT_ID` | _(unset)_ | OIDC client ID. |
 | `COVE_OIDC_CLIENT_SECRET` | _(unset)_ | OIDC client secret. |
-| `COVE_OIDC_SCOPES` | `openid email profile groups` | Scopes requested at login. |
-| `COVE_OIDC_ADMIN_GROUP` | _(unset)_ | Group claim that grants admin. When set, admin status is synced from the token on every login. |
+| `COVE_OIDC_SCOPES` | `openid email profile` | Base scopes requested at login. `openid` is always included; the groups scope is appended automatically when an admin group is set. |
+| `COVE_OIDC_ADMIN_GROUP` | _(unset)_ | Group that grants admin (comma-separated for several; any match wins). Matched against bare names, SPNs and Keycloak paths alike. When set, admin status is synced from the token on every login. |
 | `COVE_OIDC_PROVIDER_NAME` | `SSO` | Label shown on the login button. |
+| `COVE_OIDC_DISCOVERY_URL` | _(derived)_ | Override when discovery isn't at `{issuer}/.well-known/openid-configuration`. |
+| `COVE_OIDC_GROUPS_SCOPE` | `groups` | Scope requesting group membership (Kanidm also offers `groups_name`, `groups_spn`). |
+| `COVE_OIDC_GROUPS_CLAIM` | `groups` | Claim holding groups; dotted path for nested claims (Keycloak: `realm_access.roles`). |
+| `COVE_OIDC_USERNAME_CLAIMS` | `preferred_username,email,sub` | Claims tried in order to derive the username. |
+| `COVE_OIDC_USERNAME_STRIP_DOMAIN` | `true` | Trim `user@realm` (Kanidm SPNs, emails) to `user`. |
+| `COVE_OIDC_PKCE` | `auto` | `auto` follows the discovery document; `true` forces PKCE for a provider that supports it without advertising it. |
+| `COVE_OIDC_TOKEN_AUTH_METHOD` | `auto` | Token-endpoint client auth. `auto` prefers HTTP Basic (the OIDC default, and all Kanidm accepts); or pin `client_secret_basic` / `client_secret_post`. |
+| `COVE_OIDC_USE_USERINFO` | `true` | Merge userinfo claims in, for providers that expose groups only there. |
+| `COVE_OIDC_METADATA_TTL_SECONDS` | `3600` | Discovery + JWKS cache lifetime; bounds how long signing-key rotation takes to apply. |
 | `COVE_OIDC_ONLY` | `false` | Disable local login + setup entirely (SSO only). Only takes effect when OIDC is fully configured, so a broken config can't lock you out. |
 
 See [Authentication](authentication.md) for the full SSO flow and recovery steps.
