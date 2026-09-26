@@ -15,6 +15,11 @@ screen. We locate the JPEG SOI instead of assuming the header length, so an
 upstream header change fails loudly (no stripes) rather than silently producing a
 corrupted image.
 
+**The endpoint moved.** Selkies builds from around September 2026 serve the stream
+socket at ``/api/websockets`` and 404 the old ``/websockets``; older builds do the
+reverse. Both are tried in turn, newest first, so one Cove release spans images on
+either side of the change.
+
 **Never disrupt a live session.** Selkies evicts the current "primary" client when
 a new one sends ``SETTINGS`` ("KILL a new primary client connected connection
 killed"), which would drop a user mid-session. So the capture listens passively
@@ -22,6 +27,12 @@ first: if anyone is already streaming, their frames are being broadcast and we
 take one for free. Only when nothing arrives — meaning nobody is watching — do we
 ask the server to start the stream for us. ``passive_only`` forbids that second
 step outright, for refreshes that must never risk an eviction.
+
+Current builds make the passive step safer rather than unnecessary: a
+``?role=viewer`` connection never becomes primary (measured against a live
+session, the watcher kept streaming), but it also cannot *start* a stream, so it
+only ever returns a frame someone else's session is already producing. Starting
+one still means connecting as primary, with the eviction risk that implies.
 """
 
 import base64
@@ -51,6 +62,22 @@ _PYTHON_CANDIDATES = ("/lsiopy/bin/python", "/usr/bin/python3", "python3")
 # library writes to stdout.
 _MARKER = "COVE_PREVIEW:"
 
+# Marker the client writes to stderr when it could not reach a stream at all, so
+# a moved endpoint reads as one warning line instead of a silent empty preview.
+_ERR_MARKER = "COVE_PREVIEW_ERR"
+
+# Stream socket. Current Selkies builds serve ``/api/websockets`` and 404 the old
+# ``/websockets``; older builds do the reverse, so both spellings are tried.
+#
+# ``?role=viewer`` (current builds only) joins without becoming the primary
+# client: measured against a live session, the watcher kept streaming, where a
+# plain connection made the server send "KILL a new primary client connected".
+# A viewer only receives what is already being broadcast, though — it cannot
+# start a stream — so it is a free first attempt, not a replacement for one.
+_WS_VIEWER_PATH = "/api/websockets?role=viewer"
+_WS_PRIMARY_PATH = "/api/websockets"
+_WS_LEGACY_PATH = "/websockets"
+
 # In-container capture client. Kept dependency-free apart from `websockets`,
 # which ships in the Selkies venv. Passed via `python -c` (argv, not a shell
 # string) so nothing here needs quoting.
@@ -58,7 +85,8 @@ _CAPTURE_SRC = r'''
 import asyncio, base64, json, sys
 import websockets
 
-URL, PASSIVE_ONLY, PASSIVE_WAIT, ACTIVE_WAIT = sys.argv[1], sys.argv[2] == "1", float(sys.argv[3]), float(sys.argv[4])
+# [[url, may_start_the_stream], ...] tried in order, plus the two drain windows.
+TARGETS, PASSIVE_WAIT, ACTIVE_WAIT = json.loads(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3])
 SOI = b"\xff\xd8\xff"
 
 def take(raw, stripes):
@@ -95,20 +123,39 @@ async def drain(ws, stripes, first_wait, quiet=0.7, cap=8.0):
 
 async def main():
     stripes = {}
-    async with websockets.connect(URL, max_size=None, open_timeout=6) as ws:
-        # Passive first: if someone is watching, their stream is already being
-        # broadcast to every connected client, so we never have to announce
-        # ourselves (which would evict them).
-        await drain(ws, stripes, PASSIVE_WAIT, cap=PASSIVE_WAIT + 3.0)
-        if not stripes and not PASSIVE_ONLY:
-            # Nothing broadcasting => nobody is connected => safe to start it.
-            await ws.send('SETTINGS,{"displayId":"primary","encoder":"jpeg","framerate":10}')
-            await asyncio.sleep(0.3)
-            await ws.send("START_VIDEO")
-            await drain(ws, stripes, ACTIVE_WAIT, cap=ACTIVE_WAIT + 3.0)
+    errors = []
+    connected = False
+    for url, may_start in TARGETS:
+        try:
+            async with websockets.connect(url, max_size=None, open_timeout=6) as ws:
+                connected = True
+                # Passive first: if someone is watching, their stream is already
+                # being broadcast to every connected client, so we can take a
+                # frame without announcing ourselves at all.
+                await drain(ws, stripes, PASSIVE_WAIT, cap=PASSIVE_WAIT + 3.0)
+                if not stripes and may_start:
+                    # Nothing is being broadcast, so nobody is watching and it is
+                    # safe to become the primary client and ask for a stream.
+                    await ws.send('SETTINGS,{"displayId":"primary","encoder":"jpeg","framerate":10}')
+                    await asyncio.sleep(0.3)
+                    await ws.send("START_VIDEO")
+                    await drain(ws, stripes, ACTIVE_WAIT, cap=ACTIVE_WAIT + 3.0)
+        except Exception as exc:
+            # Usually this endpoint does not exist on this build; the next
+            # candidate is the other spelling. Reported only if none work.
+            errors.append("%s -> %s: %s" % (url, type(exc).__name__, exc))
+            continue
+        if stripes:
+            break
     if stripes:
         sys.stdout.write("__COVE_MARKER__" + base64.b64encode(
             json.dumps(stripes).encode()).decode() + "\n")
+    elif errors and not connected:
+        # Nothing answered anywhere: the endpoint has moved out from under us.
+        # Exit 0 regardless -- no frame is an ordinary outcome for the caller --
+        # but it must not be a silent one. A candidate that simply doesn't exist
+        # on this build is not reported, since another one did answer.
+        sys.stderr.write("__COVE_ERR_MARKER__ " + " | ".join(errors) + "\n")
 
 asyncio.run(main())
 '''
@@ -116,6 +163,7 @@ asyncio.run(main())
 # Keep the client's marker and the parser's in lockstep — hardcoding it in both
 # places would let a rename break capture while the decode tests still passed.
 _CAPTURE_SRC = _CAPTURE_SRC.replace("__COVE_MARKER__", _MARKER)
+_CAPTURE_SRC = _CAPTURE_SRC.replace("__COVE_ERR_MARKER__", _ERR_MARKER)
 
 
 def _decode_payload(stdout: bytes) -> "dict[int, bytes] | None":
@@ -208,6 +256,20 @@ def _exec_capped(container, cmd: list) -> "tuple[int | None, bytes | None]":
     return code, (None if overflow else b"".join(chunks))
 
 
+def _failure_note(output: "bytes | None") -> str:
+    """The client's own explanation of why it reached no stream, as a log-safe
+    suffix, or "" when it didn't leave one.
+
+    The text comes from a process in the user's container, so it is truncated and
+    flattened to a single line before it goes anywhere near a log.
+    """
+    for line in (output or b"").decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if line.startswith(_ERR_MARKER):
+            return ": " + " ".join(line[len(_ERR_MARKER):].split())[:300]
+    return ""
+
+
 def capture(
     container,
     port: int,
@@ -219,11 +281,26 @@ def capture(
     """Capture one frame from a running workspace container. None if unavailable.
 
     Best-effort by contract: every failure path (no interpreter, no
-    ``websockets``, stream not up yet, partial frame) returns None so callers can
-    treat "no preview" as ordinary rather than exceptional.
+    ``websockets``, no reachable endpoint, stream not up yet, partial frame)
+    returns None so callers can treat "no preview" as ordinary rather than
+    exceptional. Failures that are *not* ordinary — the client running and dying,
+    or no endpoint answering at all — are logged at warning, since those mean
+    every preview in the deployment is silently missing.
+
+    ``passive_only`` means "never risk evicting whoever is watching". On builds
+    with the viewer role that costs nothing, because a viewer cannot supersede
+    the primary client; on older ones it forbids starting a stream at all.
     """
-    url = f"ws://localhost:{port}/websockets"
-    args = [url, "1" if passive_only else "0", str(passive_wait), str(active_wait)]
+    # Tried in order. The viewer joins without becoming primary, so it can take a
+    # frame from a session someone is watching without evicting them — but it
+    # only receives what is already being broadcast; it cannot start a stream, so
+    # it is always the passive attempt. Starting one means connecting as primary,
+    # which is what ``passive_only`` forbids.
+    targets = [[f"ws://localhost:{port}{_WS_VIEWER_PATH}", False]]
+    if not passive_only:
+        targets.append([f"ws://localhost:{port}{_WS_PRIMARY_PATH}", True])
+    targets.append([f"ws://localhost:{port}{_WS_LEGACY_PATH}", not passive_only])
+    args = [json.dumps(targets), str(passive_wait), str(active_wait)]
     # Budget the exec generously past the client's own waits so a hung socket
     # surfaces as a timeout here rather than wedging the caller.
     for interpreter in _PYTHON_CANDIDATES:
@@ -236,12 +313,28 @@ def capture(
             logger.warning("Preview output from %s exceeded %d bytes; ignored", container.name, _MAX_EXEC_BYTES)
             return None
         if code != 0:
-            # Wrong interpreter (missing binary / no websockets module) — try the
-            # next candidate. A real stream failure exits 0 with no marker line.
-            logger.debug("Preview exec rc=%s via %s", code, interpreter)
+            # 126/127 is the interpreter itself being missing or unusable (no
+            # binary, no `websockets`), which is why there is a candidate list —
+            # try the next one quietly.
+            if code in (126, 127):
+                logger.debug("Preview interpreter %s unusable in %s (rc=%s)", interpreter, container.name, code)
+                continue
+            # Anything else means the client ran and died. That used to be
+            # indistinguishable from a missing interpreter, which is how a moved
+            # stream endpoint went unnoticed through every log level above DEBUG.
+            logger.warning(
+                "Preview capture failed in %s via %s (rc=%s)%s",
+                container.name, interpreter, code, _failure_note(output),
+            )
             continue
         stripes = _decode_payload(output or b"")
         if not stripes:
+            # Reached an interpreter but got no frame. Couldn't reach a stream at
+            # all => say so; otherwise the stream simply isn't rendering yet,
+            # which is ordinary during a launch.
+            note = _failure_note(output)
+            if note:
+                logger.warning("Preview capture: no stream reachable in %s%s", container.name, note)
             return None
         return assemble(stripes)
     return None
