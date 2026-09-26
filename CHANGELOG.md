@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- **Screen previews work again on current LinuxServer images, which also unblocks
+  connecting.** Selkies moved its stream socket from `/websockets` to
+  `/api/websockets` and 404s the old path, so every capture came back empty: no
+  screenshot on any card, and — since a workspace is held back from connecting
+  until its first frame exists — every launch sat at **Online / STARTING** for the
+  full 90-second fallback before it would open. Cove now tries the current
+  endpoint first and falls back to the legacy one, so it spans images on either
+  side of the change.
+  - The capture also joins as `?role=viewer` where that exists: a connection the
+    stream will not promote to primary, verified against a live session (the
+    watcher kept streaming, where a plain connection triggers Selkies' "KILL a new
+    primary client connected"). It can only take a frame the stream is already
+    broadcasting, so starting one still means connecting as primary.
+  - **A capture that fails now says so.** A non-zero exit from the in-container
+    client was read as "wrong interpreter, try the next one", which is exactly how
+    a moved endpoint stayed invisible at every log level above DEBUG. A client
+    that runs and dies, or an endpoint that answers nowhere, is a warning naming
+    the workspace and the reason.
+- **The in-stream Selkies menu is themed again.** Its dashboard was rebuilt around
+  primitive design tokens (`--bg`, `--surface`, `--border-soft`, `--text`,
+  `--accent`) with the old `--sidebar-*` variables derived from them, so overriding
+  only the derived ones left everything newer — the stream-stats tiles, meters and
+  graphs, the files modal, the gamepad tester — reading stock colours next to
+  Cove's. The injected theme now sets the primitives too (and the `--stat-*`
+  colours the stats panel scopes to itself), so current components inherit the
+  palette and future ones will as well.
+
 - **OIDC works with any provider, not just Authentik.** Everything beyond the
   issuer and client credentials is now read from the issuer's discovery
   document, so Kanidm, Authentik, Keycloak, Entra ID, Okta and Google all work

@@ -254,7 +254,9 @@ Privacy and lifecycle:
 - Capturing **never disturbs a live session.** Cove takes a frame the stream is
   already broadcasting; it only asks the stream to start when nobody is connected,
   because becoming the stream's primary client would disconnect whoever is
-  watching. On-demand refreshes never do this at all.
+  watching. On-demand refreshes never do this at all. On current images it joins
+  as a *viewer*, a connection the stream cannot promote to primary, so a refresh
+  is safe even in the moment someone opens the workspace.
 
 A workspace whose stream Cove can't read simply shows its project logo instead —
 it still launches normally.

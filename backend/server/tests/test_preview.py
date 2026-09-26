@@ -126,16 +126,48 @@ def test_capture_falls_through_interpreters_until_one_works():
     assert container.calls[0][0] != container.calls[1][0]
 
 
-def test_capture_passes_passive_only_flag_to_the_client():
-    container = _FakeContainer([(0, b"")])
-    capture(container, 3000, passive_only=True)
-    # argv: [python, -c, src, url, passive_only, passive_wait, active_wait]
-    assert container.calls[0][3] == "ws://localhost:3000/websockets"
-    assert container.calls[0][4] == "1"
+def _targets(container):
+    """The [[url, may_start], ...] the client was handed.
 
+    argv: [python, -c, src, targets_json, passive_wait, active_wait]
+    """
+    import json
+
+    return json.loads(container.calls[0][3])
+
+
+def test_capture_tries_the_current_endpoint_before_the_legacy_one():
+    """Selkies moved the stream socket to /api/websockets and 404s the old path;
+    older images do the reverse, so both spellings have to be attempted."""
     container = _FakeContainer([(0, b"")])
     capture(container, 3000, passive_only=False)
-    assert container.calls[0][4] == "0"
+    urls = [url for url, _ in _targets(container)]
+    assert urls == [
+        "ws://localhost:3000/api/websockets?role=viewer",
+        "ws://localhost:3000/api/websockets",
+        "ws://localhost:3000/websockets",
+    ]
+
+
+def test_capture_never_lets_a_viewer_try_to_start_a_stream():
+    """The viewer role can only receive a broadcast someone else's session is
+    producing, so asking it for a stream would just burn the active window."""
+    container = _FakeContainer([(0, b"")])
+    capture(container, 3000, passive_only=False)
+    viewer = [t for t in _targets(container) if "role=viewer" in t[0]]
+    assert viewer and all(may_start is False for _, may_start in viewer)
+
+
+def test_capture_passive_only_offers_no_target_that_may_start_a_stream():
+    """The passive-only contract is what keeps a refresh from evicting a live
+    viewer: with it set, no candidate may become the primary client."""
+    container = _FakeContainer([(0, b"")])
+    capture(container, 3000, passive_only=True)
+    targets = _targets(container)
+    assert targets and not any(may_start for _, may_start in targets)
+    # The viewer endpoint is still tried: it is the one that can take a frame
+    # from a session someone is watching.
+    assert any("role=viewer" in url for url, _ in targets)
 
 
 def test_capture_survives_exec_errors():
@@ -171,16 +203,59 @@ def test_assemble_rejects_oversized_stripes():
     assert assemble({0: buf.getvalue()}) is None
 
 
-def test_capture_client_never_sends_settings_when_passive_only():
-    """The passive-only contract is what keeps a refresh from evicting a live
-    viewer, so assert the client source actually gates the SETTINGS send."""
+def test_capture_client_only_sends_settings_for_a_target_that_may_start():
+    """Becoming primary evicts whoever is watching, so assert the client source
+    actually gates the SETTINGS send on the per-target flag."""
     from server.preview import _CAPTURE_SRC
 
-    assert "PASSIVE_ONLY" in _CAPTURE_SRC
-    assert "if not stripes and not PASSIVE_ONLY:" in _CAPTURE_SRC
+    assert "if not stripes and may_start:" in _CAPTURE_SRC
     settings_at = _CAPTURE_SRC.index("SETTINGS,")
-    guard_at = _CAPTURE_SRC.index("if not stripes and not PASSIVE_ONLY:")
+    guard_at = _CAPTURE_SRC.index("if not stripes and may_start:")
     assert guard_at < settings_at, "SETTINGS must be sent only inside the guard"
+
+
+def test_capture_reports_when_no_endpoint_answers(caplog):
+    """A moved endpoint used to be indistinguishable from a missing interpreter
+    and invisible above DEBUG, which is how every preview went quietly blank."""
+    import logging
+
+    from server.preview import _ERR_MARKER
+
+    note = f"{_ERR_MARKER} ws://localhost:3000/api/websockets -> InvalidStatus: HTTP 404\n"
+    container = _FakeContainer([(0, note.encode())])
+    with caplog.at_level(logging.WARNING, logger="server.preview"):
+        assert capture(container, 3000) is None
+    assert "no stream reachable" in caplog.text
+    assert "HTTP 404" in caplog.text
+
+
+def test_capture_stays_quiet_when_the_stream_is_merely_not_up_yet():
+    """The client reports nothing when an endpoint answered but had no frame —
+    ordinary during a launch, and not worth a warning on every retry."""
+    import logging
+
+    container = _FakeContainer([(0, b"")])
+    caplog_records = []
+    handler = logging.Handler()
+    handler.emit = caplog_records.append
+    logger = logging.getLogger("server.preview")
+    logger.addHandler(handler)
+    try:
+        assert capture(container, 3000) is None
+    finally:
+        logger.removeHandler(handler)
+    assert [r for r in caplog_records if r.levelno >= logging.WARNING] == []
+
+
+def test_failure_note_is_flattened_and_bounded():
+    """The text comes from a process in the user's container, so it is truncated
+    and single-lined before it reaches a log."""
+    from server.preview import _ERR_MARKER, _failure_note
+
+    assert _failure_note(b"nothing here") == ""
+    note = _failure_note(f"{_ERR_MARKER}  a\tvery   spaced {'x' * 500}\n".encode())
+    assert note.startswith(": a very spaced ")
+    assert len(note) <= 302 and "\n" not in note and "\t" not in note
 
 
 def test_capture_client_emits_the_marker_the_parser_expects():
