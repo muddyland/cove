@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — apps, browsers and provider-generic SSO
 
 - **Screen previews work again on current LinuxServer images, which also unblocks
   connecting.** Selkies moved its stream socket from `/websockets` to
