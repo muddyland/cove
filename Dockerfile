@@ -1,7 +1,6 @@
-# Optional registry prefix for the base images, e.g. a GitLab Dependency Proxy
-# ("<host>/<group>/dependency_proxy/containers/") so CI pulls through a cache and
-# avoids Docker Hub rate limits. Must include a trailing slash. Empty by default,
-# so local builds pull straight from Docker Hub.
+# Optional registry prefix for the base images, e.g. a mirror
+# ("<host>/<path>/"). Must include a trailing slash. Empty by default, so
+# builds pull straight from Docker Hub.
 ARG BASE_REGISTRY=
 
 # Stage 1: Build frontend

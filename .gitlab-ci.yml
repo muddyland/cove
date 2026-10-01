@@ -22,12 +22,11 @@ stages:
   - build
 
 variables:
-  # Plain images by default. The internal group overrides these to pull
-  # through its dependency proxy; a mirror needs no such thing.
+  # Plain images by default; override per project to use a mirror.
   PYTHON_IMAGE: python:3.12-slim
   # This project is still on node 20.
   NODE_IMAGE: node:20-alpine
-  DOCKER_IMAGE: docker:24.0.5
+  DOCKER_IMAGE: docker:29.8.2
   # Prefix for the Dockerfile's FROM lines. Empty means Docker Hub.
   BASE_REGISTRY: ""
 
@@ -107,15 +106,13 @@ build:image:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - until docker info; do sleep 1; done
-    # Only where a dependency proxy exists. Logging the dind daemon in lets
-    # the Dockerfile's FROM lines pull through the cache too.
-    - |
-      if [ -n "${CI_DEPENDENCY_PROXY_SERVER:-}" ]; then
-        docker login -u "$CI_DEPENDENCY_PROXY_USER" -p "$CI_DEPENDENCY_PROXY_PASSWORD" "$CI_DEPENDENCY_PROXY_SERVER"
-      fi
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    - docker build --build-arg BASE_REGISTRY="$BASE_REGISTRY" --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
+    # Push a single image manifest. Docker 29 builds into the containerd image
+    # store and attaches a provenance attestation by default, which turns the
+    # push into an OCI index; the GitLab registry rejects that with "blob
+    # unknown to registry". Without attestations the push is one manifest.
+    - docker build --provenance=false --sbom=false --build-arg BASE_REGISTRY="$BASE_REGISTRY" --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
   rules:
     - if: '$CI_COMMIT_REF_NAME == "main"'
