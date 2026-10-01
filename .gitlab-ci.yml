@@ -22,8 +22,7 @@ stages:
   - build
 
 variables:
-  # Plain images by default. The internal group overrides these to pull
-  # through its dependency proxy; a mirror needs no such thing.
+  # Plain images by default; override per project to use a mirror.
   PYTHON_IMAGE: python:3.12-slim
   # This project is still on node 20.
   NODE_IMAGE: node:20-alpine
@@ -107,12 +106,6 @@ build:image:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - until docker info; do sleep 1; done
-    # Only where a dependency proxy exists. Logging the dind daemon in lets
-    # the Dockerfile's FROM lines pull through the cache too.
-    - |
-      if [ -n "${CI_DEPENDENCY_PROXY_SERVER:-}" ]; then
-        docker login -u "$CI_DEPENDENCY_PROXY_USER" -p "$CI_DEPENDENCY_PROXY_PASSWORD" "$CI_DEPENDENCY_PROXY_SERVER"
-      fi
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
     # Push a single image manifest. Docker 29 builds into the containerd image
