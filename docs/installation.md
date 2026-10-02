@@ -44,8 +44,33 @@ local use only** — for anything reachable over a network, serve HTTPS and set
 
 The default Compose file builds the `cove:local` image from the repository
 `Dockerfile` (a multi-stage build: Node compiles the frontend, then it's copied
-into a Python 3.12 runtime). `docker compose up --build` rebuilds it. There is no
+into a Python 3.14 runtime). `docker compose up --build` rebuilds it. There is no
 published image — you build locally.
+
+### Hardened base image (optional)
+
+The runtime is `python:3.14-slim` by default. To build it on a
+[Docker Hardened Image](https://docs.docker.com/dhi/) instead — no shell, no
+package manager, a minimal set of system libraries — add the
+`docker-compose.dhi.yml` override to whatever you already run:
+
+```bash
+docker login dhi.io
+docker compose -f docker-compose.yml -f docker-compose.dhi.yml up -d --build
+# with TLS:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+               -f docker-compose.dhi.yml up -d --build
+```
+
+It builds `cove:local-dhi`, so the slim `cove:local` is kept for switching back.
+To pull through a mirror instead of `dhi.io`, set `COVE_DHI_PYTHON_IMAGE` (the
+repository, no tag) and optionally `COVE_DHI_PYTHON_TAG` (default
+`3.14-debian13`) in `.env`. Cove behaves the same on either base. The one
+difference is that there is no shell in the container: use `docker debug cove`,
+or `docker compose exec cove python -c ...`, rather than `exec cove sh`.
+
+Remote zones run the agent from the control plane's own image, so they follow
+whichever base the control plane was built on.
 
 ## Day-to-day operations
 
