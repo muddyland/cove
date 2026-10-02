@@ -1,0 +1,30 @@
+# =============================================================================
+# Cove — hardened base image override
+# =============================================================================
+# Builds the cove image on a Docker Hardened Image instead of python:3.14-slim:
+# no shell, no package manager, a minimal set of system libraries. Layer it on
+# top of whatever you already run; it only changes how the image is built.
+#
+#     docker compose -f docker-compose.yml -f docker-compose.dhi.yml up -d --build
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                    -f docker-compose.dhi.yml up -d --build
+#
+# dhi.io needs a Docker login (`docker login dhi.io`). To pull through a mirror
+# instead, set in .env:
+#   COVE_DHI_PYTHON_IMAGE   default dhi.io/python   (repository, no tag)
+#   COVE_DHI_PYTHON_TAG     default 3.14-debian13
+#
+# Behaviour is the same as the slim build. Two things differ:
+#   * there is no shell in the container, so `docker compose exec cove sh`
+#     does not work. Use `docker debug cove`, or `exec cove python -c ...`;
+#   * the image is tagged cove:local-dhi, so switching back and forth does not
+#     overwrite the slim build.
+# =============================================================================
+services:
+  cove:
+    build:
+      context: .
+      args:
+        PYTHON_BUILDER_IMAGE: ${COVE_DHI_PYTHON_IMAGE:-dhi.io/python}:${COVE_DHI_PYTHON_TAG:-3.14-debian13}-dev
+        PYTHON_RUNTIME_IMAGE: ${COVE_DHI_PYTHON_IMAGE:-dhi.io/python}:${COVE_DHI_PYTHON_TAG:-3.14-debian13}
+    image: cove:local-dhi

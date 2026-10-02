@@ -10,7 +10,7 @@
   </p>
   <p>
     <img src="https://img.shields.io/badge/license-GPLv3-blue.svg" alt="License: GPLv3" />
-    <img src="https://img.shields.io/badge/backend-FastAPI%20%C2%B7%20Python%203.12-009688.svg" alt="Backend: FastAPI / Python 3.12" />
+    <img src="https://img.shields.io/badge/backend-FastAPI%20%C2%B7%20Python%203.14-009688.svg" alt="Backend: FastAPI / Python 3.14" />
     <img src="https://img.shields.io/badge/frontend-Vue%203%20%C2%B7%20TypeScript-42b883.svg" alt="Frontend: Vue 3 / TypeScript" />
     <img src="https://img.shields.io/badge/stream-Selkies-ff2e88.svg" alt="Streaming: Selkies" />
   </p>
@@ -125,7 +125,7 @@ Full instructions — including HTTPS, OIDC, DNS-01, and storage — are in
           └─ manages containers via the proxy (DOCKER_HOST)
 ```
 
-- **Backend** — Python 3.12, FastAPI, SQLAlchemy (SQLite/WAL), Docker SDK.
+- **Backend** — Python 3.14, FastAPI, SQLAlchemy (SQLite/WAL), Docker SDK.
 - **Frontend** — Vue 3 + TypeScript + Vite + Pinia.
 - **Proxy** — Traefik v3 (label-based, auto-routes each workspace; TLS via Let's Encrypt, TLS-ALPN or DNS-01).
 - **Workspaces** — `lscr.io/linuxserver/*` images (port 3000, `/config`).

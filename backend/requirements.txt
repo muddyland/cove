@@ -14,6 +14,8 @@ Pillow==12.3.0
 # (e.g. arm64) there is no wheel, so scope this to x86_64 — the app imports
 # sqlcipher3 lazily and only when COVE_DB_ENCRYPTION_KEY is set (see db.py).
 # To use DB encryption on arm64, build sqlcipher3 from source instead.
-sqlcipher3-binary==0.5.4; platform_machine == "x86_64"
+# 0.5.4.post2: the same 0.5.4 release, rebuilt with Python 3.14 wheels (0.5.4
+# itself stops at cp313).
+sqlcipher3-binary==0.5.4.post2; platform_machine == "x86_64"
 pytest==9.0.3
 pytest-asyncio==1.4.0

@@ -23,12 +23,24 @@ stages:
 
 variables:
   # Plain images by default; override per project to use a mirror.
-  PYTHON_IMAGE: python:3.12-slim
+  PYTHON_IMAGE: python:3.14-slim
   # This project is still on node 20.
   NODE_IMAGE: node:20-alpine
   DOCKER_IMAGE: docker:29.8.2
   # Prefix for the Dockerfile's FROM lines. Empty means Docker Hub.
   BASE_REGISTRY: ""
+  # Set USE_DHI to "true" to build the image on a Docker Hardened Image (no
+  # shell, no package manager) instead of python:3.14-slim. Off by default, so
+  # the public mirror builds on slim. DHI_PYTHON_IMAGE is the repository
+  # without a tag: the build installs into its "-dev" variant and ships the
+  # plain one. The default is Docker's own DHI registry, which needs a login;
+  # internally, set DHI_PYTHON_IMAGE as a CI/CD variable to the registry mirror
+  # instead (kept out of this file, which is mirrored public). debian13, not
+  # alpine: Pillow, bcrypt and sqlcipher3 are glibc wheels, the same as slim.
+  # docker-compose.dhi.yml does the same switch for a local build.
+  USE_DHI: "false"
+  DHI_PYTHON_IMAGE: "dhi.io/python"
+  DHI_PYTHON_TAG: "3.14-debian13"
 
 # ── Shared bases ──────────────────────────────────────────────────────────
 
@@ -112,7 +124,27 @@ build:image:
     # store and attaches a provenance attestation by default, which turns the
     # push into an OCI index; the GitLab registry rejects that with "blob
     # unknown to registry". Without attestations the push is one manifest.
-    - docker build --provenance=false --sbom=false --build-arg BASE_REGISTRY="$BASE_REGISTRY" --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
+    # USE_DHI swaps the builder and runtime Python images together: the
+    # dependency stage builds against its image's libc, so the pair must match.
+    - |
+      PY_ARGS=""
+      # Pass whichever package indexes the job has through to the build: the
+      # tools read them natively in a job container, but `docker build` does
+      # not inherit the job's environment. Unset, the Dockerfile's public
+      # defaults apply, which is the case on the mirror.
+      if [ -n "${PIP_INDEX_URL:-}" ]; then
+        PY_ARGS="$PY_ARGS --build-arg PIP_INDEX_URL=$PIP_INDEX_URL"
+      fi
+      if [ -n "${NPM_CONFIG_REGISTRY:-}" ]; then
+        PY_ARGS="$PY_ARGS --build-arg NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY"
+      fi
+      if [ "$USE_DHI" = "true" ]; then
+        echo "USE_DHI=true: runtime image on ${DHI_PYTHON_IMAGE}:${DHI_PYTHON_TAG}"
+        PY_ARGS="$PY_ARGS --build-arg PYTHON_BUILDER_IMAGE=${DHI_PYTHON_IMAGE}:${DHI_PYTHON_TAG}-dev"
+        PY_ARGS="$PY_ARGS --build-arg PYTHON_RUNTIME_IMAGE=${DHI_PYTHON_IMAGE}:${DHI_PYTHON_TAG}"
+      fi
+      docker build --provenance=false --sbom=false --build-arg BASE_REGISTRY="$BASE_REGISTRY" $PY_ARGS \
+        --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
   rules:
     - if: '$CI_COMMIT_REF_NAME == "main"'

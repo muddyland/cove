@@ -102,8 +102,18 @@ def test_remote_zone_unreachable_fails_fast():
 
 def _ready_fake(monkeypatch) -> MagicMock:
     """A docker client whose launched container reports 'running' immediately, so
-    the readiness wait returns fast instead of polling for the full timeout."""
+    the readiness wait returns fast instead of polling for the full timeout.
+
+    The first-frame wait is stubbed too, with a frame on the first try. With
+    time.sleep a no-op and nothing to decode from a MagicMock container, it
+    otherwise spins for its whole grace period, and every capture attempt is
+    recorded on the mock: a few minutes of CPU and gigabytes of call history
+    per test, enough to get a memory-limited runner killed.
+    """
+    import server.docker_manager as dm
+
     monkeypatch.setattr("time.sleep", lambda *a, **k: None)
+    monkeypatch.setattr(dm, "capture_preview_frame", lambda *a, **k: b"\xff\xd8frame")
     fake = MagicMock()
     fake.containers.run.return_value.id = "deadbeefcafe"
     fake.containers.run.return_value.attrs = {"State": {"Status": "running"}}
