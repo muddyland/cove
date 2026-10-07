@@ -7,11 +7,12 @@ bad-signature / aud-mismatch / issuer-mismatch tokens are rejected.
 
 import asyncio
 
+import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwk, jwt
-from jose.exceptions import JWTError
+from jwt import PyJWTError as JWTError
+from jwt.algorithms import RSAAlgorithm
 
 from server import oidc as oidc_module
 
@@ -27,11 +28,8 @@ def _make_keypair():
         serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption(),
     ).decode()
-    pub_pem = key.public_key().public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode()
-    pub_jwk = jwk.construct(pub_pem, algorithm="RS256").to_dict()
+    pub_jwk = RSAAlgorithm.to_jwk(key.public_key(), as_dict=True)
+    pub_jwk["alg"] = "RS256"
     pub_jwk["kid"] = _KID
     return priv_pem, pub_jwk
 
