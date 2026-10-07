@@ -7,8 +7,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
+import jwt
 from cryptography.fernet import Fernet, InvalidToken
-from jose import JWTError, jwt
+from jwt import PyJWTError as JWTError
 
 from server.config import get_settings
 

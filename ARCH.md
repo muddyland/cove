@@ -69,7 +69,7 @@ host-root pivot via the raw socket.
 ### Backend (`backend/server/`)
 
 Python 3.14, FastAPI, SQLAlchemy 2.0 over SQLite (WAL), the Docker SDK, and
-python-jose for JWTs. Key modules:
+PyJWT for JWTs. Key modules:
 
 | Module | Responsibility |
 |---|---|

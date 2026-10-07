@@ -17,8 +17,9 @@ from typing import Any, Optional
 from urllib.parse import urlencode
 
 import httpx
-from jose import jwt
-from jose.exceptions import JWTError
+import jwt
+from jwt import PyJWK
+from jwt import PyJWTError as JWTError
 
 from server.config import get_settings
 
@@ -292,7 +293,7 @@ async def verify_id_token(id_token: str, nonce: Optional[str] = None) -> dict:
     Fetches JWKS + discovery, selects the signing key by the token header `kid`,
     and verifies signature, audience (oidc_client_id) and issuer. When ``nonce``
     is supplied, the token's ``nonce`` claim must match it (binds the token to
-    this login attempt). Raises jose.JWTError (or related) on any failure.
+    this login attempt). Raises jwt.PyJWTError (or a subclass) on any failure.
 
     An unknown `kid` forces one JWKS refetch before failing, so a provider that
     rotates signing keys mid-cache does not lock everyone out until restart.
@@ -320,7 +321,9 @@ async def verify_id_token(id_token: str, nonce: Optional[str] = None) -> dict:
 
     claims = jwt.decode(
         id_token,
-        key=key,
+        # PyJWK turns the JWK dict into a cryptography public key; the accepted
+        # algorithms still come only from our allowlist, never from the key or header.
+        key=PyJWK(key).key,
         algorithms=algorithms,
         audience=settings.oidc_client_id,
         issuer=accepted_issuers,
