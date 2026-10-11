@@ -5,9 +5,10 @@ import type { WorkspaceStatus } from '@/types'
 
 const cases: Array<[WorkspaceStatus, string]> = [
   ['creating', 'Starting'],
-  ['running', 'Online'],
-  ['stopping', 'Halting'],
-  ['stopped', 'Offline'],
+  ['running', 'Running'],
+  ['stopping', 'Stopping'],
+  ['migrating', 'Migrating'],
+  ['stopped', 'Stopped'],
   ['error', 'Error'],
 ]
 

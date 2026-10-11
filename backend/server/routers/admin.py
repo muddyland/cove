@@ -13,6 +13,7 @@ from server.schemas import (
     AdminUserUpdate,
     AppSettingsOut,
     AppSettingsUpdate,
+    AuditFacetsOut,
     AuditOut,
     EnvEntry,
     EnvSummaryOut,
@@ -122,6 +123,18 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
     return target
 
 
+@router.post("/users/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_user_sessions(user_id: int, admin: AdminUser, db: DbSession, request: Request):
+    """Sign a user out everywhere: every access/refresh token issued before now
+    stops working (same mechanism as a password change or logout)."""
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    target.tokens_valid_from = datetime.now(timezone.utc)
+    db.commit()
+    _audit(db, "admin.user.revoke_sessions", detail=target.username, user=admin, request=request)
+
+
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: int, admin: AdminUser, db: DbSession, bg: BackgroundTasks, request: Request):
     target = db.get(User, user_id)
@@ -157,19 +170,111 @@ def list_sessions(admin: AdminUser, db: DbSession):
 
 @router.delete("/sessions/{ws_id}", status_code=status.HTTP_204_NO_CONTENT)
 def kill_session(ws_id: int, admin: AdminUser, db: DbSession, bg: BackgroundTasks, request: Request):
+    """Stop another user's running workspace.
+
+    This used to call remove_workspace, which deletes the workspace record —
+    so the admin "Halt" button silently destroyed the user's workspace (and
+    with it the card, its settings and, for an ephemeral one, its data). It
+    now stops it exactly like the owner's Stop does; the workspace stays and
+    can be started again."""
     ws = db.get(Workspace, ws_id)
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    if ws.status not in ("running", "creating"):
+        raise HTTPException(status_code=400, detail=f"Cannot stop workspace in state: {ws.status}")
+    from server.routers.workspaces import _transition
+
+    if not _transition(db, ws.id, ("running", "creating"), "stopping"):
+        raise HTTPException(status_code=409, detail="Workspace is already changing state")
     _audit(db, "admin.session.kill", detail=ws.public_id, user=admin, request=request)
     from server.docker_manager import get_docker_manager
-    bg.add_task(get_docker_manager(ws.zone_id).remove_workspace, ws.id)
+    bg.add_task(get_docker_manager(ws.zone_id).stop_workspace, ws.id)
+
+
+_PUBLIC_ID_RE = None
+
+
+def _naive_utc(ts: datetime) -> datetime:
+    """AuditLog.ts is stored naive-UTC (SQLite); compare like with like."""
+    return ts.astimezone(timezone.utc).replace(tzinfo=None) if ts.tzinfo else ts
+
+
+def _detail_public_id(detail: str | None) -> str | None:
+    """The workspace public_id a workspace.* entry's detail starts with (the
+    detail is ``<public_id>``, ``<public_id> purge_storage=…`` or
+    ``<public_id>:<src>-><dst>``), or None."""
+    global _PUBLIC_ID_RE
+    if not detail:
+        return None
+    if _PUBLIC_ID_RE is None:
+        import re
+
+        _PUBLIC_ID_RE = re.compile(r"^([0-9a-f]{32})(?:[\s:]|$)")
+    m = _PUBLIC_ID_RE.match(detail)
+    return m.group(1) if m else None
 
 
 @router.get("/audit", response_model=list[AuditOut])
-def list_audit(admin: AdminUser, db: DbSession):
-    return db.scalars(
-        select(AuditLog).order_by(AuditLog.ts.desc(), AuditLog.id.desc()).limit(200)
+def list_audit(
+    admin: AdminUser,
+    db: DbSession,
+    user: str | None = None,
+    action: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    q: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+):
+    """Newest-first audit entries. ``action`` matches exactly or, ending in
+    ``.``/``*``, as a prefix (``workspace.`` = every workspace action); ``q`` is
+    a substring match on the detail. Workspace entries carry the workspace's
+    current name when it still exists."""
+    stmt = select(AuditLog)
+    if user:
+        stmt = stmt.where(AuditLog.username == user)
+    if action:
+        if action.endswith(("*", ".")):
+            prefix = action.rstrip("*")
+            stmt = stmt.where(AuditLog.action.startswith(prefix, autoescape=True))
+        else:
+            stmt = stmt.where(AuditLog.action == action)
+    if since:
+        stmt = stmt.where(AuditLog.ts >= _naive_utc(since))
+    if until:
+        stmt = stmt.where(AuditLog.ts <= _naive_utc(until))
+    if q:
+        stmt = stmt.where(AuditLog.detail.contains(q, autoescape=True))
+    limit = max(1, min(limit, 1000))
+    offset = max(0, offset)
+    rows = db.scalars(
+        stmt.order_by(AuditLog.ts.desc(), AuditLog.id.desc()).limit(limit).offset(offset)
     ).all()
+
+    pids = {pid for r in rows if (pid := _detail_public_id(r.detail))}
+    by_pid = {}
+    if pids:
+        for ws_id, pid, name in db.execute(
+            select(Workspace.id, Workspace.public_id, Workspace.name).where(Workspace.public_id.in_(pids))
+        ):
+            by_pid[pid] = (ws_id, name)
+    out = []
+    for r in rows:
+        item = AuditOut.model_validate(r)
+        hit = by_pid.get(_detail_public_id(r.detail) or "")
+        if hit:
+            item.workspace_id, item.workspace_name = hit
+        out.append(item)
+    return out
+
+
+@router.get("/audit/facets", response_model=AuditFacetsOut)
+def audit_facets(admin: AdminUser, db: DbSession):
+    users = db.scalars(
+        select(AuditLog.username).where(AuditLog.username.is_not(None)).distinct().order_by(AuditLog.username)
+    ).all()
+    actions = db.scalars(select(AuditLog.action).distinct().order_by(AuditLog.action)).all()
+    return AuditFacetsOut(users=list(users), actions=list(actions))
 
 
 @router.get("/env", response_model=EnvSummaryOut)

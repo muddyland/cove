@@ -6,18 +6,18 @@
 
     <div class="panels">
       <section v-if="isLocalUser" class="panel">
-        <h3>// CHANGE PASSWORD</h3>
+        <h3>CHANGE PASSWORD</h3>
         <form class="form" @submit.prevent="handlePassword">
           <div class="form-group">
-            <label>// current passkey</label>
+            <label>Current password</label>
             <input v-model="pw.current" type="password" required autocomplete="current-password" />
           </div>
           <div class="form-group">
-            <label>// new passkey (min 8 chars)</label>
+            <label>New password (min 8 characters)</label>
             <input v-model="pw.next" type="password" required minlength="8" autocomplete="new-password" />
           </div>
           <div class="form-group">
-            <label>// confirm passkey</label>
+            <label>Confirm new password</label>
             <input v-model="pw.confirm" type="password" required autocomplete="new-password" />
           </div>
           <div v-if="pwError" class="form-error">⚠ {{ pwError }}</div>
@@ -28,7 +28,7 @@
       </section>
 
       <section class="panel">
-        <h3>// TAILSCALE</h3>
+        <h3>TAILSCALE</h3>
         <LoadingSpinner v-if="tsLoading" block />
         <form v-else class="form" @submit.prevent="handleTailscale">
           <label class="checkbox-row">
@@ -36,7 +36,7 @@
             <span>Enabled</span>
           </label>
           <div class="form-group">
-            <label>// auth key</label>
+            <label>Auth key</label>
             <input
               v-model="ts.auth_key"
               type="password"
@@ -45,7 +45,7 @@
             />
           </div>
           <div class="form-group">
-            <label>// login server (optional)</label>
+            <label>Login server (optional)</label>
             <input v-model="ts.login_server" type="url" placeholder="https://login.tailscale.com" />
           </div>
           <p class="hint">
@@ -60,7 +60,7 @@
       </section>
 
       <section class="panel">
-        <h3>// GLUETUN VPN</h3>
+        <h3>GLUETUN VPN</h3>
         <LoadingSpinner v-if="gLoading" block />
         <form v-else class="form" @submit.prevent="handleGluetun">
           <label class="checkbox-row">
@@ -68,14 +68,14 @@
             <span>Enabled</span>
           </label>
           <div class="form-group">
-            <label>// vpn type</label>
+            <label>VPN type</label>
             <select v-model="g.vpn_type">
               <option value="openvpn">OpenVPN</option>
               <option value="wireguard">WireGuard</option>
             </select>
           </div>
           <div class="form-group">
-            <label>// config file ({{ g.vpn_type === 'wireguard' ? '.conf' : '.ovpn' }})</label>
+            <label>Config file ({{ g.vpn_type === 'wireguard' ? '.conf' : '.ovpn' }})</label>
             <input type="file" accept=".ovpn,.conf,.txt" @change="onConfigFile" />
             <p class="hint">
               <template v-if="gFilename">Stored: <code>{{ gFilename }}</code> — upload to replace.</template>
@@ -83,7 +83,7 @@
             </p>
           </div>
           <div v-if="g.vpn_type === 'wireguard'" class="form-group">
-            <label>// private key override (optional)</label>
+            <label>Private key override (optional)</label>
             <input
               v-model="g.wireguard_private_key"
               type="password"
@@ -93,7 +93,7 @@
           </div>
           <template v-else>
             <div class="form-group">
-              <label>// openvpn username override (optional)</label>
+              <label>OpenVPN username override (optional)</label>
               <input
                 v-model="g.openvpn_user"
                 type="text"
@@ -102,7 +102,7 @@
               />
             </div>
             <div class="form-group">
-              <label>// openvpn password override (optional)</label>
+              <label>OpenVPN password override (optional)</label>
               <input
                 v-model="g.openvpn_password"
                 type="password"
@@ -123,7 +123,7 @@
       </section>
 
       <section class="panel">
-        <h3>// SSH KEY</h3>
+        <h3>SSH KEY</h3>
         <LoadingSpinner v-if="sshLoading" block />
         <div v-else class="form">
           <p class="hint">
@@ -134,7 +134,7 @@
 
           <template v-if="ssh.has_key">
             <div class="form-group">
-              <label>// public key ({{ ssh.key_type }})</label>
+              <label>Public key ({{ ssh.key_type }})</label>
               <textarea :value="ssh.public_key || ''" readonly rows="3" class="mono" @focus="selectAll" />
               <p class="hint">Fingerprint: <code>{{ ssh.fingerprint }}</code></p>
             </div>
@@ -148,7 +148,7 @@
 
           <template v-else>
             <div class="form-group">
-              <label>// upload private key</label>
+              <label>Upload private key</label>
               <input type="file" @change="onKeyFile" />
               <textarea
                 v-model="uploadText"
@@ -175,7 +175,7 @@
       </section>
 
       <section v-if="extension.available" class="panel">
-        <h3>// BROWSER EXTENSION</h3>
+        <h3>BROWSER EXTENSION</h3>
         <div class="form">
           <p class="hint">
             <strong>Open in Cove</strong> adds a right-click action to your own browser:
@@ -508,29 +508,35 @@ async function doRemove() {
 <style scoped>
 @import '@/styles/tables.css';
 
-.panels { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+/* Responsive grid: fills the width instead of fixed 420px cards that left a
+   quarter of a wide screen empty. */
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  gap: 24px;
+  align-items: start;
+}
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
-  width: 420px;
-  max-width: 100%;
+  min-width: 0;
 }
+/* Section titles: plain, so the page title stays the one glowing heading. */
 .panel h3 {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 2px;
-  color: var(--accent);
-  text-shadow: var(--glow-sm);
+  color: var(--text);
   margin-bottom: 18px;
 }
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-actions { display: flex; justify-content: flex-end; }
 .checkbox-row {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
-  font-size: 12px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
+  font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
   margin-bottom: 0;
 }
 .checkbox-row input { width: auto; margin: 0; }
@@ -538,19 +544,19 @@ async function doRemove() {
 .steps-list {
   margin: 4px 0 0; padding-left: 20px;
   display: flex; flex-direction: column; gap: 6px;
-  font-size: 12px; line-height: 1.55; color: var(--text-muted);
+  font-size: 13px; line-height: 1.55; color: var(--text-muted);
 }
-.steps-list code { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+.steps-list code { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
 .hint {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   margin: 0;
 }
 .mono {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
   word-break: break-all;
   resize: vertical;

@@ -19,30 +19,39 @@
       <table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Docker Image</th>
+            <th>Name / image</th>
             <th>Type</th>
-            <th>Downloaded</th>
+            <th>On {{ zoneLabel }}</th>
+            <th>Used by</th>
             <th>Status</th>
-            <th></th>
+            <th><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="img in images" :key="img.id">
+          <tr v-for="img in images" :key="img.id" :class="{ 'row-disabled': !img.enabled }">
             <td>
               <span class="name-cell">
                 <img v-if="img.logo_url" :src="img.logo_url" class="img-logo" alt="" @error="hideLogo" />
-                {{ img.name }}
+                <span class="name-stack">
+                  <span>{{ img.name }}</span>
+                  <code class="ref">{{ img.docker_image }}</code>
+                </span>
               </span>
             </td>
-            <td><code>{{ img.docker_image }}</code></td>
             <td>{{ img.image_type }}</td>
             <td>
-              <span class="pull-state" :class="pullStatus[img.id] ?? 'unknown'">
-                <component :is="pullIcon(img.id)" :size="13" :class="{ spin: pullStatus[img.id] === 'pulling' }" />
+              <span class="pull-state" :class="stateOf(img.id)">
+                <component :is="pullIcon(img.id)" :size="13" :class="{ spin: stateOf(img.id) === 'pulling' }" />
                 {{ pullLabel(img.id) }}
               </span>
+              <span v-if="details[img.id]?.updated_at && stateOf(img.id) === 'present'" class="sub" :title="`Last pulled ${absoluteTime(details[img.id]?.updated_at)}`">
+                pulled {{ relativeTime(details[img.id]?.updated_at) }}
+              </span>
+              <span v-if="updates[img.id]" class="sub" :class="updateClass(img.id)" :title="updates[img.id]?.detail || ''">
+                {{ updateLabel(img.id) }}
+              </span>
             </td>
+            <td :title="usedByTitle(img.id)">{{ details[img.id]?.workspace_count ?? '—' }}</td>
             <td>
               <span class="status-dot" :class="img.enabled ? 'enabled' : 'disabled'">
                 {{ img.enabled ? 'Enabled' : 'Disabled' }}
@@ -51,22 +60,35 @@
             <td class="actions">
               <NeonButton
                 variant="ghost"
-                :loading="pullStatus[img.id] === 'pulling'"
+                :loading="stateOf(img.id) === 'pulling'"
+                :title="stateOf(img.id) === 'present' ? 'Pull the latest version of this tag' : 'Download now so the first launch is fast'"
                 @click="handlePull(img)"
               >
-                <Download :size="13" /> {{ pullStatus[img.id] === 'present' ? 'Re-pull' : 'Pull' }}
+                <Download :size="13" /> {{ stateOf(img.id) === 'present' ? 'Update' : 'Pull' }}
               </NeonButton>
-              <NeonButton
-                variant="ghost"
-                :loading="togglingId === img.id"
-                :disabled="togglingId === img.id"
-                @click="toggleEnabled(img)"
-              >
-                <component :is="img.enabled ? ToggleRight : ToggleLeft" :size="15" />
-                {{ img.enabled ? 'Disable' : 'Enable' }}
-              </NeonButton>
-              <NeonButton variant="ghost" @click="openEdit(img)"><Pencil :size="13" /> Edit</NeonButton>
-              <NeonButton variant="danger" @click="confirmDelete(img)"><Trash2 :size="13" /> Delete</NeonButton>
+              <span class="row-menu" :class="{ open: menuFor === img.id }">
+                <NeonButton
+                  variant="ghost"
+                  class="row-menu-trigger"
+                  :aria-expanded="menuFor === img.id"
+                  aria-haspopup="menu"
+                  :aria-label="`More actions for ${img.name}`"
+                  @click.stop="menuFor = menuFor === img.id ? null : img.id"
+                ><MoreHorizontal :size="15" /></NeonButton>
+                <span v-if="menuFor === img.id" class="row-menu-list" role="menu" @click.stop>
+                  <button
+                    type="button" role="menuitem" class="row-menu-item"
+                    :disabled="stateOf(img.id) !== 'present' || checkingId === img.id"
+                    @click="runMenu(() => checkUpdate(img))"
+                  ><SearchCheck :size="14" /> Check for update</button>
+                  <button type="button" role="menuitem" class="row-menu-item" :disabled="togglingId === img.id" @click="runMenu(() => toggleEnabled(img))">
+                    <component :is="img.enabled ? ToggleRight : ToggleLeft" :size="14" />
+                    {{ img.enabled ? 'Disable' : 'Enable' }}
+                  </button>
+                  <button type="button" role="menuitem" class="row-menu-item" @click="runMenu(() => openEdit(img))"><Pencil :size="14" /> Edit</button>
+                  <button type="button" role="menuitem" class="row-menu-item danger" @click="runMenu(() => confirmDelete(img))"><Trash2 :size="14" /> Delete…</button>
+                </span>
+              </span>
             </td>
           </tr>
         </tbody>
@@ -177,25 +199,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import {
   RefreshCw, RotateCcw, Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
-  Download, CheckCircle2, CircleDashed, Loader, HardDriveDownload,
+  Download, CheckCircle2, CircleDashed, Loader, HardDriveDownload, MoreHorizontal, SearchCheck,
 } from 'lucide-vue-next'
 import { imagesApi, type ImagePullStatus } from '@/api/images'
+import { absoluteTime, fmtBytes, relativeTime } from '@/utils/workspaceStatus'
 import { useUiStore } from '@/stores/ui'
 import { useZonesStore } from '@/stores/zones'
-import type { WorkspaceImage, ImageType } from '@/types'
+import type { ImageDetail, ImageUpdateCheck, WorkspaceImage, ImageType } from '@/types'
 
 const images = ref<WorkspaceImage[]>([])
 const loading = ref(true)
 // Id of the image whose enable/disable toggle is in flight (per-row spinner).
 const togglingId = ref<number | null>(null)
-const pullStatus = ref<Record<number, ImagePullStatus>>({})
+// Per-image state on the selected zone: pulled?, size, last pulled, usage,
+// live download progress (from /images/details).
+const details = ref<Record<number, ImageDetail>>({})
+// Optimistic overrides between clicking Pull and the next details poll.
+const pending = ref<Record<number, ImagePullStatus>>({})
+const updates = ref<Record<number, ImageUpdateCheck>>({})
+const checkingId = ref<number | null>(null)
+const menuFor = ref<number | null>(null)
+const zoneLabel = computed(() => zones.items.find(z => z.id === zoneId.value)?.name ?? 'Local')
 let pullTimer: ReturnType<typeof setInterval> | null = null
 const ui = useUiStore()
 const zones = useZonesStore()
@@ -226,7 +257,8 @@ async function load() { images.value = await imagesApi.list() }
 
 async function loadPullStatus() {
   try {
-    pullStatus.value = await imagesApi.pullStatus(zoneId.value)
+    details.value = await imagesApi.details(zoneId.value)
+    pending.value = {}
   } catch {
     // Best-effort; the daemon may be briefly unreachable.
   }
@@ -236,13 +268,18 @@ async function loadPullStatus() {
 // Re-query download state against the newly selected zone.
 async function onZoneChange() {
   if (pullTimer) { clearInterval(pullTimer); pullTimer = null }
-  pullStatus.value = {}
+  details.value = {}
+  updates.value = {}
   await loadPullStatus()
+}
+
+function stateOf(id: number): ImagePullStatus | 'unknown' {
+  return pending.value[id] ?? details.value[id]?.status ?? 'unknown'
 }
 
 // Poll only while something is actively downloading.
 function schedulePullPoll() {
-  const anyPulling = Object.values(pullStatus.value).some(s => s === 'pulling')
+  const anyPulling = Object.keys(details.value).some(id => stateOf(Number(id)) === 'pulling')
   if (anyPulling && !pullTimer) {
     pullTimer = setInterval(loadPullStatus, 3000)
   } else if (!anyPulling && pullTimer) {
@@ -260,26 +297,68 @@ onMounted(async () => {
   }
   await loadPullStatus()
 })
-onUnmounted(() => { if (pullTimer) clearInterval(pullTimer) })
+onUnmounted(() => {
+  if (pullTimer) clearInterval(pullTimer)
+  document.removeEventListener('click', closeMenu)
+})
+
+function closeMenu() { menuFor.value = null }
+onMounted(() => document.addEventListener('click', closeMenu))
+function runMenu(fn: () => void) {
+  menuFor.value = null
+  fn()
+}
 
 function pullIcon(id: number) {
-  const s = pullStatus.value[id]
+  const s = stateOf(id)
   if (s === 'present') return CheckCircle2
   if (s === 'pulling') return Loader
   return CircleDashed
 }
 function pullLabel(id: number): string {
-  const s = pullStatus.value[id]
-  if (s === 'present') return 'Downloaded'
-  if (s === 'pulling') return 'Pulling…'
-  if (s === 'absent') return 'Not pulled'
+  const s = stateOf(id)
+  const d = details.value[id]
+  if (s === 'present') return d?.size ? `Downloaded · ${fmtBytes(d.size)}` : 'Downloaded'
+  if (s === 'pulling') {
+    const p = d?.pull_progress
+    return p && p.total ? `Pulling ${fmtBytes(p.current)} / ${fmtBytes(p.total)}` : 'Pulling…'
+  }
+  if (s === 'absent') return 'Not downloaded'
   return '—'
+}
+function usedByTitle(id: number): string {
+  const n = details.value[id]?.workspace_count
+  if (n === undefined) return ''
+  return n ? `${n} workspace${n === 1 ? '' : 's'} (all users) use this image` : 'No workspace uses this image'
+}
+function updateLabel(id: number): string {
+  const u = updates.value[id]
+  if (!u) return ''
+  if (u.up_to_date === true) return 'up to date'
+  if (u.up_to_date === false) return 'update available'
+  return 'could not check'
+}
+function updateClass(id: number) {
+  const u = updates.value[id]?.up_to_date
+  return u === false ? 'warn' : u === true ? 'ok' : ''
+}
+async function checkUpdate(img: WorkspaceImage) {
+  checkingId.value = img.id
+  try {
+    updates.value = { ...updates.value, [img.id]: await imagesApi.checkUpdate(img.id, zoneId.value) }
+  } catch (e: any) {
+    ui.toast(e.message || 'Update check failed', 'error')
+  } finally {
+    checkingId.value = null
+  }
 }
 
 async function handlePull(img: WorkspaceImage) {
   try {
     await imagesApi.pull(img.id, zoneId.value)
-    pullStatus.value = { ...pullStatus.value, [img.id]: 'pulling' }
+    pending.value = { ...pending.value, [img.id]: 'pulling' }
+    const { [img.id]: _drop, ...rest } = updates.value
+    updates.value = rest
     ui.toast(`Pulling ${img.name}…`, 'info')
     schedulePullPoll()
   } catch (e: any) { ui.toast(e.message, 'error') }
@@ -394,7 +473,7 @@ async function handleDeleteImageOnly() {
   deleting.value = 'image'
   try {
     await imagesApi.removeImageOnly(id, zoneId.value)
-    pullStatus.value = { ...pullStatus.value, [id]: 'absent' }
+    pending.value = { ...pending.value, [id]: 'absent' }
     showConfirm.value = false
     ui.toast('Downloaded image deleted', 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }
@@ -425,19 +504,42 @@ async function handleRemoveEntry() {
 }
 .name-cell { display: inline-flex; align-items: center; gap: 8px; }
 .img-logo { width: 20px; height: 20px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
-.status-dot { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; }
-.enabled { color: var(--green); text-shadow: 0 0 6px var(--green); }
+.status-dot { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
+.enabled { color: var(--green); }
 .disabled { color: var(--text-muted); }
 .pull-state {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
 .pull-state.present { color: var(--green); }
+.name-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ref { align-self: flex-start; font-size: 11px; padding: 0 4px; }
+.sub { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.sub.warn { color: var(--amber); }
+.sub.ok { color: var(--green); }
+.row-disabled td:not(.actions) { opacity: 0.55; }
+.row-menu { position: relative; display: inline-block; }
+.row-menu-trigger { padding: 7px 8px; }
+.row-menu-list {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
+  display: flex; flex-direction: column; gap: 2px; min-width: 190px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--glow-sm), var(--shadow); padding: 5px; text-align: left;
+}
+.row-menu-item {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+  background: none; border: none; border-radius: var(--radius-sm); cursor: pointer;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.5px; text-align: left;
+}
+.row-menu-item:hover:not(:disabled) { color: var(--text); background: var(--accent-dim); }
+.row-menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
+.row-menu-item.danger { color: var(--red); }
+.row-menu-item.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 14%, transparent); }
 .pull-state.pulling { color: var(--accent); }
 .pull-state.absent, .pull-state.unknown { color: var(--text-muted); }
 .spin { animation: spin 1s linear infinite; }
@@ -448,7 +550,7 @@ async function handleRemoveEntry() {
 /* Reset-catalog confirmation. */
 .reset-modal { display: flex; flex-direction: column; gap: 14px; }
 .reset-q { margin: 0; font-size: 14px; color: var(--text); }
-.reset-desc { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+.reset-desc { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.6; }
 .reset-desc strong { color: var(--accent); }
 
 /* Delete-image modal: two stacked choice cards. */
@@ -477,7 +579,7 @@ async function handleRemoveEntry() {
 }
 .delete-opt.danger .opt-head { color: var(--red); }
 .opt-load { margin-left: auto; }
-.opt-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
-.opt-desc code { font-size: 10px; }
+.opt-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.opt-desc code { font-size: 11px; }
 .delete-actions { display: flex; justify-content: flex-end; }
 </style>

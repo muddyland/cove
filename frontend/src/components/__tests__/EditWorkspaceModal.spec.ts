@@ -81,6 +81,8 @@ const desktopWs: Workspace = {
   gpu_accel: false,
   use_docker: false,
   shared_profile: false,
+  pull_progress: null,
+  runtime_extended_at: null,
 }
 
 describe('EditWorkspaceModal', () => {

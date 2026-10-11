@@ -57,7 +57,7 @@ const when = computed(() => {
 .line { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .what { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .what b { color: var(--text); font-weight: 600; font-family: var(--font-mono); }
-.meta { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 20px; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); letter-spacing: 0.5px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 20px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.5px; }
 .icon { flex-shrink: 0; }
 .icon.queued, .state.queued { color: var(--text-muted); }
 .icon.running, .state.running { color: var(--amber); }

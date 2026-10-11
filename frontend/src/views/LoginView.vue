@@ -20,11 +20,11 @@
 
         <form @submit.prevent="handleLogin" class="form">
           <div class="form-group">
-            <label>// identifier</label>
+            <label>Username</label>
             <input v-model="username" required autocomplete="username" />
           </div>
           <div class="form-group">
-            <label>// passkey</label>
+            <label>Password</label>
             <input v-model="password" type="password" required autocomplete="current-password" />
           </div>
           <div v-if="error" class="form-error">⚠ {{ error }}</div>
@@ -140,7 +140,7 @@ async function handleLogin() {
 .auth-subtitle {
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: var(--text-muted);
 }
@@ -181,7 +181,7 @@ async function handleLogin() {
 .divider {
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 3px;
 }

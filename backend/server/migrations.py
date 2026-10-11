@@ -224,6 +224,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0045_user_docker_allowed",
         "ALTER TABLE user ADD COLUMN docker_allowed BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Lets a user push back the max-runtime auto-halt of a running workspace.
+    (
+        "0046_workspace_runtime_extended_at",
+        "ALTER TABLE workspace ADD COLUMN runtime_extended_at DATETIME",
+    ),
 ]
 
 

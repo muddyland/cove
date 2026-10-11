@@ -65,6 +65,12 @@
               <component :is="typeIcon(img.image_type)" :size="11" />{{ img.image_type }}
             </span>
             <span v-if="img.description" class="card-desc">{{ img.description }}</span>
+            <span v-if="availability[img.id] === 'absent'" class="card-pull" title="Not downloaded on this zone yet — the first start downloads it (often several GB)">
+              <Download :size="10" /> not downloaded
+            </span>
+            <span v-else-if="availability[img.id] === 'pulling'" class="card-pull">
+              <Download :size="10" /> downloading…
+            </span>
           </span>
         </button>
       </div>
@@ -83,7 +89,7 @@
         <select v-model.number="form.zone_id">
           <option v-for="z in zonesStore.items" :key="z.id" :value="z.id">{{ z.name }}</option>
         </select>
-        <p class="hint">Which node runs this workspace. Local is this Cove host.</p>
+        <p class="hint">Which zone (host) runs this workspace. Local is this Cove host.</p>
       </div>
 
       <div v-if="urlCapable" class="form-group">
@@ -114,20 +120,26 @@
       </p>
       <template v-if="urlCapable">
         <ToggleRow v-model="form.ephemeral">
-          Ephemeral (no saved data — wiped when halted)
+          Ephemeral (no saved data — wiped when stopped)
           <template v-if="form.ephemeral" #hint>
-            Cookies, history, and downloads live only in the container and are discarded on halt.
+            Cookies, history, and downloads live only in the container and are discarded when it stops.
           </template>
         </ToggleRow>
         <div v-if="form.ephemeral" class="ts-field toggles">
           <ToggleRow v-model="form.auto_remove">
             Discard when stopped (like <code>docker run --rm</code>)
             <template v-if="form.auto_remove" #hint>
-              The node disappears from the grid when it halts, instead of leaving a card that can only start blank.
+              The workspace disappears from the grid when it stops, instead of leaving a card that can only start blank.
             </template>
           </ToggleRow>
         </div>
       </template>
+
+      <p v-if="selectedAvailability === 'absent'" class="notice">
+        <Download :size="13" />
+        <span><strong>{{ selectedImage?.name }}</strong> isn't downloaded on {{ zoneName }} yet. The first
+        start downloads it, which can take several minutes — progress shows on the card.</span>
+      </p>
 
       <p v-if="!urlCapable" class="hint ready-note">Ready to launch — or customize networking &amp; apps below.</p>
     </section>
@@ -174,6 +186,7 @@
         <div><dt><Network :size="12" />Network</dt><dd>{{ networkSummary }}</dd></div>
         <div><dt><ShieldCheck :size="12" />Access</dt><dd>{{ accessSummary }}</dd></div>
         <div v-if="appsSummary"><dt><Package :size="12" />Apps</dt><dd>{{ appsSummary }}</dd></div>
+        <div v-if="selectedAvailability === 'absent'"><dt><Download :size="12" />Image</dt><dd>Downloaded on first start (can take minutes)</dd></div>
       </dl>
       <p class="hint">SSH key injection and Wayland streaming are on by default. You can change these under Customize.</p>
     </section>
@@ -221,9 +234,9 @@ import NeonButton from './NeonButton.vue'
 import NetworkFields from './NetworkFields.vue'
 import AccessFields from './AccessFields.vue'
 import AppsFields from './AppsFields.vue'
-import { Monitor, Globe, AppWindow, Link2, Tag, Server, Network, ShieldCheck, Package } from 'lucide-vue-next'
+import { Monitor, Globe, AppWindow, Link2, Tag, Server, Network, ShieldCheck, Package, Download } from 'lucide-vue-next'
 import { dnsError, packagesError, appImagesError } from '@/utils/workspaceForm'
-import { imagesApi } from '@/api/images'
+import { imagesApi, type ImagePullStatus } from '@/api/images'
 import { workspacesApi } from '@/api/workspaces'
 import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
@@ -372,6 +385,22 @@ const filteredImages = computed(() => {
 
 const zoneName = computed(() => zonesStore.items.find(z => z.id === form.zone_id)?.name ?? 'Local')
 
+// Whether each image is already on the chosen zone, so a multi-GB first pull is
+// expected rather than looking like a hung start. Best-effort: empty on error.
+const availability = ref<Record<number, ImagePullStatus>>({})
+async function loadAvailability() {
+  try {
+    availability.value = await imagesApi.availability(form.zone_id)
+  } catch {
+    availability.value = {}
+  }
+}
+watch(() => form.zone_id, loadAvailability)
+watch(open, (o) => { if (o) loadAvailability() })
+const selectedAvailability = computed(() =>
+  typeof form.image_id === 'number' ? availability.value[form.image_id] : undefined,
+)
+
 // Which start-up options this browser actually honours — the server works them
 // out per image (see catalog.browser_features), so an option that would be
 // ignored is never offered.
@@ -444,6 +473,7 @@ function goBack() {
 onMounted(async () => {
   zonesStore.fetch()
   images.value = await imagesApi.list()
+  loadAvailability()
   try {
     lanPolicy.value = await workspacesApi.lanPolicy()
   } catch {
@@ -492,9 +522,9 @@ function resetForm() {
 }
 
 
-// "Discard when stopped" only exists for ephemeral nodes — the API refuses the
-// pair otherwise, since a persistent home would be destroyed on an ordinary
-// halt. The checkbox is hidden when ephemeral is off, so clear the value too:
+// "Discard when stopped" only exists for ephemeral workspaces — the API refuses
+// the pair otherwise, since a persistent home would be destroyed on an ordinary
+// stop. The checkbox is hidden when ephemeral is off, so clear the value too:
 // a hidden-but-set flag would fail the launch with an error about a control the
 // user cannot see.
 watch(() => form.ephemeral, (on) => { if (!on) form.auto_remove = false })
@@ -571,7 +601,7 @@ async function launch() {
 }
 .steps li {
   display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
-  color: var(--text-muted); font-size: 11px; letter-spacing: 0.5px;
+  color: var(--text-muted); font-size: 12px; letter-spacing: 0.5px;
 }
 .steps li:not(:last-child)::after {
   content: ''; flex: 1; height: 1px; background: var(--border); margin-left: 6px;
@@ -585,6 +615,25 @@ async function launch() {
 .steps li.active .dot { border-color: var(--accent); color: var(--accent); box-shadow: var(--glow-sm); }
 .steps li.done .dot { border-color: var(--accent); color: var(--accent); }
 .step-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Phones: room for only one label — keep the current step's, numbers for the rest. */
+@media (max-width: 560px) {
+  .steps li { flex: 0 0 auto; }
+  .steps li.active { flex: 1 1 auto; }
+  .steps li:not(.active) .step-label { display: none; }
+  .steps li:not(:last-child)::after { width: 10px; flex: 0 0 10px; }
+  .steps li.active:not(:last-child)::after { flex: 1; }
+}
+.card-pull {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; color: var(--amber);
+}
+.notice {
+  display: flex; gap: 8px; align-items: flex-start;
+  font-size: 13px; line-height: 1.5; color: var(--text);
+  background: rgba(255, 170, 0, 0.06); border: 1px solid rgba(255, 170, 0, 0.25);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.notice svg { color: var(--amber); flex-shrink: 0; margin-top: 3px; }
 
 /* Chooser */
 .kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
@@ -600,7 +649,7 @@ async function launch() {
 .kind-icon { color: var(--accent); }
 .kind-name { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
 .kind-desc { font-size: 12px; line-height: 1.45; color: var(--text-muted); }
-.kind-count { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--text-muted); }
+.kind-count { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; color: var(--text-muted); }
 
 .chooser-controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 .search { width: 100%; }
@@ -638,14 +687,14 @@ async function launch() {
 }
 .card-type {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--text-muted); width: fit-content;
 }
 .card-type.desktop { color: var(--accent); }
 .card-type.app { color: #7fe081; }
 .card-type.browser { color: var(--pink, #ff00aa); }
 .card-desc {
-  font-size: 10px; color: var(--text-muted); line-height: 1.4;
+  font-size: 11px; color: var(--text-muted); line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .empty { padding: 24px 0; text-align: center; }
@@ -655,7 +704,7 @@ async function launch() {
 .review > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: baseline; }
 .review dt {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin: 0;
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin: 0;
 }
 .review dd { margin: 0; font-size: 13px; color: var(--text); word-break: break-word; }
 .review .muted, .muted { color: var(--text-muted); }
@@ -668,6 +717,6 @@ async function launch() {
 
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
 .toggles { display: flex; flex-direction: column; gap: 8px; }
-.hint { font-size: 11px; line-height: 1.5; color: var(--text-muted); margin: 0; }
-.field-error { font-size: 11px; color: var(--red); margin: 2px 0 0; }
+.hint { font-size: 12px; line-height: 1.5; color: var(--text-muted); margin: 0; }
+.field-error { font-size: 12px; color: var(--red); margin: 2px 0 0; }
 </style>

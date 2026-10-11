@@ -155,7 +155,7 @@ const retryHint = computed(() => {
 }
 .retry-hint {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: var(--text-muted);
 }

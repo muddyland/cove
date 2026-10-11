@@ -29,6 +29,12 @@
               <NeonButton variant="ghost" @click="openEdit(u)"><Pencil :size="13" /> Edit</NeonButton>
               <NeonButton
                 v-if="u.id !== auth.user?.id"
+                variant="ghost"
+                title="Invalidate every login of this user (all devices)"
+                @click="confirmRevoke(u)"
+              ><LogOut :size="13" /> Sign out</NeonButton>
+              <NeonButton
+                v-if="u.id !== auth.user?.id"
                 variant="danger"
                 @click="confirmDelete(u)"
               ><Trash2 :size="13" /> Delete</NeonButton>
@@ -42,21 +48,30 @@
     <ConfirmModal
       v-model="showConfirm"
       title="Delete User"
-      :message="`Delete '${deleteTarget?.username}'? All their workspaces will be stopped.`"
+      :message="`Delete '${deleteTarget?.username}'? Their workspaces are deleted too (running ones are stopped first). Home directories stay on disk.`"
       confirm-label="Delete"
       :loading="deleting"
       @confirm="handleDelete"
+    />
+    <ConfirmModal
+      v-model="showRevoke"
+      title="Sign user out"
+      :message="`Sign '${revokeTarget?.username}' out on every device? Their running workspaces keep running; they just have to log in again.`"
+      confirm-label="Sign out"
+      :loading="revoking"
+      @confirm="handleRevoke"
     />
   </AppShell>
 </template>
 
 <script setup lang="ts">
+import { absoluteTime } from '@/utils/workspaceStatus'
 import { ref, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import UserFormModal from '@/components/UserFormModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Plus, Pencil, Trash2 } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, LogOut } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
@@ -73,7 +88,22 @@ const deleting = ref(false)
 
 onMounted(async () => { users.value = await adminApi.users.list() })
 
-function formatDate(d: string) { return new Date(d).toLocaleString() }
+// API timestamps are naive UTC; parse them as UTC, not local time.
+const formatDate = absoluteTime
+const showRevoke = ref(false)
+const revokeTarget = ref<User | null>(null)
+const revoking = ref(false)
+function confirmRevoke(u: User) { revokeTarget.value = u; showRevoke.value = true }
+async function handleRevoke() {
+  if (!revokeTarget.value) return
+  revoking.value = true
+  try {
+    await adminApi.users.revokeSessions(revokeTarget.value.id)
+    showRevoke.value = false
+    ui.toast(`${revokeTarget.value.username} was signed out everywhere`, 'success')
+  } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { revoking.value = false }
+}
 function openCreate() { editTarget.value = null; showForm.value = true }
 function openEdit(u: User) { editTarget.value = u; showForm.value = true }
 function confirmDelete(u: User) { deleteTarget.value = u; showConfirm.value = true }
@@ -109,7 +139,7 @@ async function handleDelete() {
 <style scoped>
 @import '@/styles/tables.css';
 .badge {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 1px 6px; color: var(--text-muted);
 }

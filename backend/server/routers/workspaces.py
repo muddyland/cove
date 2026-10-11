@@ -25,6 +25,7 @@ from server.schemas import (
     DockerPolicyOut,
     GpuPolicyOut,
     LanPolicyOut,
+    RuntimePolicyOut,
     StreamAuthOut,
     StreamReadyOut,
     TailscaleStatusOut,
@@ -642,6 +643,30 @@ def gpu_policy(user: CurrentUser, db: DbSession):
     return GpuPolicyOut(enabled=settings_store.get_workspace_gpu_accel(db))
 
 
+@router.get("/runtime-policy", response_model=RuntimePolicyOut)
+def runtime_policy(user: CurrentUser, db: DbSession):
+    """The admin max-runtime limit, so cards can show when a running workspace
+    will be auto-halted (counted from WorkspaceOut.started_at or, if later,
+    runtime_extended_at). 0 = no limit."""
+    from server import settings_store
+
+    return RuntimePolicyOut(max_hours=settings_store.get_workspace_max_runtime_hours(db))
+
+
+@router.post("/{ws_id}/extend", response_model=WorkspaceOut)
+def extend_workspace(ws_id: int, user: CurrentUser, db: DbSession, request: Request):
+    """Restart the max-runtime clock of a running workspace from now, pushing
+    its auto-halt back by a full window."""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if ws.status != "running":
+        raise HTTPException(status_code=400, detail="Only a running workspace can be extended")
+    ws.runtime_extended_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(ws)
+    _audit(db, "workspace.extend", detail=ws.public_id, user=user, request=request)
+    return WorkspaceOut.from_workspace(ws)
+
+
 @router.get("/docker-policy", response_model=DockerPolicyOut)
 def docker_policy(user: CurrentUser, db: DbSession):
     """Docker-in-Docker policy for the workspace modals.
@@ -1075,6 +1100,10 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
     if not _transition(db, ws.id, ("stopped", "error"), "creating", clear_error=True):
         raise HTTPException(status_code=409, detail="Workspace is already starting")
     db.refresh(ws)
+    if ws.runtime_extended_at is not None:
+        # A fresh start gets a fresh runtime window; an old extension is moot.
+        ws.runtime_extended_at = None
+        db.commit()
     _audit(db, "workspace.start", detail=ws.public_id, user=user, request=request)
     from server.docker_manager import get_docker_manager
     bg.add_task(get_docker_manager(ws.zone_id).launch_workspace, ws.id)

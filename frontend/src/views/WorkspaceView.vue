@@ -26,15 +26,23 @@
               :class="{ current: w.id === wsId }"
               @click="selectNode(w)"
             >
-              <span class="switch-dot" :class="w.status" />
+              <span class="switch-dot" :class="w.status" :title="statusLabel(w.status)" />
               <span class="switch-name">{{ w.name }}</span>
               <span class="switch-img">{{ w.image_name }}</span>
               <Power v-if="w.status !== 'running'" :size="12" class="switch-boot" />
             </button>
-            <p v-if="!switchable.length" class="switch-empty">No nodes</p>
+            <p v-if="!switchable.length" class="switch-empty">No workspaces</p>
           </div>
         </div>
-        <StatusBadge v-if="ws" :status="ws.status" class="ws-status" />
+        <StatusBadge v-if="ws" :status="displayStatus(ws)" class="ws-status" />
+        <span
+          v-if="stopIn !== null && stopIn < 3_600_000"
+          class="auto-stop-warn"
+          :title="`The admin limit stops workspaces after ${store.maxRuntimeHours} h`"
+        >
+          <Timer :size="13" /> stops in {{ fmtDuration(stopIn) }}
+          <button type="button" class="link-btn" :disabled="extending" @click="handleExtend">Extend</button>
+        </span>
         <button
           v-if="ws?.status === 'running'"
           class="conn-icon gauge-btn"
@@ -106,7 +114,7 @@
               <Activity :size="15" /> Logs
             </button>
             <button class="menu-item danger" :disabled="stopping" @click="runAction(handleStop)">
-              <Square :size="15" /> {{ stopping ? 'Halting…' : 'Halt' }}
+              <Square :size="15" /> {{ stopping ? 'Stopping…' : 'Stop' }}
             </button>
           </div>
         </div>
@@ -119,20 +127,22 @@
 
     <DocsModal v-model="showHelp" initial="__quick" />
 
-    <!-- Halted takeover for a per-workspace PWA: it's a single-purpose app, so on
-         halt there's nowhere to go back to — just confirm it's safe to close. -->
+    <!-- Stopped takeover for a per-workspace PWA: it's a single-purpose app, so
+         on stop there's nowhere to go back to — just confirm it's safe to close. -->
     <div v-if="showHalted" class="overlay-state halted">
       <PowerOff class="halt-icon" :size="56" />
-      <p class="boot-text">WORKSPACE HALTED</p>
+      <p class="boot-text">WORKSPACE STOPPED</p>
       <p class="boot-sub">{{ ws?.name ? `“${ws.name}” has stopped.` : 'The workspace has stopped.' }} It’s safe to close this app now.</p>
     </div>
 
     <div v-else-if="isBooting" class="overlay-state">
       <img class="boot-icon" src="/favicon.svg" alt="" />
-      <p class="boot-text">{{ startingDesktop ? 'STARTING DESKTOP' : installing ? 'PROVISIONING NODE' : 'BOOTING NODE' }}<span class="ellipsis" /></p>
-      <p v-if="startingDesktop" class="boot-sub">Waiting for the desktop to draw its first frame…</p>
-      <p v-else-if="installing" class="boot-sub">Installing packages &amp; proot-apps — this can take a few minutes.</p>
-      <p v-else class="boot-sub">Waiting for the container to start…</p>
+      <p class="boot-text">{{ bootTitle }}<span class="ellipsis" /></p>
+      <p class="boot-sub">{{ bootSub }}</p>
+      <div v-if="pullPct !== null" class="boot-progress" role="progressbar" :aria-valuenow="pullPct" aria-valuemin="0" aria-valuemax="100">
+        <div class="boot-progress-fill" :style="{ width: pullPct + '%' }" />
+      </div>
+      <p v-if="ws?.pull_progress" class="boot-hint">The first start of an image downloads it; later starts only fetch updates.</p>
     </div>
 
     <div v-else-if="bootError" class="overlay-state error">
@@ -145,7 +155,7 @@
          script against this page with the admin's session. Make it a deliberate
          choice rather than a click-through. Subdomain mode has no such exposure. -->
     <div v-else-if="foreignStreamPending" class="overlay-state error">
-      <p class="error-text">⚠ This node belongs to another user</p>
+      <p class="error-text">⚠ This workspace belongs to another user</p>
       <p class="boot-sub">
         In subpath routing mode its desktop shares this app's origin. Opening it lets code
         running in that workspace act with your admin session. Prefer subdomain routing
@@ -173,18 +183,37 @@
          here instead of dropping the user on a raw 404. -->
     <div v-else-if="ws?.status === 'running' && streamError" class="overlay-state error">
       <p class="error-text">⚠ {{ streamError }}</p>
-      <NeonButton variant="secondary" :loading="connecting" @click="retryStream">RETRY</NeonButton>
+      <div class="foreign-actions">
+        <NeonButton variant="secondary" @click="showDiag = true">LOGS</NeonButton>
+        <NeonButton variant="secondary" :loading="connecting" @click="retryStream">RETRY</NeonButton>
+      </div>
     </div>
 
     <div v-else-if="ws?.status === 'running'" class="overlay-state">
       <img class="boot-icon" src="/favicon.svg" alt="" />
       <p class="boot-text">CONNECTING<span class="ellipsis" /></p>
-      <p class="boot-sub">Linking up to the node — one moment…</p>
+      <p class="boot-sub">Opening the stream — one moment…</p>
     </div>
 
     <div v-else-if="ws?.status === 'error'" class="overlay-state error">
-      <p class="error-text">⚠ {{ ws.error_message || 'Node failed to boot' }}</p>
-      <NeonButton variant="secondary" @click="$router.push('/app')">← RETURN TO GRID</NeonButton>
+      <p class="error-text">⚠ {{ ws.error_message || 'The workspace failed to start' }}</p>
+      <div class="foreign-actions">
+        <NeonButton v-if="!lockedToWorkspace" variant="secondary" @click="router.push('/app')">← BACK</NeonButton>
+        <NeonButton variant="secondary" @click="showDiag = true">LOGS</NeonButton>
+        <NeonButton variant="success" :loading="booting" @click="restartFromError">RESTART</NeonButton>
+      </div>
+    </div>
+
+    <!-- Stopped (from another tab, an admin, or the max-runtime limit) while
+         this page was open: say so instead of a blank screen. -->
+    <div v-else-if="ws && (ws.status === 'stopped' || ws.status === 'stopping' || ws.status === 'migrating')" class="overlay-state halted">
+      <PowerOff class="halt-icon" :size="56" />
+      <p class="boot-text">WORKSPACE {{ statusLabel(ws.status).toUpperCase() }}</p>
+      <p class="boot-sub">“{{ ws.name }}” is not running.</p>
+      <div class="foreign-actions">
+        <NeonButton v-if="!lockedToWorkspace" variant="secondary" @click="router.push('/app')">← BACK</NeonButton>
+        <NeonButton v-if="ws.status === 'stopped'" variant="success" :loading="booting" @click="restartFromError">START</NeonButton>
+      </div>
     </div>
   </div>
 </template>
@@ -204,7 +233,9 @@ import WorkspaceMetricsModal from '@/components/WorkspaceMetricsModal.vue'
 import DocsModal from '@/components/DocsModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
 import { workspaceIconUrl, type IconSource } from '@/utils/workspaceIcon'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package, Timer } from 'lucide-vue-next'
+import { autoStopAt, displayStatus, fmtDuration, pullPercent, startingDetail, statusLabel } from '@/utils/workspaceStatus'
+import { useNow } from '@/composables/useNow'
 
 const route = useRoute()
 const router = useRouter()
@@ -216,7 +247,33 @@ const wsId = computed(() => Number(route.params.id))
 const ws = computed(() => store.items.find(w => w.id === wsId.value))
 // The site's favicon for a browser node pinned to one site, else the image logo.
 const iconUrl = computed(() => (ws.value ? workspaceIconUrl(ws.value) : null))
-const installing = computed(() => !!(ws.value?.install_packages || ws.value?.proot_apps))
+const pullPct = computed(() => (ws.value ? pullPercent(ws.value) : null))
+const bootTitle = computed(() => {
+  if (!ws.value) return 'LOADING'
+  if (pullPct.value !== null) return `DOWNLOADING IMAGE ${pullPct.value}%`
+  if (ws.value.status === 'running') return ws.value.workspace_type === 'desktop' ? 'STARTING DESKTOP' : 'STARTING'
+  return 'STARTING WORKSPACE'
+})
+const bootSub = computed(() => (ws.value ? startingDetail(ws.value) : null) ?? 'Waiting for the container to start…')
+
+// Max-runtime auto-stop countdown (only surfaced in the last hour).
+const now = useNow()
+const stopIn = computed(() => {
+  const at = ws.value ? autoStopAt(ws.value, store.maxRuntimeHours) : null
+  return at === null ? null : Math.max(0, at - now.value)
+})
+const extending = ref(false)
+async function handleExtend() {
+  extending.value = true
+  try {
+    await store.extend(wsId.value)
+    ui.toast(`Extended by ${store.maxRuntimeHours} h`, 'success')
+  } catch (e: any) {
+    ui.toast(e.message || 'Could not extend', 'error')
+  } finally {
+    extending.value = false
+  }
+}
 const stopping = ref(false)
 const showDiag = ref(false)
 const showApps = ref(false)
@@ -251,9 +308,9 @@ async function selectNode(w: { id: number; name: string; status: string }) {
   if (w.status !== 'running') {
     try {
       await store.start(w.id)
-      ui.toast(`Booting ${w.name}…`, 'info')
+      ui.toast(`Starting ${w.name}…`, 'info')
     } catch (e: any) {
-      ui.toast(e.message || 'Failed to boot', 'error')
+      ui.toast(e.message || 'Failed to start', 'error')
       return
     }
   }
@@ -290,6 +347,7 @@ watch(wsId, async () => {
   connecting.value = false
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (!ws.value) await store.fetch()
+  if (!ws.value) return notFound()
   startPollIfNeeded()
   await loadStreamUrl()
 })
@@ -318,14 +376,26 @@ function sleep(ms: number) {
 // probe so we only load the iframe once the route is actually live.
 async function waitForStreamReady(id: number): Promise<boolean> {
   const deadline = Date.now() + 25000
+  let probes = 0
   while (Date.now() < deadline) {
-    if (id !== wsId.value) return false  // switched nodes mid-wait
-    if (ws.value?.status !== 'running') return false  // node left running (stopped/errored)
+    if (id !== wsId.value) return false  // switched workspaces mid-wait
+    if (ws.value?.status !== 'running') return false  // left running (stopped/errored)
     try {
       const { ready } = await workspacesApi.streamReady(id)
       if (ready) return true
     } catch {
       // Transient (e.g. a blip talking to the control plane) — keep polling.
+    }
+    // A route that won't come up usually means the container died. Re-read the
+    // workspace every other miss so its real state (error + reason) replaces
+    // the spinner within seconds, rather than a generic timeout after 25s.
+    if (++probes % 2 === 0) {
+      try {
+        if (!(await store.refreshOne(id))) return false
+      } catch {
+        // transient — the next probe will retry
+      }
+      if (ws.value?.status !== 'running') return false
     }
     await sleep(1500)
   }
@@ -345,7 +415,11 @@ async function loadStreamUrl() {
     const ready = await waitForStreamReady(id)
     if (id !== wsId.value) return
     if (!ready) {
-      streamError.value = 'This node is taking longer than usual to come online.'
+      // Left "running" (crashed, stopped elsewhere): the status overlay explains
+      // it. Only a still-running workspace gets the slow-route message.
+      if (ws.value?.status === 'running') {
+        streamError.value = 'The stream is taking longer than usual to come up. Check the logs, or retry.'
+      }
       return
     }
     const { url } = await workspacesApi.streamAuth(id)
@@ -381,12 +455,20 @@ function retryStream() {
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  // Keep the whole list fresh too (quick-switch menu, and noticing this
+  // workspace being stopped/deleted elsewhere while you're on it).
+  store.startPolling()
   if (!ws.value) await store.fetch()
+  if (!ws.value) {
+    notFound()
+    return
+  }
   await ensureRunningIfLocked()
   startPollIfNeeded()
   await loadStreamUrl()
 })
 onUnmounted(() => {
+  store.stopPolling()
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('click', closeMenu)
   document.removeEventListener('click', closeActionsMenu)
@@ -394,7 +476,13 @@ onUnmounted(() => {
 })
 
 watch(() => [ws.value?.status, ws.value?.connectable] as const, ([s, connectable]) => {
-  if ((s === 'running' && connectable) || s === 'error') {
+  // Leaving running (stopped/crashed elsewhere) tears the dead stream down so
+  // the matching status overlay shows instead of a frozen frame.
+  if (s !== 'running') {
+    streamUrl.value = null
+    streamError.value = null
+  }
+  if ((s === 'running' && connectable) || s === 'error' || s === 'stopped') {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
     booting.value = false
   }
@@ -404,19 +492,46 @@ watch(() => [ws.value?.status, ws.value?.connectable] as const, ([s, connectable
   }
 })
 
+// The workspace is gone (deleted elsewhere, or a stale link): don't spin.
+function notFound() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  ui.toast('That workspace no longer exists', 'error')
+  if (!lockedToWorkspace.value) router.replace('/app')
+}
+
+// Fast (2s) poll of just this workspace while it's starting, on top of the
+// store's list poll, so the stream opens as soon as the first frame exists.
 function startPollIfNeeded() {
   const waiting = ws.value?.status === 'creating' || (ws.value?.status === 'running' && !ws.value.connectable)
   if (waiting && !pollTimer) {
     pollTimer = setInterval(async () => {
-      const fresh = await workspacesApi.get(wsId.value)
-      const idx = store.items.findIndex(w => w.id === wsId.value)
-      if (idx !== -1) store.items[idx] = fresh
-      else store.items.push(fresh)
+      let fresh
+      try {
+        fresh = await store.refreshOne(wsId.value)
+      } catch {
+        return  // transient: try again on the next tick
+      }
+      if (!fresh) return notFound()
       if (fresh.status !== 'creating' && (fresh.status !== 'running' || fresh.connectable)) {
         clearInterval(pollTimer!)
         pollTimer = null
       }
     }, 2000)
+  }
+}
+
+// Restart from the error / stopped overlay without going back to the grid.
+async function restartFromError() {
+  booting.value = true
+  bootError.value = null
+  streamUrl.value = null
+  streamError.value = null
+  try {
+    await store.start(wsId.value)
+    startPollIfNeeded()
+  } catch (e: any) {
+    ui.toast(e.message || 'Failed to start workspace', 'error')
+    booting.value = false
   }
 }
 
@@ -446,7 +561,6 @@ const booting = ref(false)
 // already in use by another workspace) — shown instead of a blank screen.
 const bootError = ref<string | null>(null)
 const showHalted = computed(() => lockedToWorkspace.value && halted.value)
-const startingDesktop = computed(() => ws.value?.status === 'running' && !ws.value.connectable)
 // Booting covers a running node whose stream hasn't rendered its first frame
 // yet: connecting then leaves a dead stream that only a reload recovers.
 const isBooting = computed(
@@ -670,7 +784,7 @@ async function handleStop() {
 
 .back-link {
   display: inline-flex; align-items: center;
-  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px;
   color: var(--accent); text-decoration: none; flex-shrink: 0;
   padding: 4px 10px;
   border: 1px solid rgba(0, 245, 255, 0.4);
@@ -761,7 +875,7 @@ async function handleStop() {
 .switch-item.current .switch-name { color: var(--accent); }
 .switch-img {
   margin-left: auto;
-  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%;
 }
 .switch-empty {
@@ -810,7 +924,7 @@ async function handleStop() {
 .menu-item.active { color: var(--accent-2); }
 .menu-item.danger { color: var(--amber); }
 .menu-item.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 16%, transparent); }
-.menu-state { margin-left: auto; font-size: 10px; color: var(--text-muted); letter-spacing: 1px; }
+.menu-state { margin-left: auto; font-size: 11px; color: var(--text-muted); letter-spacing: 1px; }
 .menu-item.active .menu-state { color: var(--accent-2); }
 
 /* Help (?) button — content now lives in the shared docs modal. */
@@ -868,7 +982,7 @@ async function handleStop() {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-family: var(--font-mono);
   letter-spacing: 1px;
   padding: 4px 8px;
@@ -879,7 +993,7 @@ async function handleStop() {
   gap: 5px;
 }
 
-/* CRT — magenta/retro (distinct from the amber HALT). Outlined off, filled on. */
+/* CRT — magenta/retro (distinct from the amber Stop). Outlined off, filled on. */
 .crt-btn {
   color: var(--accent-2);
   border-color: rgba(255, 0, 170, 0.45);
@@ -945,7 +1059,7 @@ async function handleStop() {
   .back-link .bl-label { display: none; }      /* show just the ← arrow */
   .bar-btn { padding: 6px 8px; }                /* keep a comfortable tap target */
   .top-actions { gap: 6px; }
-  /* The ONLINE badge is redundant on the stream (you're connected) and is the
+  /* The RUNNING badge is redundant on the stream (you're connected) and is the
      main thing crowding the actions — drop it so the buttons get their space. */
   .ws-status { display: none; }
   .ws-switch-btn .ws-name { max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -973,7 +1087,7 @@ async function handleStop() {
 }
 .boot-sub {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1px;
   color: var(--text-muted);
   margin-top: -8px;
@@ -994,5 +1108,18 @@ async function handleStop() {
 .overlay-state.halted .boot-text { color: var(--amber); }
 .overlay-state.error { color: var(--red); }
 .foreign-actions { display: flex; gap: 12px; margin-top: 18px; }
-.error-text { font-family: var(--font-mono); font-size: 13px; }
+.error-text { font-family: var(--font-mono); font-size: 13px; max-width: 70ch; text-align: center; padding: 0 16px; }
+.boot-progress { width: min(320px, 70vw); height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.boot-progress-fill { height: 100%; background: var(--accent); box-shadow: 0 0 6px rgba(0, 245, 255, 0.4); transition: width 0.4s ease; }
+.boot-hint { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); max-width: 52ch; text-align: center; }
+.auto-stop-warn {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 12px; color: var(--amber);
+}
+.link-btn {
+  background: none; border: none; padding: 0; margin-left: 2px;
+  color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer;
+}
+.link-btn:disabled { opacity: 0.5; cursor: wait; }
+@media (max-width: 560px) { .auto-stop-warn { display: none; } }
 </style>

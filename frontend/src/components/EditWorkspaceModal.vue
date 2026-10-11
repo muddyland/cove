@@ -23,7 +23,7 @@
           <ToggleRow v-model="form.kiosk_menu">Allow right-click / refresh menu</ToggleRow>
         </div>
       </template>
-      <ToggleRow v-if="urlCapable" v-model="form.ephemeral">Ephemeral (no saved data — wiped when halted)</ToggleRow>
+      <ToggleRow v-if="urlCapable" v-model="form.ephemeral">Ephemeral (no saved data — wiped when stopped)</ToggleRow>
       <div v-if="urlCapable && form.ephemeral" class="ts-field toggles">
         <ToggleRow v-model="form.auto_remove">Discard when stopped (like <code>docker run --rm</code>)</ToggleRow>
       </div>

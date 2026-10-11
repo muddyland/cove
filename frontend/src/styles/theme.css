@@ -1,4 +1,11 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
+/* Fonts are bundled (fontsource, OFL) rather than pulled from Google Fonts: Cove
+   is self-hosted, often on networks with no route to Google, and a font CDN
+   would see every page load. Only the weights the UI uses are imported. */
+@import '@fontsource/orbitron/400.css';
+@import '@fontsource/orbitron/600.css';
+@import '@fontsource/orbitron/700.css';
+@import '@fontsource/orbitron/900.css';
+@import '@fontsource/share-tech-mono/400.css';
 
 :root {
   --bg:          #06060f;
@@ -6,7 +13,11 @@
   --surface-2:   #10102a;
   --border:      #1c1c42;
   --text:        #c8d8ff;
-  --text-muted:  #4a5880;
+  /* Secondary text. ~5.8:1 on --surface (WCAG AA needs 4.5:1); the previous
+     #4a5880 was ~2.8:1, and most help text, labels and table headers use it. */
+  --text-muted:  #7d8bb5;
+  /* Purely decorative bits (dividers, disabled glyphs) — never for text. */
+  --text-faint:  #4a5880;
   --accent:      #00f5ff;
   --accent-hover:#7fffff;
   --accent-dim:  rgba(0, 245, 255, 0.08);
@@ -21,6 +32,14 @@
   --glow-sm:     0 0 4px var(--accent), 0 0 12px rgba(0, 245, 255, 0.15);
   --font-display: 'Orbitron', 'Share Tech Mono', monospace;
   --font-mono:    'Share Tech Mono', 'Courier New', monospace;
+  /* Readable width cap for content pages (tables, forms) on wide screens. */
+  --content-max: 1280px;
+
+  /* Native controls (scrollbars, date pickers, file inputs, selects, checkbox
+     ticks) render in their dark variants instead of glaring light boxes. */
+  color-scheme: dark;
+  accent-color: var(--accent);
+  scrollbar-color: var(--border) transparent;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,6 +55,8 @@ html, body, #app {
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); text-shadow: var(--glow-sm); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 input, textarea, select {
   background: var(--surface-2);
@@ -53,9 +74,37 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
   box-shadow: var(--glow-sm);
 }
+input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 0.75; }
 select option { background: var(--surface-2); }
 
-label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 0.8px; text-transform: uppercase; font-family: var(--font-mono); }
+/* File pickers: theme the "Choose file" button instead of the browser's
+   default light one. */
+input[type='file'] { padding: 6px 8px; color: var(--text-muted); font-size: 13px; cursor: pointer; }
+input[type='file']::file-selector-button {
+  margin-right: 10px;
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid rgba(0, 245, 255, 0.4);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+input[type='file']:hover::file-selector-button { border-color: var(--accent); background: var(--accent-dim); }
+
+label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 0.8px; text-transform: uppercase; font-family: var(--font-mono); }
 
 .form-group { display: flex; flex-direction: column; gap: 4px; }
-.form-error { color: var(--red); font-size: 12px; font-family: var(--font-mono); }
+.form-error { color: var(--red); font-size: 13px; font-family: var(--font-mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

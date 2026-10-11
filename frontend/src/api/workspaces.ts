@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { ContainerLogs, DockerPolicy, GpuPolicy, LanPolicy, TailscaleStatus, Workspace, WorkspaceStats } from '@/types'
+import type { ContainerLogs, DockerPolicy, GpuPolicy, LanPolicy, RuntimePolicy, TailscaleStatus, Workspace, WorkspaceStats } from '@/types'
 
 export type LogSource = 'desktop' | 'tailscale' | 'gluetun'
 
@@ -9,6 +9,8 @@ export const workspacesApi = {
   lanPolicy: () => api.get<LanPolicy>('/workspaces/lan-policy'),
   gpuPolicy: () => api.get<GpuPolicy>('/workspaces/gpu-policy'),
   dockerPolicy: () => api.get<DockerPolicy>('/workspaces/docker-policy'),
+  runtimePolicy: () => api.get<RuntimePolicy>('/workspaces/runtime-policy'),
+  extend: (id: number) => api.post<Workspace>(`/workspaces/${id}/extend`),
   get: (id: number) => api.get<Workspace>(`/workspaces/${id}`),
   create: (payload: {
     name: string

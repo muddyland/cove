@@ -69,10 +69,10 @@
             </button>
             <div v-show="userOpen" class="user-menu">
               <RouterLink to="/app/preferences" class="user-menu-item">
-                <Settings class="nav-icon" :size="15" /> Settings
+                <SlidersHorizontal class="nav-icon" :size="15" /> Preferences
               </RouterLink>
               <button type="button" class="user-menu-item danger" @click="handleLogout">
-                <LogOut class="nav-icon" :size="15" /> Exit
+                <LogOut class="nav-icon" :size="15" /> Sign out
               </button>
             </div>
           </div>
@@ -81,7 +81,11 @@
     </header>
 
     <main class="content">
-      <slot />
+      <!-- Content pages (tables, forms) are capped to a readable width on wide
+           screens; the workspace grid opts out with `wide`. -->
+      <div class="content-inner" :class="{ wide }">
+        <slot />
+      </div>
     </main>
 
     <DocsModal v-model="docsOpen" />
@@ -97,14 +101,17 @@ import TasksMenu from '@/components/TasksMenu.vue'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
   ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle, HardDrive,
+  SlidersHorizontal,
 } from 'lucide-vue-next'
+
+withDefaults(defineProps<{ wide?: boolean }>(), { wide: false })
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
 const adminItems = [
-  { to: '/app/admin/sessions', label: 'Sessions', icon: MonitorPlay },
+  { to: '/app/admin/sessions', label: 'Running', icon: MonitorPlay },
   { to: '/app/admin/users', label: 'Users', icon: Users },
   { to: '/app/admin/images', label: 'Images', icon: Boxes },
   { to: '/app/admin/zones', label: 'Zones', icon: Network },
@@ -247,12 +254,14 @@ async function handleLogout() {
 
 /* ── Admin dropdown ─────────────────────────────────────────────────────────── */
 .admin-dropdown { position: relative; display: flex; align-items: stretch; }
+/* A <button> styled as a nav link. No `font: inherit` here: it would reset the
+   .nav-link mono 12px back to the page's system-ui 14px, so ADMIN rendered in a
+   different face and size from DASHBOARD/FILES next to it. */
 .admin-trigger {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  font: inherit;
 }
 .chevron { transition: transform 0.15s; opacity: 0.7; }
 .admin-dropdown.open .chevron { transform: rotate(180deg); }
@@ -387,7 +396,7 @@ async function handleLogout() {
 .username { font-family: var(--font-mono); color: var(--text); }
 .admin-tag {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 1px;
   color: var(--accent-2);
   border: 1px solid var(--accent-2);
@@ -397,6 +406,8 @@ async function handleLogout() {
 }
 
 .content { flex: 1; overflow-y: auto; padding: 28px; }
+.content-inner { max-width: var(--content-max); margin: 0 auto; }
+.content-inner.wide { max-width: none; }
 
 /* Shared icon styling — inherit currentColor, no shrink. */
 .nav-icon { flex-shrink: 0; }

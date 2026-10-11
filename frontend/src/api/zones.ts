@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Zone, ZoneEnrollToken, ZoneOption } from '@/types'
+import type { Zone, ZoneEnrollToken, ZoneHealth, ZoneOption } from '@/types'
 
 export interface ZoneCreatePayload {
   name: string
@@ -15,6 +15,7 @@ export const zonesApi = {
   update: (id: number, payload: Partial<ZoneCreatePayload> & { status?: string }) =>
     api.patch<Zone>(`/admin/zones/${id}`, payload),
   remove: (id: number) => api.delete(`/admin/zones/${id}`),
+  health: (id: number) => api.get<ZoneHealth>(`/admin/zones/${id}/health`),
   enrollToken: (id: number) => api.post<ZoneEnrollToken>(`/admin/zones/${id}/enroll-token`, {}),
   rotateClientCert: (id: number) => api.post<Zone>(`/admin/zones/${id}/rotate-client-cert`, {}),
   // Push the control plane's current agent image to the zone and recreate its

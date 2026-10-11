@@ -307,7 +307,7 @@ watch(open, async (isOpen) => {
   gap: 6px;
   padding: 6px 10px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.6px;
   color: var(--accent);

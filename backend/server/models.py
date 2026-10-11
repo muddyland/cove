@@ -255,6 +255,9 @@ class Workspace(Base):
     # restart can't false-time-out a long-running transition (unlike created_at,
     # which is stale for a restarted workspace). Null on pre-upgrade rows.
     status_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # When the user last pushed back the max-runtime auto-halt ("Extend"). The
+    # runtime limit counts from the later of this and started_at. Cleared on start.
+    runtime_extended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # A still frame of the workspace's screen, captured from its own Selkies
     # stream once the stream comes up at launch (see server.preview). Doubles as

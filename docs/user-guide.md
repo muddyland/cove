@@ -17,14 +17,31 @@ After signing in you're in the SPA under `/app`. The top navigation has:
 
 ## The dashboard
 
-The dashboard ("Workspace Grid") lists **your own** workspaces, split into
-**Active** and **Offline**. Each running card shows:
+The dashboard ("Workspaces") lists **your own** workspaces in up to three
+sections: **Needs attention** (workspaces that crashed or failed to start, with
+the reason), **Active** (running or changing state) and **Stopped** (most
+recently used first). It refreshes on its own every few seconds — faster while
+something is starting or stopping, and paused while the tab is in the
+background — so a workspace that stops by itself (a crash, the admin's
+max-runtime limit, a stop from another device) shows up without a reload.
+A strip above the grid totals the CPU and memory of everything running.
 
-- A live **CPU** and **memory** readout for the container.
-- The **status** (booting / provisioning / running / error).
-- For tailnet-routed workspaces, the **Tailscale IP** (copyable).
-- Actions: **Connect**, **Apps**, **Logs**, **Halt**, and **Purge** (delete),
-  plus **Edit**, **Clone** and **Migrate** on a stopped one.
+Each card shows:
+
+- The **status**: Starting / Running / Stopping / Migrating / Stopped / Error.
+  While starting it also says what it's waiting on — **downloading the image**
+  (with a progress bar; the first start of an image downloads several GB),
+  installing packages, or waiting for the desktop to draw.
+- A row of **settings chips**: network (Direct / VPN / Tailscale), Persistent or
+  Ephemeral, and LAN, sudo, Docker and GPU when enabled.
+- **Time**: "Up 2 h" while running, "Last used 3 d ago" when stopped. If the
+  admin set a maximum runtime, a running card counts down to the automatic stop;
+  in the last hour it turns amber and offers **Extend** (restarts the clock).
+- A live **CPU** and **memory** readout for running containers, and for
+  tailnet-routed workspaces the **Tailscale IP** (copyable).
+- Actions: **Connect** or **Start**, and in the **Actions** menu **Edit**,
+  **Apps**, **Logs** (also on a failed workspace), **Stop**, **Clone**,
+  **Migrate** and **Delete**.
 
 **Launch** at the top opens the one launcher for everything: it asks what you
 want — a **Desktop**, a **Browser**, or an **App** — then shows only the images of
@@ -32,7 +49,7 @@ that kind.
 
 ## Screen previews
 
-Every **running** card shows a still of what's actually on that node's screen, so
+Every **running** card shows a still of what's actually on that workspace's screen, so
 you can tell your workspaces apart at a glance without opening them.
 
 - The frame is captured from the workspace's **own stream**, so it works the same
@@ -40,8 +57,8 @@ you can tell your workspaces apart at a glance without opening them.
 - It doubles as the **readiness check**: you can't connect to a workspace until
   Cove has decoded a real frame from its stream (the card shows **STARTING** until
   then), so the stream never opens half-ready.
-- Previews are **dropped the moment a workspace halts** — a stopped card never
-  shows what was last on its screen. Booting it again takes a fresh one.
+- Previews are **dropped the moment a workspace stops** — a stopped card never
+  shows what was last on its screen. Starting it again takes a fresh one.
 - A stream Cove can't read simply leaves the card with a placeholder. The
   workspace still launches normally.
 
@@ -53,13 +70,13 @@ Previews are served only to you (or an admin). See
 1. Click **Launch** and choose **Desktop**.
 2. Pick an **image** (e.g. a Webtop XFCE/KDE/MATE variant, or Kali) and give it a **name**.
 3. Optionally expand the extra options (apps, networking, sudo, SSH) — see [Workspaces → Launch options](workspaces.md#launch-options).
-4. Click **Launch**. Cove creates the container and takes you to the workspace view, which shows a **Booting / Provisioning** screen until the desktop is ready, then streams it into the page.
+4. Click **Launch**. Cove creates the container and takes you to the workspace view, which shows a **Starting** screen (with download progress on the first start of an image) until the desktop is ready, then streams it into the page.
 
-The first launch of an image pulls it from `lscr.io` and can take a few minutes.
+The first launch of an image pulls it from `lscr.io` and can take a few minutes; the wizard marks images that aren't downloaded yet.
 
 ## Opening a website (browser workspaces)
 
-Browser images (Chromium, Brave, Firefox, Edge) can boot straight to one or more
+Browser images (Chromium, Brave, Firefox, Edge) can start straight at one or more
 URLs — a lightweight way to deliver a web app:
 
 1. Click **Launch** and choose **Browser**.
@@ -73,14 +90,14 @@ URLs — a lightweight way to deliver a web app:
    **Dark mode** sits on its own (it applies with or without kiosk) and starts
    **on when your own browser is in dark mode**, so an opened link doesn't flash
    white at you. Untick it to override.
-5. Optionally tick **Ephemeral** (no saved data — cookies/history/downloads wiped on halt) or **Route through Tailscale**.
+5. Optionally tick **Ephemeral** (no saved data — cookies/history/downloads wiped when it stops) or **Route through Tailscale**.
 6. Click **Launch**.
 
 ## In-stream controls
 
 While viewing a running workspace, a top bar provides:
 
-- **Quick-switch menu** — a dropdown next to the workspace name listing all your workspaces (running first). Jump between them, and **boot a stopped one in place** without returning to the dashboard.
+- **Quick-switch menu** — a dropdown next to the workspace name listing all your workspaces (running first). Jump between them, and **start a stopped one in place** without returning to the dashboard.
 - **Fullscreen** (`FULL` / `WINDOW`) — expand the stream to fill the window.
 - **CRT** — a retro scanline/flicker overlay (cosmetic; per-user toggle).
 - **Apps** — on a desktop workspace, manage its proot-apps and AppImages (see [above](#managing-apps-in-a-workspace)).
