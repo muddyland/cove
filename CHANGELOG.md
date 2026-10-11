@@ -2,6 +2,13 @@
 
 ## Unreleased — usability pass
 
+- **Files rows are less crowded.** The five per-row icon buttons (download, copy,
+  cut, trash, delete) are now a download button plus a **⋯** menu, which right-
+  clicking the row also opens at the cursor. Trash rows keep **Restore** and move
+  the permanent delete into the menu. The menu is shared with the Images page,
+  renders outside the table's scroll box so it is never clipped, flips up near
+  the bottom of the screen, keeps one menu open at a time, and works from the
+  keyboard (arrows, Home/End, Enter, Esc).
 - **The dashboard no longer shows a dead workspace as running.** The grid only
   re-read the list while something was starting or stopping, so a workspace that
   crashed, hit the max-runtime auto-stop, or was stopped from another device or by

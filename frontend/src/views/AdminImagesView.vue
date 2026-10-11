@@ -28,7 +28,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="img in images" :key="img.id" :class="{ 'row-disabled': !img.enabled }">
+          <tr v-for="img in images" :key="img.id" :class="{ 'row-disabled': !img.enabled }" @contextmenu="rowMenus.get(img.id)?.openAt($event)">
             <td>
               <span class="name-cell">
                 <img v-if="img.logo_url" :src="img.logo_url" class="img-logo" alt="" @error="hideLogo" />
@@ -66,29 +66,11 @@
               >
                 <Download :size="13" /> {{ stateOf(img.id) === 'present' ? 'Update' : 'Pull' }}
               </NeonButton>
-              <span class="row-menu" :class="{ open: menuFor === img.id }">
-                <NeonButton
-                  variant="ghost"
-                  class="row-menu-trigger"
-                  :aria-expanded="menuFor === img.id"
-                  aria-haspopup="menu"
-                  :aria-label="`More actions for ${img.name}`"
-                  @click.stop="menuFor = menuFor === img.id ? null : img.id"
-                ><MoreHorizontal :size="15" /></NeonButton>
-                <span v-if="menuFor === img.id" class="row-menu-list" role="menu" @click.stop>
-                  <button
-                    type="button" role="menuitem" class="row-menu-item"
-                    :disabled="stateOf(img.id) !== 'present' || checkingId === img.id"
-                    @click="runMenu(() => checkUpdate(img))"
-                  ><SearchCheck :size="14" /> Check for update</button>
-                  <button type="button" role="menuitem" class="row-menu-item" :disabled="togglingId === img.id" @click="runMenu(() => toggleEnabled(img))">
-                    <component :is="img.enabled ? ToggleRight : ToggleLeft" :size="14" />
-                    {{ img.enabled ? 'Disable' : 'Enable' }}
-                  </button>
-                  <button type="button" role="menuitem" class="row-menu-item" @click="runMenu(() => openEdit(img))"><Pencil :size="14" /> Edit</button>
-                  <button type="button" role="menuitem" class="row-menu-item danger" @click="runMenu(() => confirmDelete(img))"><Trash2 :size="14" /> Delete…</button>
-                </span>
-              </span>
+              <RowMenu
+                :ref="el => setRowMenu(img.id, el)"
+                :items="imageMenu(img)"
+                :label="`More actions for ${img.name}`"
+              />
             </td>
           </tr>
         </tbody>
@@ -204,9 +186,10 @@ import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
+import RowMenu, { type RowMenuItem } from '@/components/RowMenu.vue'
 import {
   RefreshCw, RotateCcw, Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
-  Download, CheckCircle2, CircleDashed, Loader, HardDriveDownload, MoreHorizontal, SearchCheck,
+  Download, CheckCircle2, CircleDashed, Loader, HardDriveDownload, SearchCheck,
 } from 'lucide-vue-next'
 import { imagesApi, type ImagePullStatus } from '@/api/images'
 import { absoluteTime, fmtBytes, relativeTime } from '@/utils/workspaceStatus'
@@ -225,7 +208,6 @@ const details = ref<Record<number, ImageDetail>>({})
 const pending = ref<Record<number, ImagePullStatus>>({})
 const updates = ref<Record<number, ImageUpdateCheck>>({})
 const checkingId = ref<number | null>(null)
-const menuFor = ref<number | null>(null)
 const zoneLabel = computed(() => zones.items.find(z => z.id === zoneId.value)?.name ?? 'Local')
 let pullTimer: ReturnType<typeof setInterval> | null = null
 const ui = useUiStore()
@@ -297,16 +279,35 @@ onMounted(async () => {
   }
   await loadPullStatus()
 })
-onUnmounted(() => {
-  if (pullTimer) clearInterval(pullTimer)
-  document.removeEventListener('click', closeMenu)
-})
+onUnmounted(() => { if (pullTimer) clearInterval(pullTimer) })
 
-function closeMenu() { menuFor.value = null }
-onMounted(() => document.addEventListener('click', closeMenu))
-function runMenu(fn: () => void) {
-  menuFor.value = null
-  fn()
+// ⋯ menu per row (also opened by right-clicking the row).
+type RowMenuHandle = { openAt: (e: MouseEvent) => void }
+const rowMenus = new Map<number, RowMenuHandle>()
+function setRowMenu(id: number, el: unknown) {
+  if (el) rowMenus.set(id, el as RowMenuHandle)
+  else rowMenus.delete(id)
+}
+function imageMenu(img: WorkspaceImage): RowMenuItem[] {
+  return [
+    {
+      key: 'check',
+      label: checkingId.value === img.id ? 'Checking…' : 'Check for update',
+      icon: SearchCheck,
+      disabled: stateOf(img.id) !== 'present' || checkingId.value === img.id,
+      title: stateOf(img.id) !== 'present' ? 'Download the image first' : undefined,
+      action: () => checkUpdate(img),
+    },
+    {
+      key: 'toggle',
+      label: img.enabled ? 'Disable' : 'Enable',
+      icon: img.enabled ? ToggleRight : ToggleLeft,
+      disabled: togglingId.value === img.id,
+      action: () => toggleEnabled(img),
+    },
+    { key: 'edit', label: 'Edit', icon: Pencil, action: () => openEdit(img) },
+    { key: 'delete', label: 'Delete…', icon: Trash2, danger: true, separator: true, action: () => confirmDelete(img) },
+  ]
 }
 
 function pullIcon(id: number) {
@@ -523,23 +524,6 @@ async function handleRemoveEntry() {
 .sub.warn { color: var(--amber); }
 .sub.ok { color: var(--green); }
 .row-disabled td:not(.actions) { opacity: 0.55; }
-.row-menu { position: relative; display: inline-block; }
-.row-menu-trigger { padding: 7px 8px; }
-.row-menu-list {
-  position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
-  display: flex; flex-direction: column; gap: 2px; min-width: 190px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  box-shadow: var(--glow-sm), var(--shadow); padding: 5px; text-align: left;
-}
-.row-menu-item {
-  display: flex; align-items: center; gap: 9px; padding: 8px 10px;
-  background: none; border: none; border-radius: var(--radius-sm); cursor: pointer;
-  color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.5px; text-align: left;
-}
-.row-menu-item:hover:not(:disabled) { color: var(--text); background: var(--accent-dim); }
-.row-menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
-.row-menu-item.danger { color: var(--red); }
-.row-menu-item.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 14%, transparent); }
 .pull-state.pulling { color: var(--accent); }
 .pull-state.absent, .pull-state.unknown { color: var(--text-muted); }
 .spin { animation: spin 1s linear infinite; }
