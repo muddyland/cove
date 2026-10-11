@@ -2,6 +2,30 @@
 
 ## Unreleased — usability pass
 
+- **Several VPN and Tailscale profiles per user.** Preferences now keeps a list
+  of **VPN profiles** and **Tailscale profiles** instead of one config each, and
+  you pick the profile per workspace when launching or editing it. A VPN profile
+  can come from an uploaded config file (as before) or from one of Gluetun's
+  built-in providers (Mullvad, Proton VPN, AirVPN, NordVPN, Surfshark,
+  Windscribe, IVPN, PIA and others): pick the provider, paste the key or login,
+  optionally choose countries / cities / servers — no file needed. The "one VPN
+  workspace at a time" rule is now **one connection per profile**, so two keys
+  for the same provider can be connected at once. Each profile shows whether it
+  is ready (or what it is missing), which workspaces use it, and where it is
+  connected; one still in use can't be deleted. The dashboard card names the
+  profile and, when a start is blocked, which workspace holds it.
+  *Upgrade:* each user's existing Gluetun and Tailscale config becomes a profile
+  named "Default" that their existing workspaces point at. The old
+  `GET/PUT /api/users/me/gluetun` and `/me/tailscale` endpoints are replaced by
+  `/api/users/me/vpn-profiles` and `/me/tailscale-profiles`; creating a workspace
+  with just `use_gluetun` / `use_tailscale` still works and uses the first profile.
+- **Files rows are less crowded.** The five per-row icon buttons (download, copy,
+  cut, trash, delete) are now a download button plus a **⋯** menu, which right-
+  clicking the row also opens at the cursor. Trash rows keep **Restore** and move
+  the permanent delete into the menu. The menu is shared with the Images page,
+  renders outside the table's scroll box so it is never clipped, flips up near
+  the bottom of the screen, keeps one menu open at a time, and works from the
+  keyboard (arrows, Home/End, Enter, Esc).
 - **The dashboard no longer shows a dead workspace as running.** The grid only
   re-read the list while something was starting or stopping, so a workspace that
   crashed, hit the max-runtime auto-stop, or was stopped from another device or by

@@ -4,10 +4,16 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 vi.mock('@/api/users', () => ({
   usersApi: {
-    getTailscale: vi.fn(),
-    updateTailscale: vi.fn(),
-    getGluetun: vi.fn(),
-    updateGluetun: vi.fn(),
+    listVpnProfiles: vi.fn(),
+    listTailscaleProfiles: vi.fn(),
+    listVpnProviders: vi.fn(),
+    createVpnProfile: vi.fn(),
+    updateVpnProfile: vi.fn(),
+    deleteVpnProfile: vi.fn(),
+    createTailscaleProfile: vi.fn(),
+    updateTailscaleProfile: vi.fn(),
+    deleteTailscaleProfile: vi.fn(),
+    getSshKey: vi.fn(),
   },
 }))
 
@@ -24,23 +30,20 @@ import { usersApi } from '@/api/users'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import PreferencesView from '@/views/PreferencesView.vue'
-import type { GluetunConfig, TailscaleConfig, User } from '@/types'
+import type { TailscaleProfile, User, VpnProfile } from '@/types'
 
-const baseConfig: TailscaleConfig = {
-  enabled: true,
-  has_auth_key: true,
-  login_server: 'https://login.example.com',
-}
-
-const defaultGluetun: GluetunConfig = {
-  enabled: false,
-  vpn_type: 'openvpn',
-  has_config: false,
-  config_filename: null,
-  has_wireguard_private_key: false,
-  has_openvpn_user: false,
-  has_openvpn_password: false,
-}
+const vpn = (over: Partial<VpnProfile> = {}): VpnProfile => ({
+  id: 1, name: 'Mullvad SE', mode: 'provider', provider: 'mullvad', provider_label: 'Mullvad',
+  vpn_type: 'wireguard', has_config: false, config_filename: null,
+  has_wireguard_private_key: true, has_wireguard_preshared_key: false,
+  wireguard_addresses: '10.64.0.2/32', has_openvpn_user: false, has_openvpn_password: false,
+  server_countries: 'Sweden', server_cities: null, server_hostnames: null,
+  problem: null, used_by: [], active_in: null,
+  ...over,
+})
+const ts = (over: Partial<TailscaleProfile> = {}): TailscaleProfile => ({
+  id: 1, name: 'Home', has_auth_key: true, login_server: null, problem: null, used_by: [], ...over,
+})
 
 function setUser(provider: string) {
   useAuthStore().user = {
@@ -48,74 +51,74 @@ function setUser(provider: string) {
   } as User
 }
 
-// The tailscale form is the one holding the (url) login-server input; its single
-// password input is the auth key. Robust against extra forms/password fields.
-function tsAuthKeyInput(wrapper: ReturnType<typeof mount>) {
-  const tsForm = wrapper.findAll('form').find(f => f.find('input[type="url"]').exists())!
-  return tsForm.find('input[type="password"]')
-}
-
 describe('PreferencesView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
     setUser('local')
-    vi.mocked(usersApi.getGluetun).mockResolvedValue(defaultGluetun)
-    vi.mocked(usersApi.updateGluetun).mockResolvedValue(defaultGluetun)
+    vi.mocked(usersApi.listVpnProviders).mockResolvedValue([])
+    vi.mocked(usersApi.listVpnProfiles).mockResolvedValue([])
+    vi.mocked(usersApi.listTailscaleProfiles).mockResolvedValue([])
+    vi.mocked(usersApi.getSshKey).mockResolvedValue({
+      has_key: false, public_key: null, key_type: null, fingerprint: null,
+    })
   })
 
-  it('loads the tailscale config on mount and populates fields', async () => {
-    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
+  it('lists several VPN profiles with what each one is and its state', async () => {
+    vi.mocked(usersApi.listVpnProfiles).mockResolvedValue([
+      vpn({ active_in: 'Research', used_by: ['Research'] }),
+      vpn({ id: 2, name: 'Mullvad CH', server_countries: 'Switzerland' }),
+      vpn({
+        id: 3, name: 'Office', mode: 'custom', provider: null, provider_label: null,
+        vpn_type: 'openvpn', config_filename: 'office.ovpn', has_config: false,
+        problem: 'no config file uploaded',
+      }),
+    ])
     const wrapper = mount(PreferencesView)
     await flushPromises()
 
-    expect(usersApi.getTailscale).toHaveBeenCalledOnce()
-    const loginInput = wrapper.find('input[type="url"]').element as HTMLInputElement
-    expect(loginInput.value).toBe('https://login.example.com')
-    // has_auth_key true -> placeholder hint shown
-    const tsAuthKey = tsAuthKeyInput(wrapper).element as HTMLInputElement
-    expect(tsAuthKey.placeholder).toContain('configured')
+    const rows = wrapper.findAll('#vpn .profile')
+    expect(rows).toHaveLength(3)
+    expect(rows[0].text()).toContain('Mullvad · WireGuard · Sweden')
+    expect(rows[0].text()).toContain('Connected in Research')
+    expect(rows[1].text()).toContain('Switzerland')
+    expect(rows[1].text()).toContain('Ready')
+    expect(rows[2].text()).toContain('OpenVPN · office.ovpn')
+    expect(rows[2].text()).toContain("Can't connect: no config file uploaded")
   })
 
-  it('saves tailscale, omitting auth_key when blank', async () => {
-    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
-    vi.mocked(usersApi.updateTailscale).mockResolvedValue(baseConfig)
+  it('shows an empty state per section', async () => {
     const wrapper = mount(PreferencesView)
     await flushPromises()
-
-    const tsForm = wrapper.findAll('form').find(f => f.find('input[type="url"]').exists())!
-    await tsForm.trigger('submit.prevent')
-    await flushPromises()
-
-    expect(usersApi.updateTailscale).toHaveBeenCalledOnce()
-    const payload = vi.mocked(usersApi.updateTailscale).mock.calls[0][0]
-    expect(payload).not.toHaveProperty('auth_key')
-    expect(payload.enabled).toBe(true)
-    expect(payload.login_server).toBe('https://login.example.com')
+    expect(wrapper.find('#vpn').text()).toContain('No VPN profiles yet')
+    expect(wrapper.find('#tailscale').text()).toContain('No Tailscale profiles yet')
   })
 
-  it('includes auth_key when the user types a new one', async () => {
-    vi.mocked(usersApi.getTailscale).mockResolvedValue({ ...baseConfig, has_auth_key: false })
-    vi.mocked(usersApi.updateTailscale).mockResolvedValue(baseConfig)
-    const wrapper = mount(PreferencesView)
+  it("won't offer Delete for a profile a workspace still uses", async () => {
+    vi.mocked(usersApi.listTailscaleProfiles).mockResolvedValue([
+      ts({ used_by: ['dev-box'] }),
+      ts({ id: 2, name: 'Work', login_server: 'https://hs.example.com' }),
+    ])
+    const wrapper = mount(PreferencesView, { attachTo: document.body })
     await flushPromises()
+    const rows = wrapper.findAll('#tailscale .profile')
+    expect(rows[0].text()).toContain('used by dev-box')
+    expect(rows[1].text()).toContain('hs.example.com')
 
-    await tsAuthKeyInput(wrapper).setValue('tskey-new')
-    const tsForm = wrapper.findAll('form').find(f => f.find('input[type="url"]').exists())!
-    await tsForm.trigger('submit.prevent')
+    await rows[0].get('.row-menu-trigger').trigger('click')
     await flushPromises()
-
-    const payload = vi.mocked(usersApi.updateTailscale).mock.calls[0][0]
-    expect(payload.auth_key).toBe('tskey-new')
+    const del = [...document.querySelectorAll<HTMLButtonElement>('.row-menu-item')]
+      .find(b => b.textContent?.includes('Delete'))!
+    expect(del.disabled).toBe(true)
+    expect(del.title).toContain('dev-box')
+    wrapper.unmount()
   })
 
   it('rejects a too-short new password without calling the API', async () => {
-    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
     const wrapper = mount(PreferencesView)
     await flushPromises()
 
     const pwInputs = wrapper.findAll('input[type="password"]')
-    // current, new, confirm are the first three password inputs.
     await pwInputs[0].setValue('oldpassword')
     await pwInputs[1].setValue('short')
     await pwInputs[2].setValue('short')
@@ -127,38 +130,12 @@ describe('PreferencesView', () => {
     expect(wrapper.text()).toContain('at least 8')
   })
 
-  it('shows the change-password panel for local users', async () => {
-    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
-    const wrapper = mount(PreferencesView)
-    await flushPromises()
-    expect(wrapper.text()).toContain('CHANGE PASSWORD')
-  })
-
   it('hides the change-password panel for SSO (OIDC) users', async () => {
     setUser('oidc')
-    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
     const wrapper = mount(PreferencesView)
     await flushPromises()
     expect(wrapper.text()).not.toContain('CHANGE PASSWORD')
-    // Tailscale panel is still present.
-    expect(wrapper.text()).toContain('TAILSCALE')
-  })
-
-  it('loads and saves the gluetun config', async () => {
-    vi.mocked(usersApi.getTailscale).mockResolvedValue(baseConfig)
-    const wrapper = mount(PreferencesView)
-    await flushPromises()
-    expect(usersApi.getGluetun).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('GLUETUN')
-
-    // Submit the gluetun form (the one with a file input).
-    const gForm = wrapper.findAll('form').find(f => f.find('input[type="file"]').exists())!
-    await gForm.trigger('submit.prevent')
-    await flushPromises()
-    expect(usersApi.updateGluetun).toHaveBeenCalledOnce()
-    const payload = vi.mocked(usersApi.updateGluetun).mock.calls[0][0]
-    expect(payload.vpn_type).toBe('openvpn')
-    // No file chosen -> config_file omitted (sentinel leaves it unchanged).
-    expect(payload).not.toHaveProperty('config_file')
+    expect(wrapper.text()).toContain('TAILSCALE PROFILES')
+    expect(wrapper.text()).toContain('VPN PROFILES')
   })
 })

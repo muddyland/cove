@@ -120,6 +120,9 @@ class WorkspaceCreate(BaseModel):
     use_tailscale: bool = False
     # Route egress through the user's Gluetun VPN (mutually exclusive with Tailscale).
     use_gluetun: bool = False
+    # Which saved profile to use; omitted -> the user's first one.
+    tailscale_profile_id: Optional[int] = None
+    gluetun_profile_id: Optional[int] = None
     # Ephemeral: no persistent storage — nothing is saved between sessions.
     ephemeral: bool = False
     # Delete the workspace record once its container stops (requires ephemeral).
@@ -168,6 +171,8 @@ class WorkspaceUpdate(BaseModel):
     kiosk_menu: Optional[bool] = None
     use_tailscale: Optional[bool] = None
     use_gluetun: Optional[bool] = None
+    tailscale_profile_id: Optional[int] = None
+    gluetun_profile_id: Optional[int] = None
     ephemeral: Optional[bool] = None
     auto_remove: Optional[bool] = None
     lan_access: Optional[bool] = None
@@ -286,6 +291,10 @@ class WorkspaceOut(BaseModel):
     kiosk_menu: bool
     use_tailscale: bool
     use_gluetun: bool
+    tailscale_profile_id: Optional[int] = None
+    gluetun_profile_id: Optional[int] = None
+    # Name of the profile the routing sidecar uses (for the card/detail view).
+    routing_profile_name: Optional[str] = None
     ephemeral: bool
     auto_remove: bool
     lan_access: bool
@@ -368,6 +377,13 @@ class WorkspaceOut(BaseModel):
             kiosk_menu=ws.kiosk_menu,
             use_tailscale=ws.use_tailscale,
             use_gluetun=ws.use_gluetun,
+            tailscale_profile_id=ws.tailscale_profile_id,
+            gluetun_profile_id=ws.gluetun_profile_id,
+            routing_profile_name=(
+                ws.gluetun_profile.name if ws.use_gluetun and ws.gluetun_profile
+                else ws.tailscale_profile.name if ws.use_tailscale and ws.tailscale_profile
+                else None
+            ),
             ephemeral=ws.ephemeral,
             auto_remove=ws.auto_remove,
             lan_access=ws.lan_access,
@@ -508,43 +524,77 @@ class AppSettingsUpdate(BaseModel):
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────
 
-class TailscaleConfigOut(BaseModel):
-    enabled: bool
+class TailscaleProfileOut(BaseModel):
+    # Never returns the auth key, only whether one is stored.
+    id: int
+    name: str
     has_auth_key: bool
     login_server: Optional[str]
+    # Why it can't be used yet (None when ready), and which workspaces use it.
+    problem: Optional[str]
+    used_by: list[str]
 
 
-class TailscaleConfigUpdate(BaseModel):
+class TailscaleProfileIn(BaseModel):
     # auth_key uses a sentinel default: an omitted field leaves the stored key
     # unchanged; an explicit "" (or null) clears it; a non-empty string replaces it.
+    name: Optional[str] = None
     auth_key: Optional[str] = _UNSET
-    login_server: Optional[str] = None
-    enabled: Optional[bool] = None
+    login_server: Optional[str] = _UNSET
 
 
-# ── Gluetun (per-user VPN) ──────────────────────────────────────────────────────
+# ── Gluetun (per-user VPN profiles) ─────────────────────────────────────────────
 
-class GluetunConfigOut(BaseModel):
-    # Never returns the config file or secrets — only presence flags.
-    enabled: bool
+class VpnProviderOut(BaseModel):
+    value: str
+    label: str
+    types: list[str]
+    wg_addresses: bool
+    wg_preshared_key: bool
+
+
+class VpnProfileOut(BaseModel):
+    # Never returns the config file or secrets — only presence flags. Server
+    # filters and WireGuard addresses aren't secret and come back as-is.
+    id: int
+    name: str
+    mode: str
+    provider: Optional[str]
+    provider_label: Optional[str]
     vpn_type: str
     has_config: bool
     config_filename: Optional[str]
     has_wireguard_private_key: bool
+    has_wireguard_preshared_key: bool
+    wireguard_addresses: Optional[str]
     has_openvpn_user: bool
     has_openvpn_password: bool
+    server_countries: Optional[str]
+    server_cities: Optional[str]
+    server_hostnames: Optional[str]
+    problem: Optional[str]
+    used_by: list[str]
+    # Name of the running/starting workspace holding this profile's connection.
+    active_in: Optional[str]
 
 
-class GluetunConfigUpdate(BaseModel):
+class VpnProfileIn(BaseModel):
     # Each secret/file uses the sentinel default: omitted -> unchanged;
     # "" or null -> clear; a value -> replace. All stored encrypted at rest.
-    enabled: Optional[bool] = None
+    name: Optional[str] = None
+    mode: Optional[str] = None
+    provider: Optional[str] = _UNSET
     vpn_type: Optional[str] = None
     config_file: Optional[str] = _UNSET
     config_filename: Optional[str] = _UNSET
     wireguard_private_key: Optional[str] = _UNSET
+    wireguard_preshared_key: Optional[str] = _UNSET
+    wireguard_addresses: Optional[str] = _UNSET
     openvpn_user: Optional[str] = _UNSET
     openvpn_password: Optional[str] = _UNSET
+    server_countries: Optional[str] = _UNSET
+    server_cities: Optional[str] = _UNSET
+    server_hostnames: Optional[str] = _UNSET
 
 
 # ── SSH key (per-user) ──────────────────────────────────────────────────────────

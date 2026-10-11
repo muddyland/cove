@@ -35,22 +35,38 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/wizard.png" alt="The step-by-step New Workspace wizard — an image gallery of desktops, apps, and browsers with a type filter" /><br />
-      <sub><b>New Workspace wizard</b> — pick a desktop, app, or browser from the gallery, then launch</sub>
+      <img src="screenshots/dashboard.png" alt="The Cove dashboard: a running Linux desktop with a live screen preview, CPU/memory, uptime and auto-stop countdown, and two stopped workspaces routed through a Tailscale profile and a VPN profile" /><br />
+      <sub><b>Dashboard</b> — live previews, CPU/memory, uptime and auto-stop, and each workspace's route at a glance</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/desktop-stream.png" alt="A full Linux desktop streamed to the browser" /><br />
+      <img src="screenshots/desktop-stream.png" alt="A full Linux XFCE desktop streamed into the browser, with Cove's stream bar on top" /><br />
       <sub><b>Desktops</b> — full XFCE/KDE/MATE/i3 sessions in a tab</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/dashboard.png" alt="The Cove dashboard — the workspace grid with a running node and live CPU/memory stats" /><br />
-      <sub><b>Dashboard</b> — workspace grid with live CPU/memory stats</sub>
+      <img src="screenshots/vpn-profiles.png" alt="Preferences: a list of VPN profiles (two Mullvad keys, a Proton VPN login and an incomplete config-file profile) and Tailscale profiles, each with its status and which workspaces use it" /><br />
+      <sub><b>VPN &amp; Tailscale profiles</b> — several keys, providers or tailnets, each showing whether it's ready and where it's used</sub>
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/image-registry.png" alt="The admin image registry listing available workspace images" /><br />
-      <sub><b>Image registry</b> — auto-populated catalog, one-click pulls</sub>
+      <img src="screenshots/vpn-profile-editor.png" alt="Editing a VPN profile set up from a built-in provider: Mullvad over WireGuard with a stored key, interface address, and a country and city to connect to" /><br />
+      <sub><b>Built-in VPN providers</b> — pick Mullvad, Proton, AirVPN…, paste the key, choose where to connect. No config file needed</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/wizard.png" alt="The New Workspace wizard's network step, choosing which saved VPN profile the workspace routes through" /><br />
+      <sub><b>New Workspace wizard</b> — choose Direct, Tailscale or a VPN, and which profile, per workspace</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/image-registry.png" alt="The admin image registry: per-image download state and size, last pull, how many workspaces use it, and a row menu with Check for update, Disable, Edit and Delete" /><br />
+      <sub><b>Image registry</b> — what's downloaded, how big, who uses it, and update checks</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="screenshots/files.png" width="50%" alt="The Files page with a row's ⋯ menu open: Download, Copy, Cut, Move to trash and Delete permanently" /><br />
+      <sub><b>Files</b> — browse, upload and organise your storage; per-row actions in a ⋯ (or right-click) menu</sub>
     </td>
   </tr>
 </table>

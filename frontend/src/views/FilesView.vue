@@ -70,6 +70,7 @@
               @dragover="entry.type === 'dir' ? onDirDragOver(join(entry.name), $event) : undefined"
               @dragleave="entry.type === 'dir' ? onDirDragLeave(join(entry.name)) : undefined"
               @drop="entry.type === 'dir' ? onDirDrop(join(entry.name), $event) : undefined"
+              @contextmenu="openRowMenu(entry.name, $event)"
             >
               <td>
                 <button v-if="entry.type === 'dir'" class="name-btn dir" @click="navigate(join(entry.name))">
@@ -81,12 +82,15 @@
               <td>{{ formatDate(entry.modified) }}</td>
               <td class="actions">
                 <span v-if="rowBusy(entry)" class="op-inline"><Loader2 :size="14" class="spin" /> working…</span>
+                <!-- Download stays one click away; everything else lives in the
+                     ⋯ menu (also opened by right-clicking the row). -->
                 <template v-else>
-                  <button class="icon-btn" title="Download" @click="downloadEntry(entry)"><Download :size="14" /></button>
-                  <button class="icon-btn" title="Copy" @click="copyEntry(entry)"><Copy :size="14" /></button>
-                  <button class="icon-btn" title="Cut" @click="cutEntry(entry)"><Scissors :size="14" /></button>
-                  <button class="icon-btn" title="Move to trash" @click="trashEntry(entry)"><Trash2 :size="14" /></button>
-                  <button class="icon-btn danger" title="Delete permanently" @click="confirmDeletePermanent(entry)"><X :size="14" /></button>
+                  <button class="icon-btn" :title="entry.type === 'dir' ? 'Download as .zip' : 'Download'" @click="downloadEntry(entry)"><Download :size="14" /></button>
+                  <RowMenu
+                    :ref="el => setRowMenu(entry.name, el)"
+                    :items="fileMenu(entry)"
+                    :label="`Actions for ${entry.name}`"
+                  />
                 </template>
               </td>
             </tr>
@@ -116,7 +120,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="t in trashEntries" :key="t.id">
+            <tr v-for="t in trashEntries" :key="t.id" @contextmenu="openRowMenu(`trash:${t.id}`, $event)">
               <td>
                 <span class="name-btn">
                   <component :is="t.is_dir ? Folder : File" class="icon" :class="t.is_dir ? '' : 'file-icon'" :size="15" /> {{ t.name }}
@@ -130,7 +134,11 @@
                 <span v-if="isBusy(`trash:${t.id}`)" class="op-inline"><Loader2 :size="14" class="spin" /> working…</span>
                 <template v-else>
                   <NeonButton variant="ghost" @click="restore(t)"><RotateCcw :size="13" /> Restore</NeonButton>
-                  <NeonButton variant="danger" @click="confirmPurge(t)"><X :size="13" /> Delete</NeonButton>
+                  <RowMenu
+                    :ref="el => setRowMenu(`trash:${t.id}`, el)"
+                    :items="trashMenu(t)"
+                    :label="`Actions for ${t.name}`"
+                  />
                 </template>
               </td>
             </tr>
@@ -159,7 +167,8 @@ import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Upload, FolderUp, House, Folder, File, Download, Copy, Scissors, ClipboardPaste, Trash2, RotateCcw, X, Loader2 } from 'lucide-vue-next'
+import RowMenu, { type RowMenuItem } from '@/components/RowMenu.vue'
+import { Upload, FolderUp, House, Folder, FolderOpen, File, Download, Copy, Scissors, ClipboardPaste, Trash2, RotateCcw, X, Loader2 } from 'lucide-vue-next'
 import { filesApi, type UploadItem } from '@/api/files'
 import { useUiStore } from '@/stores/ui'
 import { useZonesStore } from '@/stores/zones'
@@ -308,6 +317,47 @@ function humanSize(bytes: number): string {
     i++
   }
   return `${val.toFixed(1)} ${units[i]}`
+}
+
+// ── Row menus (⋯ button, or right-click on the row) ──
+type RowMenuHandle = { openAt: (e: MouseEvent) => void }
+const rowMenus = new Map<string, RowMenuHandle>()
+function setRowMenu(key: string, el: unknown) {
+  if (el) rowMenus.set(key, el as RowMenuHandle)
+  else rowMenus.delete(key)
+}
+function openRowMenu(key: string, e: MouseEvent) {
+  // A row that's mid-operation shows a spinner and has no menu; let the
+  // browser's own context menu through rather than swallowing the click.
+  const m = rowMenus.get(key)
+  if (m) m.openAt(e)
+}
+
+function fileMenu(entry: FileEntry): RowMenuItem[] {
+  const items: RowMenuItem[] = []
+  if (entry.type === 'dir') {
+    items.push({ key: 'open', label: 'Open', icon: FolderOpen, action: () => navigate(join(entry.name)) })
+  }
+  items.push(
+    {
+      key: 'download',
+      label: entry.type === 'dir' ? 'Download as .zip' : 'Download',
+      icon: Download,
+      action: () => downloadEntry(entry),
+    },
+    { key: 'copy', label: 'Copy', icon: Copy, action: () => copyEntry(entry) },
+    { key: 'cut', label: 'Cut (to move)', icon: Scissors, action: () => cutEntry(entry) },
+    { key: 'trash', label: 'Move to trash', icon: Trash2, separator: true, action: () => trashEntry(entry) },
+    { key: 'delete', label: 'Delete permanently…', icon: X, danger: true, action: () => confirmDeletePermanent(entry) },
+  )
+  return items
+}
+
+function trashMenu(t: TrashEntry): RowMenuItem[] {
+  return [
+    { key: 'restore', label: 'Restore', icon: RotateCcw, action: () => restore(t) },
+    { key: 'purge', label: 'Delete permanently…', icon: X, danger: true, separator: true, action: () => confirmPurge(t) },
+  ]
 }
 
 // ── Download ──
@@ -636,10 +686,11 @@ tr.drop-target > td { background: color-mix(in srgb, var(--accent) 15%, transpar
 /* see tables.css: td.actions must stay a table cell (no display:flex). */
 .icon-btn {
   background: none; border: 1px solid transparent; border-radius: var(--radius-sm);
-  color: var(--text-muted); cursor: pointer; padding: 4px; display: inline-flex;
-  transition: color 0.15s, border-color 0.15s;
+  color: var(--text-muted); cursor: pointer; display: inline-flex;
+  align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0;
+  vertical-align: middle; transition: color 0.15s, border-color 0.15s;
 }
-.icon-btn:hover { color: var(--accent); border-color: var(--border); }
+.icon-btn:hover { color: var(--accent); border-color: var(--border); background: var(--surface-2); }
 .icon-btn.danger:hover { color: var(--danger, #f56); border-color: var(--danger, #f56); }
 
 .op-inline {

@@ -137,6 +137,10 @@ workspaces' `/config` homes). Access is confined to your directory — path
 traversal is rejected — and a single upload may be up to `COVE_MAX_UPLOAD_MB`
 (default **1024 MiB**). It has two tabs: **Files** and **Trash**.
 
+Each row has a **download** button and a **⋯** menu with everything else (Open,
+Copy, Cut, Move to trash, Delete permanently). Right-clicking a row opens the
+same menu at the cursor; the arrow keys, Enter and Esc work inside it.
+
 ### Getting files in
 
 - **Upload** — pick one or more files; they land in the folder you're viewing.
@@ -147,7 +151,7 @@ There is no separate "new folder" action — folders appear when you upload one.
 
 ### Moving and copying
 
-Click a row's **Copy** or **Cut**, navigate to the destination, then **Paste**
+Choose **Copy** or **Cut** from a row's **⋯** menu, navigate to the destination, then **Paste**
 (the button appears in the header once something is on the clipboard). Or **drag a
 row onto a folder** — or onto **root** in the breadcrumb — to move it there. A name
 collision doesn't overwrite: the arriving item is given a suffix.
@@ -161,15 +165,15 @@ streamed **zip**, so there's no need to fetch a directory tree file by file.
 
 Deleting is a **soft delete** by default:
 
-- **Move to trash** (the bin icon) moves the item into your trash and out of the
+- **Move to trash** (in the row's ⋯ menu) moves the item into your trash and out of the
   listing. Nothing is destroyed.
 - The **Trash** tab lists what's in there with each item's original location,
   size, when it was deleted, and when it **expires**.
 - **Restore** puts an item back where it came from, recreating the folder if it's
   gone. If something with that name is already there, the restored copy is
   suffixed rather than overwriting it.
-- **Delete** on a trash row, or **Empty trash**, destroys the bytes immediately.
-- **Delete permanently** (the ✕ on a normal row) **skips the trash** entirely.
+- **Delete permanently** in a trash row's ⋯ menu, or **Empty trash**, destroys the bytes immediately.
+- **Delete permanently** on a normal row **skips the trash** entirely.
   Both ask for confirmation and can't be undone.
 
 Trash expires on its own: the admin's **trash retention** setting (default **30

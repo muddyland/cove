@@ -58,14 +58,19 @@ def test_exit_node_update_is_validated(client):
 @pytest.mark.parametrize("bad", ["https://hs.example.com --ssh", "https://hs.example.com\t--reset"])
 def test_login_server_rejects_flag_injection(client, bad):
     setup_admin(client)
-    r = client.put("/api/users/me/tailscale", json={"login_server": bad})
+    r = client.post(
+        "/api/users/me/tailscale-profiles", json={"name": "t", "auth_key": "k", "login_server": bad}
+    )
     assert r.status_code == 400, r.text
 
 
 def test_login_server_accepts_plain_url(client):
     setup_admin(client)
-    r = client.put("/api/users/me/tailscale", json={"login_server": "https://hs.example.com:8443/path"})
-    assert r.status_code == 200, r.text
+    r = client.post(
+        "/api/users/me/tailscale-profiles",
+        json={"name": "t", "auth_key": "k", "login_server": "https://hs.example.com:8443/path"},
+    )
+    assert r.status_code == 201, r.text
 
 
 # ── custom DNS: public resolvers only ──────────────────────────────────────
