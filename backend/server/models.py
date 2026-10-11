@@ -10,6 +10,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -45,6 +46,12 @@ class User(Base):
 
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"
+    )
+    vpn_profiles: Mapped[list["VpnProfile"]] = relationship(
+        "VpnProfile", cascade="all, delete-orphan", order_by="VpnProfile.id"
+    )
+    tailscale_profiles: Mapped[list["TailscaleProfile"]] = relationship(
+        "TailscaleProfile", cascade="all, delete-orphan", order_by="TailscaleProfile.id"
     )
 
 
@@ -144,6 +151,22 @@ class Workspace(Base):
     # use_tailscale). VPN details (config file + secrets) are stored per-user.
     use_gluetun: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    # Which of the owner's saved profiles the routing sidecar uses. NULL means
+    # "the owner's first profile" (and is what pre-profile rows hold until the
+    # data migration fills it in). Plain integers rather than FKs: deleting a
+    # profile that a workspace still names is refused by the API instead.
+    gluetun_profile_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tailscale_profile_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    gluetun_profile: Mapped[Optional["VpnProfile"]] = relationship(
+        "VpnProfile",
+        primaryjoin="foreign(Workspace.gluetun_profile_id) == VpnProfile.id",
+        viewonly=True,
+    )
+    tailscale_profile: Mapped[Optional["TailscaleProfile"]] = relationship(
+        "TailscaleProfile",
+        primaryjoin="foreign(Workspace.tailscale_profile_id) == TailscaleProfile.id",
+        viewonly=True,
     )
     # Ephemeral: skip the persistent /config bind mount entirely, so no data is
     # saved between sessions (the home lives only in the container's layer).
@@ -351,6 +374,73 @@ class UserGluetun(Base):
     wireguard_private_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     openvpn_user: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     openvpn_password: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+
+class VpnProfile(Base):
+    """One saved Gluetun VPN connection. A user can keep several (e.g. two
+    WireGuard keys for the same provider, or different providers) and pick one
+    per workspace.
+
+    ``mode`` is ``custom`` (an uploaded .ovpn / wg .conf, as before) or
+    ``provider`` (gluetun's built-in provider support: provider name + key or
+    credentials + optional server filters, no file). Every secret and the
+    config file are encrypted at rest; the server filters and WireGuard
+    interface addresses are not secret."""
+
+    __tablename__ = "vpn_profile"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_vpn_profile_user_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="custom")
+    provider: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # "openvpn" or "wireguard".
+    vpn_type: Mapped[str] = mapped_column(String(16), nullable=False, default="openvpn")
+    config_file: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    config_filename: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    wireguard_private_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    wireguard_preshared_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    wireguard_addresses: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    openvpn_user: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    openvpn_password: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    server_countries: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    server_cities: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    server_hostnames: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+
+class TailscaleProfile(Base):
+    """One saved Tailscale identity: an auth key (encrypted at rest) and an
+    optional control server, so a user can join workspaces to different
+    tailnets / Headscale servers or use separate keys (e.g. tagged vs
+    untagged)."""
+
+    __tablename__ = "tailscale_profile"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_tailscale_profile_user_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    auth_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    login_server: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

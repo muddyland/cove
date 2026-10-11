@@ -87,8 +87,11 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| GET / PUT | `/api/users/me/tailscale` | auth | Get / update your Tailscale config (secrets masked). |
-| GET / PUT | `/api/users/me/gluetun` | auth | Get / update your Gluetun config (secrets masked). |
+| GET / POST | `/api/users/me/tailscale-profiles` | auth | List / add your Tailscale profiles (auth key never returned). |
+| PUT / DELETE | `/api/users/me/tailscale-profiles/{id}` | auth | Update / delete one (409 while a workspace uses it). |
+| GET / POST | `/api/users/me/vpn-profiles` | auth | List / add your Gluetun VPN profiles (secrets masked; includes `problem`, `used_by`, `active_in`). |
+| PUT / DELETE | `/api/users/me/vpn-profiles/{id}` | auth | Update / delete one (409 while a workspace uses it). |
+| GET | `/api/users/vpn-providers` | auth | Gluetun built-in providers usable from a key / login, with their protocols. |
 | GET | `/api/users/me/ssh` | auth | Your SSH public key + metadata (never the private key). |
 | PUT | `/api/users/me/ssh` | auth | Upload (or clear) an SSH private key. |
 | POST | `/api/users/me/ssh/generate` | auth | Generate a fresh Ed25519 keypair. |

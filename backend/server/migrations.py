@@ -229,6 +229,16 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0046_workspace_runtime_extended_at",
         "ALTER TABLE workspace ADD COLUMN runtime_extended_at DATETIME",
     ),
+    # Saved VPN / Tailscale profiles: which one a workspace routes through. (The
+    # vpn_profile / tailscale_profile tables themselves come from create_all.)
+    (
+        "0047_workspace_gluetun_profile_id",
+        "ALTER TABLE workspace ADD COLUMN gluetun_profile_id INTEGER",
+    ),
+    (
+        "0048_workspace_tailscale_profile_id",
+        "ALTER TABLE workspace ADD COLUMN tailscale_profile_id INTEGER",
+    ),
 ]
 
 
@@ -268,10 +278,79 @@ def _seed_local_zone(conn) -> None:
     )
 
 
+def _move_routing_config_to_profiles(conn) -> None:
+    """Turn each user's single Gluetun / Tailscale config into a profile named
+    "Default" and point that user's VPN / Tailscale workspaces at it.
+
+    Ciphertext is copied as-is (same key, same encrypt_secret format). The old
+    rows are deleted afterwards: they are no longer read, and leaving them
+    behind would keep the user row pinned by a foreign key without ON DELETE.
+    """
+    now = "CURRENT_TIMESTAMP"
+    for row in conn.execute(
+        text(
+            "SELECT user_id, vpn_type, config_file, config_filename, "
+            "wireguard_private_key, openvpn_user, openvpn_password FROM user_gluetun"
+        )
+    ).fetchall():
+        user_id, vpn_type, cfg, fname, wg_key, ov_user, ov_pw = row
+        if not (cfg or wg_key or ov_user or ov_pw):
+            continue
+        conn.execute(
+            text(
+                "INSERT INTO vpn_profile (user_id, name, mode, vpn_type, config_file, "
+                "config_filename, wireguard_private_key, openvpn_user, openvpn_password, "
+                f"created_at, updated_at) VALUES (:u, 'Default', 'custom', :t, :c, :f, :k, "
+                f":ou, :op, {now}, {now})"
+            ),
+            {"u": user_id, "t": vpn_type or "openvpn", "c": cfg, "f": fname,
+             "k": wg_key, "ou": ov_user, "op": ov_pw},
+        )
+        pid = conn.execute(
+            text("SELECT id FROM vpn_profile WHERE user_id = :u AND name = 'Default'"),
+            {"u": user_id},
+        ).scalar()
+        conn.execute(
+            text(
+                "UPDATE workspace SET gluetun_profile_id = :p "
+                "WHERE user_id = :u AND use_gluetun = 1 AND gluetun_profile_id IS NULL"
+            ),
+            {"p": pid, "u": user_id},
+        )
+    conn.execute(text("DELETE FROM user_gluetun"))
+
+    for row in conn.execute(
+        text("SELECT user_id, auth_key, login_server FROM user_tailscale")
+    ).fetchall():
+        user_id, key, server = row
+        if not (key or server):
+            continue
+        conn.execute(
+            text(
+                "INSERT INTO tailscale_profile (user_id, name, auth_key, login_server, "
+                f"created_at, updated_at) VALUES (:u, 'Default', :k, :s, {now}, {now})"
+            ),
+            {"u": user_id, "k": key, "s": server},
+        )
+        pid = conn.execute(
+            text("SELECT id FROM tailscale_profile WHERE user_id = :u AND name = 'Default'"),
+            {"u": user_id},
+        ).scalar()
+        conn.execute(
+            text(
+                "UPDATE workspace SET tailscale_profile_id = :p "
+                "WHERE user_id = :u AND use_tailscale = 1 AND tailscale_profile_id IS NULL"
+            ),
+            {"p": pid, "u": user_id},
+        )
+    conn.execute(text("DELETE FROM user_tailscale"))
+
+
 # Python data migrations (run after the SQL migrations): (name, callable).
 _DATA_MIGRATIONS = [
     ("0014_encrypt_tailscale_auth_keys", _encrypt_tailscale_auth_keys),
     ("0029_seed_local_zone", _seed_local_zone),
+    ("0049_routing_config_to_profiles", _move_routing_config_to_profiles),
 ]
 
 

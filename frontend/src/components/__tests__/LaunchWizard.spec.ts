@@ -8,8 +8,17 @@ vi.mock('@/api/images', () => ({ imagesApi: { list: vi.fn() } }))
 vi.mock('@/api/proot', () => ({ prootApi: { list: vi.fn() } }))
 vi.mock('@/api/users', () => ({
   usersApi: {
-    getGluetun: vi.fn().mockResolvedValue({ enabled: false, has_config: false }),
-    getTailscale: vi.fn().mockResolvedValue({ has_auth_key: true }),
+    listVpnProfiles: vi.fn().mockResolvedValue([
+      { id: 11, name: 'Key A', mode: 'provider', provider: 'mullvad', provider_label: 'Mullvad',
+        vpn_type: 'wireguard', server_countries: 'Sweden', problem: null, used_by: ['busy'], active_in: 'busy' },
+      { id: 12, name: 'Key B', mode: 'provider', provider: 'mullvad', provider_label: 'Mullvad',
+        vpn_type: 'wireguard', server_countries: 'Sweden', problem: null, used_by: [], active_in: null },
+      { id: 13, name: 'Broken', mode: 'custom', provider: null, provider_label: null,
+        vpn_type: 'openvpn', config_filename: null, problem: 'no config file uploaded', used_by: [], active_in: null },
+    ]),
+    listTailscaleProfiles: vi.fn().mockResolvedValue([
+      { id: 5, name: 'Home', has_auth_key: true, login_server: null, problem: null, used_by: [] },
+    ]),
   },
 }))
 vi.mock('@/api/workspaces', () => ({
@@ -97,9 +106,38 @@ describe('LaunchWizard', () => {
 
     const payload = launchMock.mock.calls[0][0]
     expect(payload.use_tailscale).toBe(true)
+    expect(payload.tailscale_profile_id).toBe(5)
     expect(payload.ts_exit_node).toBe('us-nyc-1')
     expect(payload.ts_accept_routes).toBe(true)
     expect(payload.ts_accept_dns).toBe(false)
+  })
+
+  it('picks a VPN profile that is free and sends its id', async () => {
+    const wrapper = mount(LaunchWizard, { props: { modelValue: true } })
+    await toBasics(wrapper)
+    await clickBtn(wrapper, 'Customize')
+    const vpnSeg = wrapper.findAll('.segmented button').find(b => b.text().includes('Gluetun'))!
+    await vpnSeg.trigger('click')
+
+    const select = wrapper.get('#net-vpn-profile')
+    // Key A is connected elsewhere, so the free Key B is pre-selected.
+    expect((select.element as HTMLSelectElement).value).toBe('12')
+    const opts = select.findAll('option')
+    expect(opts[0].text()).toContain('connected in busy')
+    expect(opts[2].attributes('disabled')).toBeDefined()
+    expect(opts[2].text()).toContain('no config file uploaded')
+
+    // Choosing the busy one warns before launch.
+    await select.setValue(11)
+    expect(wrapper.text()).toContain('can\'t start until that one stops')
+
+    await select.setValue(12)
+    await clickBtn(wrapper, 'Launch')
+    await flushPromises()
+    const payload = launchMock.mock.calls[0][0]
+    expect(payload.use_gluetun).toBe(true)
+    expect(payload.gluetun_profile_id).toBe(12)
+    expect(payload).not.toHaveProperty('tailscale_profile_id')
   })
 
   it('includes install_packages (trimmed) and selected proot_apps from the Apps step', async () => {

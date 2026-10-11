@@ -686,13 +686,7 @@ def test_launch_gluetun_sidecar_runs_when_there_is_no_stale_sidecar(monkeypatch,
     monkeypatch.setattr(
         docker_manager, "_stage_gluetun_config", lambda ws_id, cfg: str(tmp_path / "wg.conf")
     )
-    g_cfg = SimpleNamespace(
-        vpn_type="wireguard",
-        config_file="[Interface]",
-        openvpn_user=None,
-        openvpn_password=None,
-        wireguard_private_key="KEY",
-    )
+    g_cfg = _vpn_profile(vpn_type="wireguard", config_file="[Interface]", wireguard_private_key="KEY")
 
     dm._launch_gluetun_sidecar(
         SimpleNamespace(id=7),
@@ -711,6 +705,71 @@ def test_launch_gluetun_sidecar_runs_when_there_is_no_stale_sidecar(monkeypatch,
     # The nested pools reached the killswitch's allow-list.
     for cidr in _DIND_SUBNETS:
         assert cidr in kwargs["environment"]["FIREWALL_OUTBOUND_SUBNETS"]
+
+
+def _vpn_profile(**kw):
+    base = dict(
+        mode="custom", provider=None, vpn_type="openvpn", config_file=None,
+        openvpn_user=None, openvpn_password=None, wireguard_private_key=None,
+        wireguard_preshared_key=None, wireguard_addresses=None,
+        server_countries=None, server_cities=None, server_hostnames=None,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_launch_gluetun_sidecar_provider_mode_mounts_nothing(monkeypatch):
+    """A built-in provider profile needs no config file: no mount, gluetun's own
+    provider name, and the key / address / server filters in the env."""
+    from server import docker_manager
+
+    dm = _dm_fake()
+    monkeypatch.setattr(docker_manager, "decrypt_secret", lambda v: v)
+    removed = []
+    monkeypatch.setattr(docker_manager, "_remove_gluetun_config", removed.append)
+    monkeypatch.setattr(
+        docker_manager, "_stage_gluetun_config",
+        lambda *a: (_ for _ in ()).throw(AssertionError("nothing to stage")),
+    )
+    g_cfg = _vpn_profile(
+        mode="provider", provider="mullvad", vpn_type="wireguard",
+        wireguard_private_key="KEY", wireguard_addresses="10.64.0.2/32",
+        server_countries="Sweden", server_cities="Malmo,Gothenburg",
+    )
+    dm._launch_gluetun_sidecar(
+        SimpleNamespace(id=7), SimpleNamespace(internal_port=3000),
+        "cove-ws-net-7", {}, g_cfg, "qmcgaw/gluetun", "172.20.0.0/16",
+    )
+    _, kwargs = dm._client.containers.run_calls[0]
+    env = kwargs["environment"]
+    assert env["VPN_SERVICE_PROVIDER"] == "mullvad"
+    assert env["VPN_TYPE"] == "wireguard"
+    assert env["WIREGUARD_PRIVATE_KEY"] == "KEY"
+    assert env["WIREGUARD_ADDRESSES"] == "10.64.0.2/32"
+    assert env["SERVER_COUNTRIES"] == "Sweden"
+    assert env["SERVER_CITIES"] == "Malmo,Gothenburg"
+    assert "SERVER_HOSTNAMES" not in env
+    assert not kwargs.get("volumes")
+    assert removed == [7]
+
+
+def test_gluetun_env_provider_openvpn_has_no_custom_config():
+    env = DockerManager._build_gluetun_env(
+        "openvpn", 3000, None, provider="nordvpn",
+        openvpn_user="u", openvpn_password="p", server_countries="Netherlands",
+    )
+    assert env["VPN_SERVICE_PROVIDER"] == "nordvpn"
+    assert "OPENVPN_CUSTOM_CONFIG" not in env
+    assert env["OPENVPN_USER"] == "u" and env["OPENVPN_PASSWORD"] == "p"
+    assert env["SERVER_COUNTRIES"] == "Netherlands"
+
+
+def test_gluetun_env_custom_ignores_server_filters():
+    env = DockerManager._build_gluetun_env(
+        "wireguard", 3000, None, server_countries="Sweden", wireguard_addresses="10.0.0.2/32",
+    )
+    assert env["VPN_SERVICE_PROVIDER"] == "custom"
+    assert "SERVER_COUNTRIES" not in env and "WIREGUARD_ADDRESSES" not in env
 
 
 def test_launch_gluetun_sidecar_replaces_a_stale_sidecar():

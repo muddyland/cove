@@ -14,11 +14,10 @@ from urllib.parse import urlparse
 import docker
 import docker.errors
 import docker.tls
-from sqlalchemy import select
 
 from server.config import get_settings
 from server.db import SessionLocal
-from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
+from server.models import TailscaleProfile, VpnProfile, Workspace, WorkspaceImage, Zone
 from server.preview import capture as capture_preview_frame
 from server.preview import is_connectable
 from server.security import decrypt_secret
@@ -38,6 +37,7 @@ from server.settings_store import (
     get_workspace_no_new_privileges,
     get_workspace_pids_limit,
 )
+from server.vpn_profiles import get_tailscale_profile, get_vpn_profile, vpn_profile_ready
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +321,7 @@ def build_ts_extra_args(
     """Build the ``tailscale up`` extra args from per-workspace routing options.
 
     exit_node/accept_routes/accept_dns come from the Workspace; login_server
-    comes from the user's UserTailscale config.
+    comes from the workspace's Tailscale profile.
 
     When an exit node is set we also pass ``--exit-node-allow-lan-access``: without
     it the container routes local-subnet replies through the tunnel, so Traefik
@@ -1653,9 +1653,16 @@ class DockerManager:
                 self._ensure_image(EGRESS_GUARD_IMAGE)
 
                 if ws.use_tailscale:
-                    ts_cfg = db.scalar(
-                        select(UserTailscale).where(UserTailscale.user_id == ws.user_id)
-                    )
+                    ts_cfg = get_tailscale_profile(db, ws.user_id, ws.tailscale_profile_id)
+                    if ts_cfg is None or not ts_cfg.auth_key:
+                        ws.status = "error"
+                        ws.error_message = (
+                            "Tailscale profile not found — pick one in the workspace's settings"
+                            if ts_cfg is None
+                            else f'Tailscale profile "{ts_cfg.name}" has no auth key'
+                        )
+                        db.commit()
+                        return
                     ts_image = get_tailscale_image(db)
                     self._launch_tailscale_sidecar(
                         ws, image, net_name, labels, ts_cfg, ts_image
@@ -1686,12 +1693,15 @@ class DockerManager:
                         **hardening,
                     )
                 elif ws.use_gluetun:
-                    g_cfg = db.scalar(
-                        select(UserGluetun).where(UserGluetun.user_id == ws.user_id)
-                    )
-                    if not g_cfg or not g_cfg.config_file:
+                    g_cfg = get_vpn_profile(db, ws.user_id, ws.gluetun_profile_id)
+                    if g_cfg is None:
+                        problem = "VPN profile not found — pick one in the workspace's settings"
+                    else:
+                        why = vpn_profile_ready(g_cfg)
+                        problem = f'VPN profile "{g_cfg.name}" has {why}' if why else None
+                    if problem:
                         ws.status = "error"
-                        ws.error_message = "Gluetun is not configured (upload a VPN config)"
+                        ws.error_message = problem
                         db.commit()
                         return
                     # Carry the Traefik labels on the gluetun sidecar; pass the
@@ -2477,7 +2487,7 @@ class DockerManager:
         image: WorkspaceImage,
         net_name: str,
         labels: dict,
-        ts_cfg: "UserTailscale | None",
+        ts_cfg: "TailscaleProfile | None",
         ts_image: str = "tailscale/tailscale:latest",
     ) -> None:
         """Launch the Tailscale sidecar that carries this workspace's netns + routing.
@@ -2497,7 +2507,8 @@ class DockerManager:
 
         self._ensure_named_volume(volume_name)
 
-        # auth_key + login_server are per-user; the routing options are per-workspace.
+        # auth_key + login_server come from the chosen profile; the routing
+        # options are per-workspace.
         # The auth_key is stored encrypted at rest; decrypt it for the sidecar.
         auth_key = decrypt_secret(ts_cfg.auth_key) if ts_cfg else None
         login_server = ts_cfg.login_server if ts_cfg else None
@@ -2561,6 +2572,12 @@ class DockerManager:
         openvpn_password: "str | None" = None,
         wireguard_private_key: "str | None" = None,
         dind: bool = False,
+        provider: "str | None" = None,
+        wireguard_preshared_key: "str | None" = None,
+        wireguard_addresses: "str | None" = None,
+        server_countries: "str | None" = None,
+        server_cities: "str | None" = None,
+        server_hostnames: "str | None" = None,
     ) -> dict:
         """Env for a custom-provider gluetun sidecar. FIREWALL_INPUT_PORTS +
         FIREWALL_OUTBOUND_SUBNETS let Traefik (on the local docker bridge) reach the
@@ -2572,9 +2589,13 @@ class DockerManager:
         and its killswitch drops anything not explicitly allowed — including the
         desktop's own traffic to a container it just started. Allowing them
         doesn't widen the tunnel: they are addresses inside this netns, and the
-        VPN still carries everything actually leaving the workspace."""
+        VPN still carries everything actually leaving the workspace.
+
+        ``provider`` switches to gluetun's built-in provider support: no config
+        file, the key/credentials plus optional server filters pick the server.
+        """
         env = {
-            "VPN_SERVICE_PROVIDER": "custom",
+            "VPN_SERVICE_PROVIDER": provider or "custom",
             "VPN_TYPE": vpn_type,
             "FIREWALL_INPUT_PORTS": str(image_port),
         }
@@ -2584,12 +2605,26 @@ class DockerManager:
         if vpn_type == "wireguard":
             if wireguard_private_key:
                 env["WIREGUARD_PRIVATE_KEY"] = wireguard_private_key
+            if provider:
+                if wireguard_preshared_key:
+                    env["WIREGUARD_PRESHARED_KEY"] = wireguard_preshared_key
+                if wireguard_addresses:
+                    env["WIREGUARD_ADDRESSES"] = wireguard_addresses
         else:  # openvpn
-            env["OPENVPN_CUSTOM_CONFIG"] = "/gluetun/custom.conf"
+            if not provider:
+                env["OPENVPN_CUSTOM_CONFIG"] = "/gluetun/custom.conf"
             if openvpn_user:
                 env["OPENVPN_USER"] = openvpn_user
             if openvpn_password:
                 env["OPENVPN_PASSWORD"] = openvpn_password
+        if provider:
+            for key, value in (
+                ("SERVER_COUNTRIES", server_countries),
+                ("SERVER_CITIES", server_cities),
+                ("SERVER_HOSTNAMES", server_hostnames),
+            ):
+                if value:
+                    env[key] = value
         return env
 
     def _launch_gluetun_sidecar(
@@ -2598,7 +2633,7 @@ class DockerManager:
         image: WorkspaceImage,
         net_name: str,
         labels: dict,
-        g_cfg: "UserGluetun",
+        g_cfg: "VpnProfile",
         gluetun_image: str,
         subnet: "str | None",
         dind: bool = False,
@@ -2617,10 +2652,18 @@ class DockerManager:
             pass
 
         vpn_type = (g_cfg.vpn_type or "openvpn") if g_cfg else "openvpn"
-        config = decrypt_secret(g_cfg.config_file) if g_cfg else None
-        if not config:
-            raise RuntimeError("Gluetun config file is not set")
-        host_path = _stage_gluetun_config(ws.id, config)
+        provider = g_cfg.provider if g_cfg is not None and g_cfg.mode == "provider" else None
+        volumes: dict = {}
+        if provider is None:
+            config = decrypt_secret(g_cfg.config_file) if g_cfg else None
+            if not config:
+                raise RuntimeError("Gluetun config file is not set")
+            host_path = _stage_gluetun_config(ws.id, config)
+            volumes = {host_path: {"bind": self._gluetun_mount_target(vpn_type), "mode": "ro"}}
+        else:
+            # Built-in provider: gluetun picks a server from its own list, so
+            # there is no file to stage. Drop one left by an earlier launch.
+            _remove_gluetun_config(ws.id)
 
         environment = self._build_gluetun_env(
             vpn_type,
@@ -2630,8 +2673,13 @@ class DockerManager:
             openvpn_password=decrypt_secret(g_cfg.openvpn_password),
             wireguard_private_key=decrypt_secret(g_cfg.wireguard_private_key),
             dind=dind,
+            provider=provider,
+            wireguard_preshared_key=decrypt_secret(g_cfg.wireguard_preshared_key),
+            wireguard_addresses=g_cfg.wireguard_addresses,
+            server_countries=g_cfg.server_countries,
+            server_cities=g_cfg.server_cities,
+            server_hostnames=g_cfg.server_hostnames,
         )
-        volumes = {host_path: {"bind": self._gluetun_mount_target(vpn_type), "mode": "ro"}}
 
         self._pull_image(gluetun_image)
         self._client.containers.run(
@@ -2645,7 +2693,10 @@ class DockerManager:
             labels=labels,
             network=net_name,
         )
-        logger.info("Started Gluetun sidecar %s for workspace %s (%s)", sidecar_name, ws.id, vpn_type)
+        logger.info(
+            "Started Gluetun sidecar %s for workspace %s (%s, %s)",
+            sidecar_name, ws.id, provider or "custom", vpn_type,
+        )
 
     @staticmethod
     def _apply_docker_cli(env: dict, volumes: dict) -> None:

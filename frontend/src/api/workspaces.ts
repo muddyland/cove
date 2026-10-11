@@ -23,6 +23,8 @@ export const workspacesApi = {
     kiosk_menu?: boolean
     use_tailscale?: boolean
     use_gluetun?: boolean
+    tailscale_profile_id?: number
+    gluetun_profile_id?: number
     ephemeral?: boolean
     lan_access?: boolean
     ts_exit_node?: string
@@ -51,6 +53,8 @@ export const workspacesApi = {
       kiosk_menu?: boolean
       use_tailscale?: boolean
       use_gluetun?: boolean
+      tailscale_profile_id?: number
+      gluetun_profile_id?: number
       ephemeral?: boolean
       lan_access?: boolean
       ts_exit_node?: string

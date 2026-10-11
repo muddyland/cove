@@ -149,8 +149,8 @@
       <NetworkFields
         :form="form"
         :lan-policy="lanPolicy"
-        :gluetun-ready="gluetunReady"
-        :tailscale-ready="tailscaleReady"
+        :tailscale-profiles="tsProfiles"
+        :vpn-profiles="vpnProfiles"
         :dns-error="dnsErr"
       />
     </section>
@@ -243,7 +243,9 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useZonesStore } from '@/stores/zones'
 import { useUiStore } from '@/stores/ui'
 import { useRouter } from 'vue-router'
-import type { DockerPolicy, GpuPolicy, ImageType, LanPolicy, WorkspaceImage } from '@/types'
+import type {
+  DockerPolicy, GpuPolicy, ImageType, LanPolicy, TailscaleProfile, VpnProfile, WorkspaceImage,
+} from '@/types'
 
 const open = defineModel<boolean>({ default: false })
 
@@ -277,8 +279,8 @@ const images = ref<WorkspaceImage[]>([])
 const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
 const gpuPolicy = ref<GpuPolicy>({ enabled: false })
 const dockerPolicy = ref<DockerPolicy>({ enabled: false })
-const gluetunReady = ref(false)
-const tailscaleReady = ref(false)
+const tsProfiles = ref<TailscaleProfile[]>([])
+const vpnProfiles = ref<VpnProfile[]>([])
 const loading = ref(false)
 const error = ref('')
 const submitted = ref(false)
@@ -329,6 +331,8 @@ const form = reactive({
   kiosk_menu: false,
   use_tailscale: false,
   use_gluetun: false,
+  tailscale_profile_id: null as number | null,
+  gluetun_profile_id: null as number | null,
   ephemeral: false,
   auto_remove: false,
   lan_access: false,
@@ -415,8 +419,15 @@ const showKiosk = computed(
 // always ephemeral (the old Open Website flow did the same).
 const forcedEphemeral = computed(() => urlCapable.value && form.zone_id !== 0)
 const networkSummary = computed(() => {
-  if (form.use_tailscale) return 'Tailscale' + (form.ts_exit_node ? ` (exit: ${form.ts_exit_node})` : '')
-  if (form.use_gluetun) return 'Gluetun VPN'
+  if (form.use_tailscale) {
+    const p = tsProfiles.value.find(t => t.id === form.tailscale_profile_id)
+    const bits = [p?.name, form.ts_exit_node ? `exit: ${form.ts_exit_node}` : ''].filter(Boolean)
+    return 'Tailscale' + (bits.length ? ` (${bits.join(', ')})` : '')
+  }
+  if (form.use_gluetun) {
+    const p = vpnProfiles.value.find(v => v.id === form.gluetun_profile_id)
+    return 'VPN' + (p ? ` (${p.name})` : '')
+  }
   if (form.custom_dns && form.dns_servers.trim()) return `Custom DNS (${form.dns_servers.trim()})`
   return 'Direct' + (form.lan_access ? ' + LAN' : '')
 })
@@ -489,18 +500,9 @@ onMounted(async () => {
   } catch {
     // Non-fatal: the Docker checkbox just stays hidden if the policy can't load.
   }
-  try {
-    const g = await usersApi.getGluetun()
-    gluetunReady.value = g.enabled && g.has_config
-  } catch {
-    // Non-fatal: Gluetun toggle just stays hidden.
-  }
-  try {
-    const ts = await usersApi.getTailscale()
-    tailscaleReady.value = ts.has_auth_key
-  } catch {
-    // Non-fatal: the Tailscale segment just stays disabled.
-  }
+  // Non-fatal: without profiles the Tailscale / VPN segments stay disabled.
+  usersApi.listVpnProfiles().then(v => { vpnProfiles.value = v }).catch(() => {})
+  usersApi.listTailscaleProfiles().then(t => { tsProfiles.value = t }).catch(() => {})
 })
 
 function resetForm() {
@@ -513,7 +515,8 @@ function resetForm() {
   Object.assign(form, {
     name: '', image_id: '', zone_id: 0, target_url: '',
     kiosk: false, kiosk_dark: prefersDark, kiosk_menu: false,
-    use_tailscale: false, use_gluetun: false, ephemeral: false, auto_remove: false, lan_access: false,
+    use_tailscale: false, use_gluetun: false, tailscale_profile_id: null, gluetun_profile_id: null,
+    ephemeral: false, auto_remove: false, lan_access: false,
     ts_exit_node: '', ts_accept_routes: true, ts_accept_dns: true,
     custom_dns: false, dns_servers: '', allow_sudo: false, inject_ssh_key: true,
     pixelflux_wayland: true, clear_browser_lock: false, gpu_accel: false,
@@ -554,6 +557,8 @@ async function launch() {
       kiosk_menu: urlCapable.value && urlCount.value <= 1 && form.kiosk ? form.kiosk_menu : false,
       use_tailscale: form.use_tailscale,
       use_gluetun: form.use_gluetun,
+      ...(form.use_tailscale && form.tailscale_profile_id != null ? { tailscale_profile_id: form.tailscale_profile_id } : {}),
+      ...(form.use_gluetun && form.gluetun_profile_id != null ? { gluetun_profile_id: form.gluetun_profile_id } : {}),
       ephemeral: urlCapable.value ? (forcedEphemeral.value || form.ephemeral) : false,
       lan_access: form.lan_access,
       ...(form.use_tailscale

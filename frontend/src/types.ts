@@ -177,6 +177,9 @@ export interface Workspace {
   browser: BrowserFeatures
   use_tailscale: boolean
   use_gluetun: boolean
+  tailscale_profile_id: number | null
+  gluetun_profile_id: number | null
+  routing_profile_name: string | null
   ephemeral: boolean
   auto_remove: boolean
   lan_access: boolean
@@ -226,20 +229,53 @@ export interface DockerPolicy {
   enabled: boolean
 }
 
-export interface TailscaleConfig {
-  enabled: boolean
+// A saved Tailscale identity (auth key + optional control server). The key is
+// never returned, only whether one is stored.
+export interface TailscaleProfile {
+  id: number
+  name: string
   has_auth_key: boolean
   login_server: string | null
+  // Why it can't be used yet (null when ready).
+  problem: string | null
+  // Names of the workspaces that route through it.
+  used_by: string[]
 }
 
-export interface GluetunConfig {
-  enabled: boolean
-  vpn_type: 'openvpn' | 'wireguard'
+export type VpnType = 'openvpn' | 'wireguard'
+
+// One of gluetun's built-in providers that works from a key / login alone.
+export interface VpnProvider {
+  value: string
+  label: string
+  types: VpnType[]
+  wg_addresses: boolean
+  wg_preshared_key: boolean
+}
+
+// A saved Gluetun VPN connection: an uploaded config file ("custom") or a
+// built-in provider with a key / login. Secrets come back as presence flags.
+export interface VpnProfile {
+  id: number
+  name: string
+  mode: 'custom' | 'provider'
+  provider: string | null
+  provider_label: string | null
+  vpn_type: VpnType
   has_config: boolean
   config_filename: string | null
   has_wireguard_private_key: boolean
+  has_wireguard_preshared_key: boolean
+  wireguard_addresses: string | null
   has_openvpn_user: boolean
   has_openvpn_password: boolean
+  server_countries: string | null
+  server_cities: string | null
+  server_hostnames: string | null
+  problem: string | null
+  used_by: string[]
+  // Running/starting workspace holding this profile's one connection.
+  active_in: string | null
 }
 
 export interface SshKeyConfig {

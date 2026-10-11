@@ -32,8 +32,9 @@
       <NetworkFields
         :form="form"
         :lan-policy="lanPolicy"
-        :gluetun-ready="gluetunReady"
-        :tailscale-ready="tailscaleReady"
+        :tailscale-profiles="tsProfiles"
+        :vpn-profiles="vpnProfiles"
+        :self-name="ws.name"
         :dns-error="dnsErr"
       />
 
@@ -80,7 +81,7 @@ import { workspacesApi } from '@/api/workspaces'
 import { usersApi } from '@/api/users'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
-import type { DockerPolicy, GpuPolicy, LanPolicy, Workspace } from '@/types'
+import type { DockerPolicy, GpuPolicy, LanPolicy, TailscaleProfile, VpnProfile, Workspace } from '@/types'
 
 const props = defineProps<{ ws: Workspace }>()
 const open = defineModel<boolean>({ default: false })
@@ -90,8 +91,8 @@ const error = ref('')
 const lanPolicy = ref<LanPolicy>({ enabled: false, subnets: [] })
 const gpuPolicy = ref<GpuPolicy>({ enabled: false })
 const dockerPolicy = ref<DockerPolicy>({ enabled: false })
-const gluetunReady = ref(false)
-const tailscaleReady = ref(false)
+const tsProfiles = ref<TailscaleProfile[]>([])
+const vpnProfiles = ref<VpnProfile[]>([])
 const store = useWorkspacesStore()
 const ui = useUiStore()
 
@@ -122,6 +123,8 @@ const form = reactive({
   auto_remove: false,
   use_tailscale: false,
   use_gluetun: false,
+  tailscale_profile_id: null as number | null,
+  gluetun_profile_id: null as number | null,
   lan_access: false,
   ts_exit_node: '',
   ts_accept_routes: true,
@@ -155,6 +158,8 @@ function resetFromWs() {
   form.auto_remove = props.ws.auto_remove
   form.use_tailscale = props.ws.use_tailscale
   form.use_gluetun = props.ws.use_gluetun
+  form.tailscale_profile_id = props.ws.tailscale_profile_id
+  form.gluetun_profile_id = props.ws.gluetun_profile_id
   form.lan_access = props.ws.lan_access
   form.ts_exit_node = props.ws.ts_exit_node ?? ''
   form.ts_accept_routes = props.ws.ts_accept_routes
@@ -197,18 +202,11 @@ async function loadLanPolicy() {
   } catch {
     // Non-fatal: the Docker checkbox just stays hidden if the policy can't load.
   }
-  try {
-    const g = await usersApi.getGluetun()
-    gluetunReady.value = g.enabled && g.has_config
-  } catch {
-    // Non-fatal: Gluetun toggle just stays hidden.
-  }
-  try {
-    const ts = await usersApi.getTailscale()
-    tailscaleReady.value = ts.has_auth_key
-  } catch {
-    // Non-fatal: the Tailscale segment just stays disabled.
-  }
+  // Non-fatal: without profiles the Tailscale / VPN segments stay disabled.
+  await Promise.all([
+    usersApi.listVpnProfiles().then(v => { vpnProfiles.value = v }).catch(() => {}),
+    usersApi.listTailscaleProfiles().then(t => { tsProfiles.value = t }).catch(() => {}),
+  ])
 }
 
 // Re-seed the form from the workspace whenever the modal is opened.
@@ -244,6 +242,8 @@ async function handleSubmit() {
       ephemeral: urlCapable.value ? form.ephemeral : undefined,
       use_tailscale: form.use_tailscale,
       use_gluetun: form.use_gluetun,
+      ...(form.use_tailscale && form.tailscale_profile_id != null ? { tailscale_profile_id: form.tailscale_profile_id } : {}),
+      ...(form.use_gluetun && form.gluetun_profile_id != null ? { gluetun_profile_id: form.gluetun_profile_id } : {}),
       lan_access: form.lan_access,
       ...(form.use_tailscale
         ? {
