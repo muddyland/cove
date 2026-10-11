@@ -195,6 +195,22 @@ export interface Workspace {
   gpu_accel: boolean
   use_docker: boolean
   shared_profile: boolean
+  // Live image download while a launch is still pulling (null otherwise). The
+  // total grows as layers are discovered, so treat it as an estimate.
+  pull_progress: PullProgress | null
+  // When the user last pushed back the max-runtime auto-halt (see /extend).
+  runtime_extended_at: string | null
+}
+
+export interface PullProgress {
+  current: number
+  total: number
+  layers: number
+}
+
+export interface RuntimePolicy {
+  // Admin max runtime in hours; 0 = unlimited.
+  max_hours: number
 }
 
 export interface LanPolicy {
@@ -291,6 +307,47 @@ export interface AuditEntry {
   action: string
   detail: string | null
   ip: string | null
+  // The workspace a workspace.* entry refers to, while it still exists.
+  workspace_id: number | null
+  workspace_name: string | null
+}
+
+export interface AuditFacets {
+  users: string[]
+  actions: string[]
+}
+
+export interface AuditQuery {
+  user?: string
+  action?: string
+  since?: string
+  until?: string
+  q?: string
+  limit?: number
+  offset?: number
+}
+
+export interface ImageDetail {
+  status: 'present' | 'absent' | 'pulling'
+  size: number | null
+  updated_at: string | null
+  workspace_count: number
+  pull_progress: PullProgress | null
+}
+
+export interface ImageUpdateCheck {
+  up_to_date: boolean | null
+  local_digest: string | null
+  remote_digest: string | null
+  detail: string | null
+}
+
+export interface ZoneHealth {
+  ok: boolean
+  latency_ms: number | null
+  docker_version: string | null
+  containers_running: number | null
+  error: string | null
 }
 
 export interface Zone {

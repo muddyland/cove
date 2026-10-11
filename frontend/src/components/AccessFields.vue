@@ -66,7 +66,7 @@
       Clear stale browser lock
       <template #hint>
         For browser workspaces: remove a leftover single-instance lock from the saved
-        profile at launch. Enable if the browser won't start after an unclean halt.
+        profile at launch. Enable if the browser won't start after an unclean stop.
       </template>
     </ToggleRow>
     </template>

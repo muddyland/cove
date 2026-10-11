@@ -4,7 +4,7 @@
       <p class="hint">
         Moves this workspace's home directory to another zone, then pins it there.
         The source copy is removed once the transfer succeeds. It stays stopped on
-        the destination — boot it when you're ready.
+        the destination — start it when you're ready.
       </p>
 
       <div class="form-group">

@@ -1,21 +1,15 @@
 <template>
-  <span class="badge" :class="status">{{ label }}</span>
+  <span class="badge" :class="status" role="status">{{ label }}</span>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { WorkspaceStatus } from '@/types'
+import { statusLabel } from '@/utils/workspaceStatus'
 
 const props = defineProps<{ status: WorkspaceStatus }>()
 
-const label = computed(() => ({
-  creating: 'Starting',
-  running: 'Online',
-  stopping: 'Halting',
-  migrating: 'Migrating',
-  stopped: 'Offline',
-  error: 'Error',
-}[props.status] ?? props.status))
+const label = computed(() => statusLabel(props.status))
 </script>
 
 <style scoped>
@@ -31,6 +25,7 @@ const label = computed(() => ({
   font-family: var(--font-mono);
   border: 1px solid currentColor;
   border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 .badge::before {
   content: '';
@@ -48,4 +43,7 @@ const label = computed(() => ({
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 @keyframes flicker { 0%, 100% { opacity: 1; } 45% { opacity: 0.7; } 50% { opacity: 1; } 55% { opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) {
+  .running::before, .creating, .stopping, .migrating { animation: none; }
+}
 </style>

@@ -248,6 +248,24 @@ class WorkspaceStats(BaseModel):
     tailscale_ip: str | None = None
 
 
+def _pull_progress_for(ws) -> "PullProgressOut | None":
+    """In-flight image download for a workspace that is still starting."""
+    if ws.status != "creating" or not ws.image:
+        return None
+    from server.docker_manager import pull_progress
+
+    p = pull_progress(ws.zone_id, ws.image.docker_image)
+    return PullProgressOut(**p) if p else None
+
+
+class PullProgressOut(BaseModel):
+    # Bytes downloaded / bytes known so far across all layers. The total grows as
+    # the daemon discovers layers, so it is an estimate until the pull finishes.
+    current: int
+    total: int
+    layers: int = 0
+
+
 class WorkspaceOut(BaseModel):
     id: int
     public_id: str
@@ -308,6 +326,11 @@ class WorkspaceOut(BaseModel):
     # the fallback window for uncapturable images has passed). Clients wait on
     # this rather than status, since a stream opened too early never recovers.
     connectable: bool = False
+    # Set while the workspace's image is being downloaded during a launch, so the
+    # UI can say "Downloading image 1.2/4.7 GB" instead of a bare "Starting".
+    pull_progress: Optional[PullProgressOut] = None
+    # When the user last extended the max-runtime auto-halt (see /extend).
+    runtime_extended_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -372,6 +395,8 @@ class WorkspaceOut(BaseModel):
             favicon_at=ws.favicon_at,
             connectable=is_connectable(ws),
             browser=BrowserFeatures(**browser_features(ws.image.url_env if ws.image else None)),
+            pull_progress=_pull_progress_for(ws),
+            runtime_extended_at=getattr(ws, "runtime_extended_at", None),
         )
 
 
@@ -764,5 +789,48 @@ class AuditOut(BaseModel):
     action: str
     detail: Optional[str]
     ip: Optional[str]
+    # The workspace a workspace.* / admin.session.* entry refers to, resolved
+    # from the public_id at the start of ``detail`` (None once it's deleted, or
+    # for entries about something else).
+    workspace_id: Optional[int] = None
+    workspace_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class AuditFacetsOut(BaseModel):
+    """Distinct values for the audit log filter dropdowns."""
+    users: list[str]
+    actions: list[str]
+
+
+class RuntimePolicyOut(BaseModel):
+    # Admin max runtime in hours; 0 = unlimited (no auto-halt).
+    max_hours: int
+
+
+class ImageDetailOut(BaseModel):
+    # 'present' | 'absent' | 'pulling'
+    status: str
+    size: Optional[int] = None
+    updated_at: Optional[str] = None
+    # How many workspaces (any user, any zone) are built on this image.
+    workspace_count: int = 0
+    pull_progress: Optional[PullProgressOut] = None
+
+
+class ImageUpdateCheckOut(BaseModel):
+    # True = the local copy matches the registry, False = a newer one exists,
+    # None = could not tell (not pulled, registry unreachable, unknown format).
+    up_to_date: Optional[bool]
+    local_digest: Optional[str] = None
+    remote_digest: Optional[str] = None
+    detail: Optional[str] = None
+
+
+class ZoneHealthOut(BaseModel):
+    ok: bool
+    latency_ms: Optional[int] = None
+    docker_version: Optional[str] = None
+    containers_running: Optional[int] = None
+    error: Optional[str] = None

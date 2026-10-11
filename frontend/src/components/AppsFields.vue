@@ -8,7 +8,7 @@
       <p class="hint">
         Run <code>docker</code> inside this workspace via a per-workspace nested daemon.
         Runs a <strong>privileged</strong> sidecar — grant only to trusted users. Nested
-        images and state are discarded when the workspace is halted.
+        images and state are discarded when the workspace stops.
       </p>
     </template>
 
@@ -68,6 +68,6 @@ withDefaults(defineProps<{
 .apps-fields { display: flex; flex-direction: column; gap: 16px; }
 .form-group label { display: inline-flex; align-items: center; gap: 6px; }
 .hint { font-size: 11px; line-height: 1.5; color: var(--text-muted); margin: 4px 0 0; }
-.hint code { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
+.hint code { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
 .field-error { font-size: 11px; color: var(--red); margin: 4px 0 0; }
 </style>

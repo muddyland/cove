@@ -12,8 +12,15 @@ from server.catalog import (
 )
 from server.deps import AdminUser, CurrentUser, DbSession
 from server.icons import refresh_image_icons
-from server.models import WorkspaceImage
-from server.schemas import ImageCreate, ImageOut, ImageUpdate
+from server.models import Workspace, WorkspaceImage
+from server.schemas import (
+    ImageCreate,
+    ImageDetailOut,
+    ImageOut,
+    ImageUpdate,
+    ImageUpdateCheckOut,
+    PullProgressOut,
+)
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -112,6 +119,78 @@ def images_pull_status(user: AdminUser, db: DbSession, zone_id: int = 0):
         for fut, img in futures.items():
             results[img.id] = fut.result()
     return results
+
+
+@router.get("/availability", response_model=dict[int, str])
+def images_availability(user: CurrentUser, db: DbSession, zone_id: int = 0):
+    """Same answer as /pull-status, for enabled images only, readable by any
+    user — the launch wizard warns when a pick still has to be downloaded."""
+    images = db.scalars(select(WorkspaceImage).where(WorkspaceImage.enabled.is_(True))).all()
+    if not images:
+        return {}
+    from server.docker_manager import get_docker_manager
+
+    dm = get_docker_manager(zone_id)
+    with ThreadPoolExecutor(max_workers=min(8, len(images))) as ex:
+        futures = {ex.submit(dm.pull_status, img.docker_image): img for img in images}
+        return {img.id: fut.result() for fut, img in futures.items()}
+
+
+@router.get("/details", response_model=dict[int, ImageDetailOut])
+def images_details(user: AdminUser, db: DbSession, zone_id: int = 0):
+    """Per-image local state on a zone for the Images admin page: pulled or not,
+    on-disk size, when it was last pulled, live pull progress, and how many
+    workspaces use it."""
+    images = db.scalars(select(WorkspaceImage)).all()
+    if not images:
+        return {}
+    usage = dict(
+        db.execute(select(Workspace.image_id, func.count()).group_by(Workspace.image_id)).all()
+    )
+    from server.docker_manager import get_docker_manager, pull_progress
+
+    dm = get_docker_manager(zone_id)
+
+    def one(img):
+        progress = pull_progress(zone_id, img.docker_image)
+        info = dm.image_info(img.docker_image)
+        status_ = "pulling" if (progress or dm.is_pulling(img.docker_image)) else ("present" if info else "absent")
+        return ImageDetailOut(
+            status=status_,
+            size=info["size"] if info else None,
+            updated_at=info["updated_at"] if info else None,
+            workspace_count=usage.get(img.id, 0),
+            pull_progress=PullProgressOut(**progress) if progress else None,
+        )
+
+    with ThreadPoolExecutor(max_workers=min(8, len(images))) as ex:
+        futures = {ex.submit(one, img): img for img in images}
+        return {img.id: fut.result() for fut, img in futures.items()}
+
+
+@router.post("/{image_id}/check-update", response_model=ImageUpdateCheckOut)
+def check_image_update(image_id: int, user: AdminUser, db: DbSession, zone_id: int = 0):
+    """Compare the local copy's digest with what the registry serves at the tag
+    now (anonymous lookup, so private images come back as unknown)."""
+    image = db.get(WorkspaceImage, image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    from server.docker_manager import get_docker_manager
+    from server.registry import local_digest, remote_digest
+
+    info = get_docker_manager(zone_id).image_info(image.docker_image)
+    if not info:
+        return ImageUpdateCheckOut(up_to_date=None, detail="Not downloaded on this zone")
+    local = local_digest(info["repo_digests"], image.docker_image)
+    remote = remote_digest(image.docker_image)
+    if not local or not remote:
+        return ImageUpdateCheckOut(
+            up_to_date=None,
+            local_digest=local,
+            remote_digest=remote,
+            detail="Registry did not answer" if not remote else "Local image has no registry digest",
+        )
+    return ImageUpdateCheckOut(up_to_date=local == remote, local_digest=local, remote_digest=remote)
 
 
 @router.post("/{image_id}/pull")

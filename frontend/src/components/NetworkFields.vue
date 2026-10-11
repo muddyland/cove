@@ -16,6 +16,7 @@
         :class="{ on: mode === 'tailscale' }"
         :disabled="!tailscaleReady && !form.use_tailscale"
         :title="!tailscaleReady && !form.use_tailscale ? 'Add a Tailscale pre-auth key in Preferences to enable' : ''"
+        :aria-describedby="!tailscaleReady && !form.use_tailscale ? 'net-unavailable' : undefined"
         @click="setMode('tailscale')"
       >
         <svg class="seg-icon" viewBox="0 0 24 24" aria-hidden="true"><path :d="TAILSCALE_ICON" /></svg>
@@ -26,12 +27,22 @@
         :class="{ on: mode === 'gluetun' }"
         :disabled="!gluetunReady && !form.use_gluetun"
         :title="!gluetunReady && !form.use_gluetun ? 'Add a Gluetun VPN config in Preferences to enable' : ''"
+        :aria-describedby="!gluetunReady && !form.use_gluetun ? 'net-unavailable' : undefined"
         @click="setMode('gluetun')"
       >
         <svg class="seg-icon" viewBox="0 0 24 24" aria-hidden="true"><path :d="WIREGUARD_ICON" /></svg>
         <span>Gluetun</span>
       </button>
     </div>
+    <!-- Say why a mode is greyed out in the page itself: a title tooltip never
+         shows on touch screens and isn't read reliably by screen readers. -->
+    <p v-if="unavailable.length" id="net-unavailable" class="hint unavailable">
+      <Info :size="12" />
+      <span>
+        {{ unavailable.join(' and ') }} {{ unavailable.length > 1 ? 'are' : 'is' }} unavailable until you add
+        {{ unavailableNeeds }} in <a href="/app/preferences" target="_blank" rel="noopener">Preferences</a> (opens in a new tab, so this form is kept).
+      </span>
+    </p>
 
     <!-- Direct -->
     <template v-if="mode === 'direct'">
@@ -94,7 +105,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Globe } from 'lucide-vue-next'
+import { Globe, Info } from 'lucide-vue-next'
 import ToggleRow from './ToggleRow.vue'
 import type { LanPolicy } from '@/types'
 import {
@@ -121,6 +132,19 @@ const props = defineProps<{
   // Validation is owned by the parent (see utils/workspaceForm) and passed in.
   dnsError?: string
 }>()
+
+// Modes greyed out because the user hasn't configured them yet.
+const unavailable = computed(() => {
+  const out: string[] = []
+  if (!props.tailscaleReady && !props.form.use_tailscale) out.push('Tailscale')
+  if (!props.gluetunReady && !props.form.use_gluetun) out.push('Gluetun')
+  return out
+})
+const unavailableNeeds = computed(() =>
+  unavailable.value
+    .map(m => (m === 'Tailscale' ? 'a Tailscale auth key' : 'a Gluetun VPN config'))
+    .join(' / '),
+)
 
 type Mode = 'direct' | 'tailscale' | 'gluetun'
 const mode = computed<Mode>(() =>
@@ -158,14 +182,16 @@ function addDns(ip: string) {
 .seg-icon { width: 14px; height: 14px; flex: none; fill: currentColor; }
 .ts-field { padding-left: 24px; border-left: 1px solid var(--border); }
 .toggles { display: flex; flex-direction: column; gap: 8px; }
-.hint { font-size: 11px; line-height: 1.5; color: var(--text-muted); margin: 4px 0 0; }
-.hint code { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
-.field-error { font-size: 11px; color: var(--red); margin: 4px 0 0; }
+.hint { font-size: 12px; line-height: 1.5; color: var(--text-muted); margin: 4px 0 0; }
+.hint code { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+.hint.unavailable { display: flex; gap: 6px; align-items: flex-start; margin-top: -8px; }
+.hint.unavailable svg { flex-shrink: 0; margin-top: 3px; }
+.field-error { font-size: 12px; color: var(--red); margin: 4px 0 0; }
 .dns-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .dns-presets button {
   display: inline-flex; align-items: center; gap: 5px;
   background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--text-muted); font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 11px;
   letter-spacing: 0.5px; padding: 3px 8px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
 }
 .dns-presets button:hover { color: var(--accent); border-color: var(--accent); }

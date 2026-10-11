@@ -108,7 +108,7 @@ describe('AdminSettingsView', () => {
 
     expect(adminApi.env.get).toHaveBeenCalledOnce()
     const text = wrapper.text()
-    expect(text).toContain('// ENVIRONMENT')
+    expect(text).toContain('ENVIRONMENT')
     expect(text).toContain('COVE_BASE_DOMAIN')
     expect(text).toContain('example.com')
     expect(text).toContain('COVE_SUBDOMAIN_MODE')

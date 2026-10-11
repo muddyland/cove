@@ -136,7 +136,7 @@ defineExpose({ close })
   position: absolute; top: -6px; right: -6px;
   min-width: 16px; height: 16px; padding: 0 4px;
   border-radius: 8px; background: var(--amber); color: var(--bg);
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center;
 }
 
 .tasks-menu {
@@ -169,7 +169,7 @@ defineExpose({ close })
 .link-btn {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
   background: none; border: none; padding: 2px 4px; cursor: pointer;
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--text-muted); transition: color 0.15s;
 }
 .link-btn:hover:not(:disabled) { color: var(--accent); }

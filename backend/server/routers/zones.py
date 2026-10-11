@@ -9,7 +9,14 @@ from server.config import get_settings
 from server.deps import AdminUser, CurrentUser, DbSession
 from server.models import Workspace, Zone
 from server.net import client_ip
-from server.schemas import ZoneCreate, ZoneEnrollTokenOut, ZoneListItem, ZoneOut, ZoneUpdate
+from server.schemas import (
+    ZoneCreate,
+    ZoneEnrollTokenOut,
+    ZoneHealthOut,
+    ZoneListItem,
+    ZoneOut,
+    ZoneUpdate,
+)
 
 router = APIRouter(prefix="/api/admin/zones", tags=["zones"])
 
@@ -46,6 +53,37 @@ def _zone_out(db, zone: Zone) -> ZoneOut:
 def list_zones(admin: AdminUser, db: DbSession):
     zones = db.scalars(select(Zone).order_by(Zone.id)).all()
     return [_zone_out(db, z) for z in zones]
+
+
+@router.get("/{zone_id}/health", response_model=ZoneHealthOut)
+def zone_health(zone_id: int, admin: AdminUser, db: DbSession):
+    """Live check of a zone's Docker daemon: reachable, round-trip time, engine
+    version and running container count. Zone 0 is this host's own daemon,
+    which has no heartbeat/last-seen of its own, so this is its only signal."""
+    import time
+
+    zone = db.get(Zone, zone_id)
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    if zone_id != 0 and zone.status != "enrolled":
+        return ZoneHealthOut(ok=False, error="Not enrolled")
+    from server.docker_manager import get_docker_manager
+
+    try:
+        client = get_docker_manager(zone_id)._client
+        t0 = time.monotonic()
+        version = client.version()
+        latency = int((time.monotonic() - t0) * 1000)
+        running = None
+        try:
+            running = int(client.info().get("ContainersRunning"))
+        except Exception:
+            pass
+        return ZoneHealthOut(
+            ok=True, latency_ms=latency, docker_version=version.get("Version"), containers_running=running
+        )
+    except Exception as exc:  # unreachable daemon, TLS failure, proxy 403 …
+        return ZoneHealthOut(ok=False, error=str(exc)[:300] or exc.__class__.__name__)
 
 
 @router.post("", response_model=ZoneOut, status_code=status.HTTP_201_CREATED)

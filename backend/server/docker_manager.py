@@ -701,6 +701,31 @@ def zone_agent_client(zone, **kwargs):
     )
 
 
+# Live progress of in-flight image pulls, keyed by (zone_id, image ref):
+# {"current": bytes downloaded, "total": bytes known so far, "layers": n}. Written
+# by DockerManager._stream_pull, read by WorkspaceOut / the images API. Totals
+# grow as the daemon discovers layers, so treat them as a moving estimate.
+_PULL_PROGRESS: dict[tuple[int, str], dict] = {}
+_PULL_PROGRESS_LOCK = Lock()
+
+
+def runtime_anchor(ws) -> "datetime | None":
+    """Where a running workspace's max-runtime clock starts: the later of its
+    start and the user's last "Extend" (both naive-UTC in SQLite)."""
+    stamps = [t for t in (ws.started_at, getattr(ws, "runtime_extended_at", None)) if t]
+    if not stamps:
+        return None
+    stamps = [t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t for t in stamps]
+    return max(stamps)
+
+
+def pull_progress(zone_id: int, ref: str) -> dict | None:
+    """Snapshot of an in-flight pull of ``ref`` on ``zone_id``, or None."""
+    with _PULL_PROGRESS_LOCK:
+        entry = _PULL_PROGRESS.get((zone_id, ref))
+        return dict(entry) if entry else None
+
+
 class DockerManager:
     def __init__(self, zone_id: int = 0):
         # One manager per zone (cached by get_docker_manager). zone_id 0 is the
@@ -951,12 +976,59 @@ class DockerManager:
             return repo, tag
         return ref, None
 
+    def _stream_pull(self, ref: str) -> None:
+        """Pull ``ref`` through the streaming API, recording per-layer byte counts
+        in the module-level progress table so the UI can show a download bar
+        (a multi-GB webtop otherwise looks like a hung "Starting" for minutes).
+
+        Raises docker.errors.APIError on failure, like ``images.pull``.
+        """
+        repo, tag = self._split_ref(ref)
+        api = getattr(self._client, "api", None)
+        if api is None or not hasattr(api, "pull"):
+            # A client without the low-level API (stubs, minimal wrappers): pull
+            # the plain way, just without progress.
+            self._client.images.pull(repo, tag=tag)
+            return
+        key = (getattr(self, "zone_id", 0), ref)
+        layers: dict[str, list[int]] = {}
+        with _PULL_PROGRESS_LOCK:
+            _PULL_PROGRESS[key] = {"current": 0, "total": 0, "layers": 0}
+        try:
+            for event in api.pull(repo, tag=tag, stream=True, decode=True) or ():
+                if not isinstance(event, dict):
+                    continue
+                if event.get("error"):
+                    raise docker.errors.APIError(str(event.get("error")))
+                layer = event.get("id")
+                state = event.get("status") or ""
+                if not layer or layer == tag:
+                    continue
+                cur_tot = layers.setdefault(layer, [0, 0])
+                detail = event.get("progressDetail") or {}
+                if state.startswith("Downloading") and detail.get("total"):
+                    cur_tot[0] = int(detail.get("current") or 0)
+                    cur_tot[1] = int(detail["total"])
+                elif state in ("Download complete", "Pull complete", "Already exists"):
+                    # Layers that were already present carry no size; count them
+                    # as done so the bar doesn't sit short of 100%.
+                    if cur_tot[1]:
+                        cur_tot[0] = cur_tot[1]
+                with _PULL_PROGRESS_LOCK:
+                    _PULL_PROGRESS[key] = {
+                        "current": sum(c for c, _ in layers.values()),
+                        "total": sum(t for _, t in layers.values()),
+                        "layers": len(layers),
+                    }
+        finally:
+            with _PULL_PROGRESS_LOCK:
+                _PULL_PROGRESS.pop(key, None)
+
     def _pull_image(self, ref: str) -> None:
         """Always pull so a restarted workspace gets the latest image. Best-effort:
         if the pull fails (e.g. offline) we fall back to any local copy."""
-        repo, tag = self._split_ref(ref)
         try:
-            self._client.images.pull(repo, tag=tag)
+            self._stream_pull(ref)
             logger.info("Pulled image %s", ref)
         except docker.errors.APIError as exc:
             logger.warning("Could not pull %s (%s); using local image if present", ref, exc)
@@ -1007,9 +1079,30 @@ class DockerManager:
 
     def pull_status(self, ref: str) -> str:
         """One of 'pulling', 'present', or 'absent'."""
-        if self.is_pulling(ref):
+        if self.is_pulling(ref) or pull_progress(getattr(self, "zone_id", 0), ref):
             return "pulling"
         return "present" if self.image_present(ref) else "absent"
+
+    def image_info(self, ref: str) -> dict | None:
+        """Size, when it was last pulled/tagged, and repo digests of a local image
+        (None if it isn't on this daemon). LastTagTime is bumped by every pull
+        that changes the tag, so it doubles as "last updated"."""
+        try:
+            img = self._client.images.get(ref)
+        except (docker.errors.ImageNotFound, docker.errors.NotFound):
+            return None
+        except docker.errors.APIError as exc:
+            logger.debug("image_info failed for %s: %s", ref, exc)
+            return None
+        attrs = getattr(img, "attrs", {}) or {}
+        last_tag = (attrs.get("Metadata") or {}).get("LastTagTime") or None
+        if last_tag and last_tag.startswith("0001-"):
+            last_tag = None  # never re-tagged (e.g. loaded from a tarball)
+        return {
+            "size": int(attrs.get("Size") or 0),
+            "updated_at": last_tag or attrs.get("Created"),
+            "repo_digests": list(attrs.get("RepoDigests") or []),
+        }
 
     def pull_image_blocking(self, ref: str) -> bool:
         """Pull an image, tracking it as in-flight. Returns True on success.
@@ -1020,8 +1113,7 @@ class DockerManager:
         with self._pulling_lock:
             self._pulling.add(ref)
         try:
-            repo, tag = self._split_ref(ref)
-            self._client.images.pull(repo, tag=tag)
+            self._stream_pull(ref)
             logger.info("Manually pulled image %s", ref)
             return True
         except docker.errors.APIError as exc:
@@ -2264,11 +2356,9 @@ class DockerManager:
             ).all()
             expired_ids = []
             for ws in running:
-                started = ws.started_at
+                started = runtime_anchor(ws)
                 if started is None:
                     continue
-                if started.tzinfo is None:
-                    started = started.replace(tzinfo=timezone.utc)
                 if started < cutoff:
                     expired_ids.append(ws.id)
         except Exception as exc:

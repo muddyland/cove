@@ -6,19 +6,19 @@
         <img class="logo-icon" src="/favicon.svg" alt="" />
         <span>COVE</span>
       </div>
-      <div class="auth-subtitle">// FIRST BOOT — INITIALIZE NODE</div>
+      <div class="auth-subtitle">// FIRST RUN — CREATE THE ADMIN ACCOUNT</div>
       <form @submit.prevent="handleSetup" class="form">
         <div class="form-group">
-          <label>// admin identifier</label>
+          <label>Admin username</label>
           <input v-model="username" required autocomplete="username" />
         </div>
         <div class="form-group">
-          <label>// passkey (min 8 chars)</label>
+          <label>Password (min 8 characters)</label>
           <input v-model="password" type="password" required minlength="8" autocomplete="new-password" />
         </div>
         <div v-if="error" class="form-error">⚠ {{ error }}</div>
         <NeonButton type="submit" variant="primary" :loading="loading" style="width:100%">
-          INITIALIZE
+          CREATE ADMIN
         </NeonButton>
       </form>
     </div>
@@ -84,7 +84,7 @@ async function handleSetup() {
 }
 .logo-icon { width: 44px; height: 44px; display: block; }
 .auth-subtitle {
-  text-align: center; font-family: var(--font-mono); font-size: 10px;
+  text-align: center; font-family: var(--font-mono); font-size: 11px;
   letter-spacing: 2px; color: var(--text-muted);
 }
 .form { display: flex; flex-direction: column; gap: 14px; }

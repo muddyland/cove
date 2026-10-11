@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { WorkspaceImage } from '@/types'
+import type { ImageDetail, ImageUpdateCheck, WorkspaceImage } from '@/types'
 
 export const imagesApi = {
   list: () => api.get<WorkspaceImage[]>('/images'),
@@ -24,6 +24,13 @@ export const imagesApi = {
   // pulled (and the pull/remove actions) target one zone's daemon.
   pullStatus: (zoneId = 0) =>
     api.get<Record<number, ImagePullStatus>>(`/images/pull-status?zone_id=${zoneId}`),
+  // Any user: is each enabled image already on the zone? (launch wizard hint)
+  availability: (zoneId = 0) =>
+    api.get<Record<number, ImagePullStatus>>(`/images/availability?zone_id=${zoneId}`),
+  // Admin: size / last pulled / usage / live pull progress per image on a zone.
+  details: (zoneId = 0) => api.get<Record<number, ImageDetail>>(`/images/details?zone_id=${zoneId}`),
+  checkUpdate: (id: number, zoneId = 0) =>
+    api.post<ImageUpdateCheck>(`/images/${id}/check-update?zone_id=${zoneId}`),
   pull: (id: number, zoneId = 0) =>
     api.post<{ status: ImagePullStatus }>(`/images/${id}/pull?zone_id=${zoneId}`),
 }

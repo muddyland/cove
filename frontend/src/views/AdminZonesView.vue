@@ -5,7 +5,7 @@
       <NeonButton variant="primary" @click="showCreate = true"><Plus :size="14" /> Add Zone</NeonButton>
     </div>
     <p class="hint">
-      Zones are remote nodes that run workspace containers in their own network
+      Zones are remote hosts that run workspace containers in their own network
       segment. The control plane dials each zone over mutual TLS. Zone
       <strong>Local</strong> is this control plane's own Docker daemon.
     </p>
@@ -17,6 +17,7 @@
           <tr>
             <th>Name</th>
             <th>Status</th>
+            <th>Health</th>
             <th>Endpoint</th>
             <th>Workspaces</th>
             <th>Last Seen</th>
@@ -26,10 +27,20 @@
         <tbody>
           <tr v-for="z in zones" :key="z.id">
             <td>{{ z.name }}</td>
-            <td><span class="badge" :class="z.status">{{ z.status }}</span></td>
-            <td>{{ z.endpoint_host ? `${z.endpoint_host}:${z.endpoint_port}` : '—' }}</td>
+            <td><span class="badge" :class="z.status">{{ z.id === 0 ? 'this host' : z.status }}</span></td>
+            <td>
+              <span v-if="health[z.id] === undefined" class="health muted">checking…</span>
+              <span v-else-if="health[z.id]?.ok" class="health ok" :title="`Docker ${health[z.id]?.docker_version ?? ''}`">
+                <CheckCircle2 :size="13" /> {{ health[z.id]?.latency_ms }} ms
+                <span class="muted">· {{ health[z.id]?.containers_running ?? '?' }} containers</span>
+              </span>
+              <span v-else class="health bad" :title="health[z.id]?.error || ''"><XCircle :size="13" /> {{ health[z.id]?.error === 'Not enrolled' ? 'not enrolled' : 'unreachable' }}</span>
+            </td>
+            <td>{{ z.endpoint_host ? `${z.endpoint_host}:${z.endpoint_port}` : z.id === 0 ? 'local Docker socket' : '—' }}</td>
             <td>{{ z.workspace_count }}</td>
-            <td>{{ z.last_seen_at ? formatDate(z.last_seen_at) : '—' }}</td>
+            <td :title="z.last_seen_at ? formatDate(z.last_seen_at) : ''">
+              {{ z.last_seen_at ? relativeTime(z.last_seen_at) : z.id === 0 ? 'n/a (local)' : 'never' }}
+            </td>
             <td class="actions">
               <NeonButton
                 v-if="z.id !== 0"
@@ -76,7 +87,7 @@
     <!-- Enrollment install command -->
     <BaseModal v-model="showEnroll" title="Enroll Zone" width="640px">
       <p class="hint">
-        Run this one-liner on the new node (as root). It installs Docker, enrolls
+        Run this one-liner on the new host (as root). It installs Docker, enrolls
         over mTLS, and starts the agent. The token is single-use and expires.
       </p>
       <pre class="install">{{ enrollCmd }}</pre>
@@ -104,16 +115,17 @@
 </template>
 
 <script setup lang="ts">
+import { absoluteTime, relativeTime } from '@/utils/workspaceStatus'
 import { ref, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Plus, Trash2, KeyRound, Copy, ArrowUpCircle } from 'lucide-vue-next'
+import { CheckCircle2, XCircle, Plus, Trash2, KeyRound, Copy, ArrowUpCircle } from 'lucide-vue-next'
 import { zonesApi } from '@/api/zones'
 import { useUiStore } from '@/stores/ui'
-import type { Zone } from '@/types'
+import type { ZoneHealth, Zone } from '@/types'
 
 const zones = ref<Zone[]>([])
 const ui = useUiStore()
@@ -135,8 +147,22 @@ const form = ref({ name: '', endpoint_host: '', endpoint_port: 8443 })
 onMounted(async () => {
   try { await load() } finally { loading.value = false }
 })
-async function load() { zones.value = await zonesApi.list() }
-function formatDate(d: string) { return new Date(d).toLocaleString() }
+async function load() {
+  zones.value = await zonesApi.list()
+  loadHealth()
+}
+// Live daemon check per zone (the local zone has no heartbeat of its own).
+const health = ref<Record<number, ZoneHealth | null>>({})
+function loadHealth() {
+  for (const z of zones.value) {
+    zonesApi
+      .health(z.id)
+      .then(h => (health.value = { ...health.value, [z.id]: h }))
+      .catch(() => (health.value = { ...health.value, [z.id]: { ok: false, latency_ms: null, docker_version: null, containers_running: null, error: 'check failed' } }))
+  }
+}
+// API timestamps are naive UTC; parse them as UTC, not local time.
+const formatDate = absoluteTime
 
 async function handleCreate() {
   if (creating.value) return
@@ -205,25 +231,29 @@ async function handleDelete() {
 <style scoped>
 @import '@/styles/tables.css';
 .hint {
-  font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
   color: var(--text-muted); margin: 0 0 16px; max-width: 70ch;
 }
+.health { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+.health.ok { color: var(--green); }
+.health.bad { color: var(--red); }
+.muted { color: var(--text-muted); }
 .badge {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 1px 6px; color: var(--text-muted); text-transform: uppercase;
 }
 .badge.enrolled { color: var(--accent); border-color: var(--accent); }
 .badge.offline, .badge.error { color: #ff6b6b; border-color: #ff6b6b; }
 .form { display: flex; flex-direction: column; gap: 12px; }
-.form label { display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.form label { display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
 .form input { padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-mono); }
-.form small { color: var(--text-muted); font-size: 10px; }
+.form small { color: var(--text-muted); font-size: 11px; }
 .row { display: flex; gap: 12px; }
 .row label { flex: 1; }
 .install {
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text);
+  padding: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text);
   white-space: pre-wrap; word-break: break-all; margin: 0 0 12px;
 }
 </style>

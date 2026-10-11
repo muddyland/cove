@@ -153,6 +153,7 @@
 </template>
 
 <script setup lang="ts">
+import { absoluteTime, parseTs } from '@/utils/workspaceStatus'
 import { ref, computed, reactive, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -282,12 +283,13 @@ onMounted(async () => {
   await loadTrash()  // populates the Trash tab badge
 })
 
+// API timestamps may be naive UTC; parse them as UTC, not local time.
 function formatDate(d: string) {
-  return new Date(d).toLocaleString()
+  return absoluteTime(d)
 }
 
 function expiryLabel(d: string): string {
-  const ms = new Date(d).getTime() - Date.now()
+  const ms = (parseTs(d) ?? Date.now()) - Date.now()
   if (ms <= 0) return 'expiring…'
   const days = Math.floor(ms / 86400000)
   if (days >= 365 * 50) return 'never'
@@ -591,7 +593,7 @@ function confirmEmptyTrash() {
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .badge {
   background: var(--accent); color: var(--bg); border-radius: 8px;
-  font-size: 10px; padding: 0 6px; min-width: 16px; text-align: center;
+  font-size: 11px; padding: 0 6px; min-width: 16px; text-align: center;
 }
 
 .breadcrumb {
@@ -631,7 +633,7 @@ tr.drop-target > td { background: color-mix(in srgb, var(--accent) 15%, transpar
 .file-icon { color: var(--text-muted); }
 .muted { color: var(--text-muted); font-size: 12px; }
 
-.actions { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+/* see tables.css: td.actions must stay a table cell (no display:flex). */
 .icon-btn {
   background: none; border: 1px solid transparent; border-radius: var(--radius-sm);
   color: var(--text-muted); cursor: pointer; padding: 4px; display: inline-flex;

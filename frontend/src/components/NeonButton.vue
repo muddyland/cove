@@ -20,7 +20,8 @@ defineProps<{
   gap: 6px;
   padding: 7px 16px;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: 12px;
+  white-space: nowrap;
   font-weight: 600;
   letter-spacing: 1.2px;
   text-transform: uppercase;

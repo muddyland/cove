@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased — usability pass
+
+- **The dashboard no longer shows a dead workspace as running.** The grid only
+  re-read the list while something was starting or stopping, so a workspace that
+  crashed, hit the max-runtime auto-stop, or was stopped from another device or by
+  an admin kept its RUNNING badge, a CONNECT button and its last CPU/memory until
+  a reload. The list now refreshes all the time (3 s while anything is changing,
+  10 s otherwise), pauses in a background tab and refreshes on return, survives a
+  failed poll with back-off, and drops the stats of anything not running.
+- **Connecting to a workspace that died says why, within seconds.** The stream
+  page re-reads the workspace while it waits for the route, so the real error
+  replaces the spinner instead of a generic "taking longer than usual" after 25 s.
+  A workspace stopped or deleted while its page is open shows that (with Start /
+  Back) instead of a frozen frame.
+- **The first start of an image shows its download.** Image pulls are streamed and
+  their progress surfaces on the card, the stream page and the Images page
+  ("Downloading image · 1.2 GB / 4.7 GB"). The wizard marks images that aren't on
+  the chosen zone yet and warns before launching one.
+- **Failed workspaces get their own "Needs attention" section** at the top of the
+  grid, with Logs available on them (it was only offered while running).
+- **One set of words for workspace state:** Starting / Running / Stopping /
+  Migrating / Stopped / Error, and Start / Connect / Stop / Delete — instead of
+  Online/Offline, Boot, Halt and Purge/Terminate depending on the screen.
+- **Cards say more:** uptime or "last used", a countdown to the max-runtime
+  auto-stop with **Extend** in its last hour (new `POST /workspaces/{id}/extend`),
+  and chips for network, persistent/ephemeral, LAN, sudo, Docker and GPU.
+- **Admin "Halt" on the sessions page deleted the workspace.** It called the
+  delete path, so the owner lost the workspace and its settings. It now stops it
+  like the owner's Stop; the page is renamed **Running** and shows owner, zone and
+  uptime.
+- **Audit log:** workspace entries show the workspace name, with filters (user,
+  action or action group, date range, text), paging and CSV export.
+- **Images:** size, when it was last pulled, how many workspaces use it, and a
+  per-image "Check for update" against the registry. Destructive actions moved
+  into a row menu.
+- **Zones:** a live health check per zone (reachable, latency, engine, running
+  containers); the local zone reads "this host" instead of dashes.
+- **Users:** "Sign out" invalidates every login of a user.
+- **Timestamps** from the API are naive UTC and were being shown as local time;
+  they are now parsed as UTC everywhere.
+- **Styling:** secondary text contrast raised from ~2.8:1 to ~5.8:1 and small text
+  sized up; native controls (file pickers, selects, scrollbars) render dark; table
+  rows no longer have a broken border under the actions column; content pages are
+  capped to a readable width; Preferences and Settings use the width (Settings
+  gets section links and a sticky Save with an unsaved-changes hint); the ADMIN
+  menu matches the other nav items; the wizard's step labels no longer truncate on
+  phones; field labels lost their `//` prefixes.
+- **Fonts are bundled** (Orbitron, Share Tech Mono via fontsource) instead of
+  loaded from Google Fonts, so the UI looks right on networks without internet and
+  no longer contacts Google on every page load. The CSP drops the Google hosts.
+
 ## 1.2.0 — apps, browsers and provider-generic SSO
 
 - **Screen previews work again on current LinuxServer images, which also unblocks

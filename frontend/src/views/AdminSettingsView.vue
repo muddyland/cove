@@ -6,11 +6,15 @@
 
     <div class="panels">
       <section class="panel">
-        <h3>// SYSTEM</h3>
+        <h3>SYSTEM</h3>
+        <nav class="section-nav" aria-label="Settings sections">
+          <a v-for="sct in SECTIONS" :key="sct.id" :href="`#set-${sct.id}`" @click.prevent="jump(sct.id)">{{ sct.label }}</a>
+        </nav>
         <LoadingSpinner v-if="loading" block />
         <form v-else class="form" @submit.prevent="handleSave">
+          <h4 id="set-images" class="section-h">Sidecar images</h4>
           <div class="form-group">
-            <label>// tailscale image</label>
+            <label>Tailscale image</label>
             <input
               v-model="form.tailscale_image"
               type="text"
@@ -25,7 +29,7 @@
           </div>
 
           <div class="form-group">
-            <label>// gluetun image</label>
+            <label>Gluetun image</label>
             <input
               v-model="form.gluetun_image"
               type="text"
@@ -38,8 +42,9 @@
             </p>
           </div>
 
+          <h4 id="set-lifetime" class="section-h">Lifetime &amp; retention</h4>
           <div class="form-group">
-            <label>// max workspace runtime (hours)</label>
+            <label>Max workspace runtime (hours)</label>
             <input
               v-model.number="form.workspace_max_runtime_hours"
               type="number"
@@ -52,7 +57,7 @@
           </div>
 
           <div class="form-group">
-            <label>// trash retention (days)</label>
+            <label>Trash retention (days)</label>
             <input
               v-model.number="form.trash_retention_days"
               type="number"
@@ -65,8 +70,9 @@
             </p>
           </div>
 
+          <h4 id="set-limits" class="section-h">Resource limits</h4>
           <div class="form-group">
-            <label>// default CPU limit (cores)</label>
+            <label>Default CPU limit (cores)</label>
             <input
               v-model.number="form.workspace_cpu_limit"
               type="number"
@@ -81,7 +87,7 @@
           </div>
 
           <div class="form-group">
-            <label>// default memory limit (MB)</label>
+            <label>Default memory limit (MB)</label>
             <input
               v-model.number="form.workspace_memory_limit_mb"
               type="number"
@@ -96,7 +102,7 @@
           </div>
 
           <div class="form-group">
-            <label>// process limit (pids)</label>
+            <label>Process limit (PIDs)</label>
             <input
               v-model.number="form.workspace_pids_limit"
               type="number"
@@ -111,6 +117,7 @@
             </p>
           </div>
 
+          <h4 id="set-network" class="section-h">Network</h4>
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_lan_access" />
             <span>Allow direct LAN access (opt-in per workspace)</span>
@@ -125,7 +132,7 @@
             independent of this.
           </p>
           <div v-if="form.workspace_lan_access" class="form-group">
-            <label>// allowed LAN subnets</label>
+            <label>Allowed LAN subnets</label>
             <input
               v-model="form.workspace_lan_subnets"
               type="text"
@@ -138,6 +145,7 @@
             </p>
           </div>
 
+          <h4 id="set-security" class="section-h">Security</h4>
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_no_new_privileges" />
             <span>Force-disable workspace sudo</span>
@@ -150,6 +158,7 @@
             such as Kali or webtop typically need <code>sudo</code>.
           </p>
 
+          <h4 id="set-gpu" class="section-h">GPU</h4>
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_gpu_accel" />
             <span>Enable GPU acceleration</span>
@@ -179,6 +188,7 @@
             </p>
           </div>
 
+          <h4 id="set-docker" class="section-h">Docker-in-Docker</h4>
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_docker" />
             <span>Allow Docker-in-Docker</span>
@@ -201,14 +211,16 @@
           </div>
 
           <div v-if="error" class="form-error">⚠ {{ error }}</div>
-          <div class="form-actions">
-            <NeonButton type="submit" variant="primary" :loading="saving">Save Settings</NeonButton>
+          <!-- Sticky so Save is reachable from anywhere in this long form. -->
+          <div class="form-actions sticky-save">
+            <span v-if="dirty" class="unsaved">Unsaved changes</span>
+            <NeonButton type="submit" variant="primary" :loading="saving" :disabled="!dirty && !saving">Save settings</NeonButton>
           </div>
         </form>
       </section>
 
       <section class="panel">
-        <h3>// ENVIRONMENT</h3>
+        <h3>ENVIRONMENT</h3>
         <p class="hint env-note">
           Read-only summary of configuration derived from environment variables. To change these,
           update the environment and restart the server. Secrets are masked.
@@ -238,7 +250,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
@@ -251,6 +263,23 @@ const ui = useUiStore()
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
+
+// Saved state, to tell the user when the long form has unsaved edits.
+const snapshot = ref('')
+const dirty = computed(() => !!snapshot.value && JSON.stringify(form) !== snapshot.value)
+
+const SECTIONS = [
+  { id: 'images', label: 'Images' },
+  { id: 'lifetime', label: 'Lifetime' },
+  { id: 'limits', label: 'Limits' },
+  { id: 'network', label: 'Network' },
+  { id: 'security', label: 'Security' },
+  { id: 'gpu', label: 'GPU' },
+  { id: 'docker', label: 'Docker' },
+]
+function jump(id: string) {
+  document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const envLoading = ref(true)
 const envError = ref('')
@@ -292,6 +321,7 @@ onMounted(async () => {
     form.workspace_docker = settings.workspace_docker
     form.dind_image = settings.dind_image
     form.trash_retention_days = settings.trash_retention_days
+    snapshot.value = JSON.stringify(form)
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -344,6 +374,7 @@ async function handleSave() {
     form.workspace_docker = updated.workspace_docker
     form.dind_image = updated.dind_image
     form.trash_retention_days = updated.trash_retention_days
+    snapshot.value = JSON.stringify(form)
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
     error.value = e.message
@@ -357,41 +388,69 @@ async function handleSave() {
 <style scoped>
 @import '@/styles/tables.css';
 
-.panels { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+/* Two columns that use the width on desktop (the long form gets the bigger
+   share), one column on narrow screens. */
+.panels {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 1100px) { .panels { grid-template-columns: minmax(0, 1fr); } }
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
-  width: 520px;
-  max-width: 100%;
+  min-width: 0;
 }
 .panel h3 {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 2px;
-  color: var(--accent);
-  text-shadow: var(--glow-sm);
-  margin-bottom: 18px;
+  color: var(--text);
+  margin-bottom: 14px;
 }
+.section-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.section-nav a {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px;
+}
+.section-nav a:hover { color: var(--accent); border-color: var(--accent); text-shadow: none; }
+.section-h {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--accent); padding-top: 14px; margin-top: 6px; border-top: 1px solid var(--border);
+  scroll-margin-top: 16px;
+}
+.section-h:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.sticky-save {
+  position: sticky; bottom: 0; z-index: 2;
+  margin: 0 -24px -24px; padding: 12px 24px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(4px);
+  border-top: 1px solid var(--border);
+  align-items: center; gap: 12px;
+}
+.unsaved { font-family: var(--font-mono); font-size: 12px; color: var(--amber); }
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-actions { display: flex; justify-content: flex-end; }
 .checkbox-row {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
-  font-size: 12px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
+  font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0.5px;
   margin-bottom: 0;
 }
 .checkbox-row input { width: auto; margin: 0; }
 .hint {
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--text-muted);
   margin: 4px 0 0;
+  max-width: 75ch;
 }
 .hint code {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--accent);
 }
 

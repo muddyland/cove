@@ -7,7 +7,7 @@
       </NeonButton>
     </div>
     <p class="hint">
-      Disk usage per node. Workspaces, images, and build cache all consume the host
+      Disk usage per zone. Workspaces, images, and build cache all consume the host
       disk — when it fills, containers fail to start and streams drop. Prune
       reclaims Docker space; it never removes named volumes (workspace data).
     </p>
@@ -56,7 +56,7 @@
               />
             </div>
           </div>
-          <p v-else class="disk-none">Host free-space unavailable for this node.</p>
+          <p v-else class="disk-none">Host free-space unavailable for this zone.</p>
 
           <!-- Docker breakdown -->
           <div class="table-wrap">
@@ -192,7 +192,7 @@ onMounted(load)
   display: flex; align-items: center; gap: 8px;
 }
 .tag {
-  font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--text-muted); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 1px 6px;
 }
@@ -221,5 +221,5 @@ onMounted(load)
 .bar-fill.warn { background: #f5a623; }
 .bar-fill.crit { background: #ff6b6b; }
 td.reclaim { color: var(--accent); }
-.note { color: var(--text-muted); font-size: 10px; }
+.note { color: var(--text-muted); font-size: 11px; }
 </style>

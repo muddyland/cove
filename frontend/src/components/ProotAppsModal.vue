@@ -539,7 +539,7 @@ onUnmounted(() => unsubscribe?.())
 .busy { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--amber); }
 
 .chip {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
   padding: 1px 6px; border: 1px solid currentColor; border-radius: var(--radius-sm); white-space: nowrap;
 }
 .chip.good { color: var(--green); }

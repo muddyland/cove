@@ -2,20 +2,20 @@
   <div
     ref="cardEl"
     class="card"
-    :class="{ interactive: ws.status === 'running' && ws.connectable, 'menu-open': actionsOpen }"
+    :class="{ interactive: ws.status === 'running' && ws.connectable, 'menu-open': actionsOpen, errored: ws.status === 'error' }"
     @click="open"
   >
-    <!-- Live screen preview. Only for running nodes: previews are dropped when a
-         workspace halts, so an offline card never shows a stale desktop. -->
+    <!-- Live screen preview. Only for running workspaces: previews are dropped
+         when a workspace stops, so a stopped card never shows a stale desktop. -->
     <div v-if="ws.status === 'running'" class="preview" :class="{ empty: !previewUrl }">
       <img v-if="previewUrl" :src="previewUrl" class="preview-img" alt="" />
       <MonitorPlay v-else :size="22" class="preview-icon" />
       <div class="preview-scan" aria-hidden="true" />
     </div>
     <div class="card-header">
-      <div class="card-title">{{ ws.name }}</div>
+      <div class="card-title" :title="ws.name">{{ ws.name }}</div>
       <div class="card-header-right">
-        <StatusBadge :status="ws.status" />
+        <StatusBadge :status="shownStatus" />
       </div>
     </div>
     <div class="card-meta">
@@ -31,16 +31,36 @@
         {{ ws.image_name }}
       </span>
       <span v-if="ws.target_url" class="target-url" :title="ws.target_url"><Globe :size="12" /> {{ truncateUrl(ws.target_url) }}</span>
-      <span v-if="ws.zone_id !== 0" class="zone-badge" :title="`Runs on zone: ${ws.zone_name || ''}`"><Server :size="12" /> {{ ws.zone_name || 'Zone' }}</span>
-      <span
-        v-if="ws.use_tailscale"
-        class="ts-badge"
-        :title="ws.ts_exit_node ? `Routed through Tailscale · exit node: ${ws.ts_exit_node}` : 'Routed through Tailscale'"
-      ><Network :size="12" /> Tailscale<template v-if="ws.ts_exit_node"> · {{ ws.ts_exit_node }}</template></span>
-      <span v-if="ws.use_gluetun" class="vpn-badge" title="Routed through Gluetun VPN">
-        <ShieldCheck :size="12" /> VPN
-      </span>
     </div>
+
+    <!-- At-a-glance settings, so similar workspaces can be told apart without
+         opening Edit. -->
+    <ul class="chips" aria-label="Workspace settings">
+      <li v-if="ws.zone_id !== 0" class="chip zone" :title="`Runs on zone ${ws.zone_name || ''}`"><Server :size="11" /> {{ ws.zone_name || 'Zone' }}</li>
+      <li
+        v-if="ws.use_tailscale"
+        class="chip ts"
+        :title="ws.ts_exit_node ? `Routed through Tailscale · exit node ${ws.ts_exit_node}` : 'Routed through Tailscale'"
+      ><Network :size="11" /> Tailscale<template v-if="ws.ts_exit_node"> · {{ ws.ts_exit_node }}</template></li>
+      <li v-else-if="ws.use_gluetun" class="chip vpn" title="Routed through the Gluetun VPN"><ShieldCheck :size="11" /> VPN</li>
+      <li v-else class="chip" title="Direct internet access (no VPN)"><Globe :size="11" /> Direct</li>
+      <li v-if="ws.ephemeral" class="chip warn" title="Nothing is kept: the home directory is wiped when it stops"><Flame :size="11" /> Ephemeral</li>
+      <li v-else class="chip" :title="ws.shared_profile ? 'Uses your shared browser profile' : 'Home directory is kept between runs'"><HardDrive :size="11" /> {{ ws.shared_profile ? 'Shared profile' : 'Persistent' }}</li>
+      <li v-if="ws.lan_access" class="chip" title="Can reach the LAN directly"><Router :size="11" /> LAN</li>
+      <li v-if="ws.allow_sudo && ws.workspace_type === 'desktop'" class="chip" title="sudo allowed inside the workspace"><KeyRound :size="11" /> sudo</li>
+      <li v-if="ws.use_docker" class="chip" title="Docker-in-Docker enabled"><Container :size="11" /> Docker</li>
+      <li v-if="ws.gpu_accel" class="chip" title="GPU acceleration"><Zap :size="11" /> GPU</li>
+    </ul>
+
+    <!-- Starting: say what it's actually waiting on (a multi-GB first pull used
+         to look like a hang). -->
+    <div v-if="detail" class="progress-line" role="status">
+      <span class="progress-text">{{ detail }}</span>
+      <div v-if="pullPct !== null" class="stat-bar" :aria-label="`Downloaded ${pullPct}%`">
+        <div class="stat-fill" :style="{ width: pullPct + '%' }"></div>
+      </div>
+    </div>
+
     <div v-if="stats" class="stats">
       <div class="stat">
         <div class="stat-head"><span><Cpu :size="11" /> CPU</span><span class="stat-val">{{ stats.cpu_pct.toFixed(0) }}%</span></div>
@@ -62,11 +82,20 @@
       </button>
     </div>
 
-    <div v-if="ws.error_message" class="error-msg">{{ ws.error_message }}</div>
+    <!-- Time: uptime + auto-stop countdown when running, last use otherwise. -->
+    <div class="timeline">
+      <span :title="timeTitle"><Clock :size="11" /> {{ timeText }}</span>
+      <span v-if="stopIn !== null" class="auto-stop" :class="{ soon: stopIn < 3_600_000 }" :title="`Auto-stops at ${stopAtText} (admin limit ${store.maxRuntimeHours} h)`">
+        <Timer :size="11" /> stops in {{ fmtDuration(stopIn) }}
+        <button v-if="stopIn < 3_600_000" type="button" class="link-btn" :disabled="extending" @click.stop="handleExtend">Extend</button>
+      </span>
+    </div>
+
+    <div v-if="ws.error_message" class="error-msg" role="alert">{{ ws.error_message }}</div>
     <div v-if="vpnLocked" class="vpn-lock-msg"><Lock :size="11" /> VPN in use by another workspace</div>
     <div class="card-actions" @click.stop>
-      <!-- Primary: Connect (running), Boot (stopped/error), or a disabled
-           progress button while the workspace is transitioning (starting, etc.). -->
+      <!-- Primary: Connect (running), Start (stopped/error), or a disabled
+           progress button while the workspace is transitioning. -->
       <NeonButton v-if="ws.status === 'running' && ws.connectable" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
       <NeonButton
         v-else-if="isStopped"
@@ -75,45 +104,55 @@
         :disabled="vpnLocked"
         :title="vpnLocked ? 'Another VPN workspace is active — only one VPN connection at a time. Stop it first.' : ''"
         @click="handleStart"
-      ><component :is="vpnLocked ? Lock : Power" :size="14" /> BOOT</NeonButton>
+      ><component :is="vpnLocked ? Lock : Power" :size="14" /> {{ ws.status === 'error' ? 'RESTART' : 'START' }}</NeonButton>
       <NeonButton v-else variant="secondary" disabled :loading="true">{{ transientLabel }}</NeonButton>
 
       <!-- Everything else lives in the Actions menu. -->
       <div ref="actionsDd" class="actions-dd" :class="{ open: actionsOpen }">
-        <NeonButton variant="secondary" class="actions-trigger" @click="actionsOpen = !actionsOpen">
+        <NeonButton
+          variant="secondary"
+          class="actions-trigger"
+          aria-haspopup="menu"
+          :aria-expanded="actionsOpen"
+          @click="actionsOpen = !actionsOpen"
+        >
           <Settings2 :size="13" /> ACTIONS <ChevronDown :size="12" class="chev" />
         </NeonButton>
-        <div v-show="actionsOpen" class="actions-menu">
+        <div v-show="actionsOpen" class="actions-menu" role="menu">
           <button
             type="button"
+            role="menuitem"
             class="action-item"
             :disabled="!isStopped"
             :title="isStopped ? '' : 'Stop the workspace to edit — changes apply on the next start'"
             @click="act(() => (showEdit = true))"
           ><Pencil :size="14" /> Edit</button>
-          <button v-if="ws.status === 'running' && ws.workspace_type === 'desktop'" type="button" class="action-item" @click="act(() => (showApps = true))"><Package :size="14" /> Apps</button>
-          <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(() => (showDiag = true))"><Activity :size="14" /> Logs</button>
-          <button v-if="ws.status === 'running'" type="button" class="action-item" @click="act(handleStop)"><Square :size="14" /> Halt</button>
-          <button v-if="isStopped" type="button" class="action-item" @click="act(() => (showClone = true))"><CopyPlus :size="14" /> Clone</button>
-          <button v-if="isStopped && zonesStore.hasRemote" type="button" class="action-item" @click="act(() => (showMigrate = true))"><ArrowRightLeft :size="14" /> Migrate</button>
+          <button v-if="ws.status === 'running' && ws.workspace_type === 'desktop'" type="button" role="menuitem" class="action-item" @click="act(() => (showApps = true))"><Package :size="14" /> Apps</button>
+          <!-- Logs matter most when something went wrong, so offer them for
+               error/starting too (the exited container's logs are still there). -->
+          <button v-if="ws.status !== 'stopped'" type="button" role="menuitem" class="action-item" @click="act(() => (showDiag = true))"><Activity :size="14" /> Logs</button>
+          <button v-if="ws.status === 'running' || ws.status === 'creating'" type="button" role="menuitem" class="action-item" @click="act(handleStop)"><Square :size="14" /> Stop</button>
+          <button v-if="isStopped" type="button" role="menuitem" class="action-item" @click="act(() => (showClone = true))"><CopyPlus :size="14" /> Clone</button>
+          <button v-if="isStopped && zonesStore.hasRemote" type="button" role="menuitem" class="action-item" @click="act(() => (showMigrate = true))"><ArrowRightLeft :size="14" /> Migrate</button>
           <button
             type="button"
+            role="menuitem"
             class="action-item danger"
             :disabled="ws.status === 'migrating'"
-            :title="ws.status === 'migrating' ? 'Wait for the migration to finish before purging' : ''"
+            :title="ws.status === 'migrating' ? 'Wait for the migration to finish before deleting' : ''"
             @click="act(openPurge)"
-          ><Trash2 :size="14" /> Purge</button>
+          ><Trash2 :size="14" /> Delete</button>
         </div>
       </div>
     </div>
   </div>
   <ConfirmModal
     v-model="showConfirm"
-    title="Purge Workspace"
+    title="Delete workspace"
     :message="ws.ephemeral
-      ? `Terminate '${ws.name}'? It's ephemeral — the container and its data are destroyed.`
-      : `Terminate '${ws.name}'? The container is destroyed.`"
-    confirm-label="PURGE"
+      ? `Delete '${ws.name}'? It's ephemeral — the container and its data are destroyed.`
+      : `Delete '${ws.name}'? Its container is removed; the home directory is kept unless you tick the box below.`"
+    confirm-label="DELETE"
     :loading="removing"
     @confirm="handleRemove"
   >
@@ -149,18 +188,24 @@ import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
 import ProotAppsModal from './ProotAppsModal.vue'
-import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2, MonitorPlay, Package } from 'lucide-vue-next'
+import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2, MonitorPlay, Package, Clock, Timer, Flame, HardDrive, Router, KeyRound, Container, Zap } from 'lucide-vue-next'
 import { workspaceIconUrl } from '@/utils/workspaceIcon'
+import {
+  absoluteTime,
+  autoStopAt,
+  displayStatus,
+  fmtBytes,
+  fmtDuration,
+  parseTs,
+  pullPercent,
+  relativeTime,
+  startingDetail,
+  statusLabel,
+} from '@/utils/workspaceStatus'
+import { useNow } from '@/composables/useNow'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const props = defineProps<{ ws: Workspace; stats?: WorkspaceStats | null }>()
-
-function fmtBytes(n: number): string {
-  if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB'
-  if (n >= 1024 ** 2) return Math.round(n / 1024 ** 2) + ' MB'
-  if (n >= 1024) return Math.round(n / 1024) + ' KB'
-  return n + ' B'
-}
 
 function barWidth(pct: number): string {
   return Math.min(Math.max(pct, 0), 100).toFixed(0) + '%'
@@ -171,7 +216,7 @@ const ui = useUiStore()
 const router = useRouter()
 
 // A Gluetun config allows a single connection, so a stopped/errored VPN
-// workspace can't boot while another VPN workspace is already active.
+// workspace can't start while another VPN workspace is already active.
 const vpnLocked = computed(() =>
   props.ws.use_gluetun &&
   (props.ws.status === 'stopped' || props.ws.status === 'error') &&
@@ -192,15 +237,52 @@ const showApps = ref(false)
 
 const isStopped = computed(() => props.ws.status === 'stopped' || props.ws.status === 'error')
 
-// Label for the disabled progress button shown in transient states (no Boot then).
-const _transientLabels: Record<string, string> = {
-  creating: 'STARTING',
-  stopping: 'STOPPING',
-  migrating: 'MIGRATING',
+const shownStatus = computed(() => displayStatus(props.ws))
+const detail = computed(() => startingDetail(props.ws))
+const pullPct = computed(() => pullPercent(props.ws))
+
+// Label for the disabled progress button shown in transient states.
+const transientLabel = computed(() => {
+  if (pullPct.value !== null) return `DOWNLOADING ${pullPct.value}%`
+  return statusLabel(shownStatus.value).toUpperCase()
+})
+
+// --- Time -------------------------------------------------------------------
+const now = useNow()
+const stopAt = computed(() => autoStopAt(props.ws, store.maxRuntimeHours))
+const stopIn = computed(() => (stopAt.value === null ? null : Math.max(0, stopAt.value - now.value)))
+const stopAtText = computed(() => (stopAt.value ? new Date(stopAt.value).toLocaleString() : ''))
+const timeText = computed(() => {
+  const ws = props.ws
+  if (ws.status === 'running') {
+    const t = parseTs(ws.started_at)
+    return t ? `Up ${fmtDuration(now.value - t)}` : 'Running'
+  }
+  if (ws.status === 'error') return `Failed ${relativeTime(ws.stopped_at ?? ws.started_at ?? ws.created_at, now.value)}`
+  if (ws.status === 'creating') return `Started ${relativeTime(ws.started_at ?? ws.created_at, now.value)}`
+  const last = ws.stopped_at ?? ws.started_at
+  return last ? `Last used ${relativeTime(last, now.value)}` : `Created ${relativeTime(ws.created_at, now.value)}, never started`
+})
+const timeTitle = computed(() => {
+  const ws = props.ws
+  const parts = [`Created ${absoluteTime(ws.created_at)}`]
+  if (ws.started_at) parts.push(`Last started ${absoluteTime(ws.started_at)}`)
+  if (ws.stopped_at) parts.push(`Last stopped ${absoluteTime(ws.stopped_at)}`)
+  return parts.join('\n')
+})
+
+const extending = ref(false)
+async function handleExtend() {
+  extending.value = true
+  try {
+    await store.extend(props.ws.id)
+    ui.toast(`'${props.ws.name}' will keep running for another ${store.maxRuntimeHours} h`, 'success')
+  } catch (e: any) {
+    ui.toast(e.message || 'Could not extend', 'error')
+  } finally {
+    extending.value = false
+  }
 }
-const transientLabel = computed(() =>
-  props.ws.status === 'running' ? 'STARTING' : _transientLabels[props.ws.status] ?? props.ws.status.toUpperCase(),
-)
 
 // Actions dropdown: run the chosen action and close the menu.
 const actionsOpen = ref(false)
@@ -334,7 +416,7 @@ async function handleRemove() {
   try {
     await store.remove(props.ws.id, purgeStorage.value)
     showConfirm.value = false
-    ui.toast(purgeStorage.value ? 'Workspace purged (storage deleted)' : 'Workspace purged', 'success')
+    ui.toast(purgeStorage.value ? 'Workspace and its storage deleted' : 'Workspace deleted', 'success')
     purgeStorage.value = false
   } catch (e: any) { ui.toast(e.message, 'error') }
   finally { removing.value = false }
@@ -459,16 +541,40 @@ async function handleRemove() {
 }
 .card-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .card-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.image-name { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); display: inline-flex; align-items: center; gap: 6px; }
+.image-name { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); display: inline-flex; align-items: center; gap: 6px; }
 .image-logo { width: 20px; height: 20px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
-.target-url { font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.target-url { font-size: 12px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .target-url svg { flex-shrink: 0; }
-.ts-badge { font-size: 11px; color: var(--accent-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
-.ts-badge svg { flex-shrink: 0; }
-.zone-badge { font-size: 11px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); }
-.zone-badge svg { flex-shrink: 0; }
-.vpn-badge { font-size: 11px; color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); letter-spacing: 0.5px; }
-.vpn-badge svg { flex-shrink: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 11px; line-height: 18px;
+  color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 0 6px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chip svg { flex-shrink: 0; }
+.chip.zone { color: var(--accent); }
+.chip.ts { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 35%, var(--border)); }
+.chip.vpn { color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, var(--border)); }
+.chip.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 35%, var(--border)); }
+
+.progress-line { display: flex; flex-direction: column; gap: 5px; font-family: var(--font-mono); font-size: 12px; color: var(--amber); }
+
+.timeline {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);
+}
+.timeline > span { display: inline-flex; align-items: center; gap: 5px; }
+.auto-stop.soon { color: var(--amber); }
+.link-btn {
+  background: none; border: none; padding: 0; margin-left: 4px;
+  color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer;
+}
+.link-btn:disabled { opacity: 0.5; cursor: wait; }
+.card.errored { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+.card.errored::before { background: var(--red); }
 .vpn-lock-msg {
   font-size: 11px; color: var(--amber); font-family: var(--font-mono);
   display: inline-flex; align-items: center; gap: 5px;
@@ -485,7 +591,7 @@ async function handleRemove() {
   align-items: center;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 1px;
   color: var(--text-muted);
 }
@@ -516,7 +622,7 @@ async function handleRemove() {
   border-radius: var(--radius-sm);
   padding: 4px 8px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 1px;
   color: var(--text-muted);
   cursor: pointer;
@@ -528,7 +634,7 @@ async function handleRemove() {
 .ts-ip svg { flex-shrink: 0; }
 
 .error-msg {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--red);
   background: rgba(255, 32, 85, 0.06);
   border: 1px solid rgba(255, 32, 85, 0.2);

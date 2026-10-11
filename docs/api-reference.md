@@ -40,10 +40,12 @@ cookies.
 | GET | `/api/workspaces/lan-policy` | auth | LAN egress policy (toggle + subnets) for the launch modal. |
 | GET | `/api/workspaces/gpu-policy` | auth | GPU acceleration master toggle for the launch modal. |
 | GET | `/api/workspaces/docker-policy` | auth | Docker-in-Docker master toggle for the launch modal. |
+| GET | `/api/workspaces/runtime-policy` | auth | Admin max runtime (`{"max_hours": n}`, 0 = unlimited), so cards can count down to the auto-stop. |
 | GET | `/api/workspaces/{id}` | owner/admin | Get one workspace. |
 | PATCH | `/api/workspaces/{id}` | owner/admin | Update workspace settings. |
 | POST | `/api/workspaces/{id}/start` | owner/admin | Start/recover a stopped workspace. |
 | POST | `/api/workspaces/{id}/stop` | owner/admin | Stop (and remove the container). |
+| POST | `/api/workspaces/{id}/extend` | owner/admin | Restart the max-runtime clock of a running workspace from now (sets `runtime_extended_at`). `400` unless running. |
 | POST | `/api/workspaces/{id}/clone` | owner/admin | Clone a stopped workspace. |
 | POST | `/api/workspaces/{id}/migrate` | owner/admin | Move a stopped workspace to another zone (`{"target_zone_id": n}`); copies `/config` across, then removes the source copy. `409` unless stopped. See [Zones](zones.md). |
 | DELETE | `/api/workspaces/{id}` | owner/admin | Delete (optional `?purge_storage=true`). |
@@ -71,6 +73,9 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 |---|---|---|---|
 | GET | `/api/images` | auth | List enabled catalog images. |
 | GET | `/api/images/pull-status` | admin | Per-image local availability. |
+| GET | `/api/images/availability` | auth | Same, for enabled images, so the launch wizard can warn that a pick still has to be downloaded. |
+| GET | `/api/images/details` | admin | Per image on a zone: status, size, last pulled, live pull progress, and how many workspaces use it. |
+| POST | `/api/images/{id}/check-update` | admin | Compare the local digest with what the registry serves at the tag now (anonymous lookup; `up_to_date: null` when it can't tell). |
 | POST | `/api/images/{id}/pull` | admin | Background pull / re-pull. |
 | POST | `/api/images/sync` | admin | Sync the catalog from LinuxServer (optional `?reset=true` also force-reapplies curated type/port/`url_env` to existing entries). |
 | POST | `/api/images` | admin | Add a custom image. |
@@ -95,9 +100,11 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 |---|---|---|
 | GET / POST | `/api/admin/users` | List / create users. |
 | PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. |
-| GET | `/api/admin/sessions` | List all live sessions (cross-user). |
-| DELETE | `/api/admin/sessions/{id}` | Kill a session. |
-| GET | `/api/admin/audit` | Last 200 audit entries. |
+| POST | `/api/admin/users/{id}/revoke-sessions` | Sign the user out everywhere (every token issued before now stops working). |
+| GET | `/api/admin/sessions` | List every user's running/starting workspaces. |
+| DELETE | `/api/admin/sessions/{id}` | Stop one of them (the workspace is kept; it used to be deleted). `400` unless running/starting. |
+| GET | `/api/admin/audit` | Audit entries, newest first. Filters: `user`, `action` (exact, or a prefix ending in `.`), `since`/`until` (ISO), `q` (detail substring), `limit` (≤1000, default 200), `offset`. Workspace entries carry `workspace_id`/`workspace_name` while the workspace exists. |
+| GET | `/api/admin/audit/facets` | Distinct users and actions, for the filter dropdowns. |
 | GET | `/api/admin/env` | Read-only env summary. |
 | GET | `/api/admin/storage` | Per-zone disk usage: host free space plus a Docker breakdown (images, containers, volumes, build cache) with reclaimable amounts. |
 | POST | `/api/admin/storage/prune` | Reclaim Docker disk on a zone (`{"zone_id": n, "deep": bool}`). Dangling images + build cache by default; `deep` also removes all unused images and stopped containers. Volumes are never touched. `502` if the daemon call fails. |
@@ -112,6 +119,7 @@ See [Zones](zones.md) for the enrollment flow and the agent stack these drive.
 | GET | `/api/admin/zones` | admin | List all zones (each with its workspace count). |
 | POST | `/api/admin/zones` | admin | Register a zone. With an endpoint host it is immediately `enrolled`; without one it waits as `pending`. |
 | GET | `/api/admin/zones/{id}` | admin | Get one zone. |
+| GET | `/api/admin/zones/{id}/health` | admin | Live check of the zone's Docker daemon: `ok`, round-trip ms, engine version, running containers. |
 | PATCH | `/api/admin/zones/{id}` | admin | Update name / endpoint host / port (`400` for the local zone `0`). |
 | DELETE | `/api/admin/zones/{id}` | admin | Delete a zone (`409` while workspaces are still pinned to it; `400` for zone `0`). |
 | POST | `/api/admin/zones/{id}/enroll-token` | admin | Mint a single-use enrollment token + install one-liner. The plaintext token is shown once; only its sha256 is stored. Requires the endpoint host to be set. |

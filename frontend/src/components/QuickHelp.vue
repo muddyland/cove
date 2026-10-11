@@ -1,6 +1,6 @@
 <template>
   <div class="quick">
-    <p class="quick-intro">Common actions for working with a workspace node.</p>
+    <p class="quick-intro">Common actions for working with a workspace.</p>
 
     <h4 class="quick-h">On the workspace screen</h4>
     <ul class="quick-list">
@@ -14,7 +14,7 @@
       </li>
       <li>
         <span class="quick-ic"><Square :size="15" /></span>
-        <div><strong>Halt</strong><p>Stop the running container. Your files persist (unless the node is ephemeral) — boot it again anytime.</p></div>
+        <div><strong>Stop</strong><p>Stop the running container. Your files persist (unless the workspace is ephemeral) — start it again anytime.</p></div>
       </li>
       <li>
         <span class="quick-ic"><ScanLine :size="15" /></span>
@@ -26,19 +26,19 @@
       </li>
       <li>
         <span class="quick-ic"><Package :size="15" /></span>
-        <div><strong>Apps</strong><p>On a desktop node: see the proot-apps and AppImages installed in it. Update or remove them, install more, and check which proot-apps have a newer build. Work runs in the background — you can close the dialog.</p></div>
+        <div><strong>Apps</strong><p>On a desktop workspace: see the proot-apps and AppImages installed in it. Update or remove them, install more, and check which proot-apps have a newer build. Work runs in the background — you can close the dialog.</p></div>
       </li>
       <li>
         <span class="quick-ic"><Activity :size="15" /></span>
-        <div><strong>Logs</strong><p>Open diagnostics: container logs, plus connection status for VPN / Tailscale nodes.</p></div>
+        <div><strong>Logs</strong><p>Open diagnostics: container logs, plus connection status for VPN / Tailscale workspaces.</p></div>
       </li>
       <li>
         <span class="quick-ic"><Download :size="15" /></span>
-        <div><strong>Install as app</strong><p>Add this node to your device as its own app (APP) that launches straight into it.</p></div>
+        <div><strong>Install as app</strong><p>Add this workspace to your device as its own app (APP) that launches straight into it.</p></div>
       </li>
       <li>
         <span class="quick-ic"><ChevronDown :size="15" /></span>
-        <div><strong>Switch nodes</strong><p>Use the name dropdown at the top-left to jump between nodes — and boot a stopped one.</p></div>
+        <div><strong>Switch workspaces</strong><p>Use the name dropdown at the top-left to jump between workspaces — and start a stopped one.</p></div>
       </li>
     </ul>
 
@@ -46,7 +46,7 @@
     <ul class="quick-list">
       <li>
         <span class="quick-ic"><ListChecks :size="15" /></span>
-        <div><strong>Background tasks</strong><p>The checklist icon in the top bar tracks app installs, updates and removals across your running nodes — including the ones a node runs at boot. It spins with a count while work is in flight, and each task keeps its log.</p></div>
+        <div><strong>Background tasks</strong><p>The checklist icon in the top bar tracks app installs, updates and removals across your running workspaces — including the ones a workspace runs at start-up. It spins with a count while work is in flight, and each task keeps its log.</p></div>
       </li>
       <li>
         <span class="quick-ic"><Package :size="15" /></span>
@@ -54,19 +54,19 @@
       </li>
       <li>
         <span class="quick-ic"><Pencil :size="15" /></span>
-        <div><strong>Edit</strong><p>Change a node's settings (packages, VPN, DNS…). Stop it first — changes apply on the next boot.</p></div>
+        <div><strong>Edit</strong><p>Change a workspace's settings (packages, VPN, DNS…). Stop it first — changes apply on the next start.</p></div>
       </li>
       <li>
         <span class="quick-ic"><CopyPlus :size="15" /></span>
-        <div><strong>Clone</strong><p>Duplicate a stopped node with a copy of its home — handy for trying a different distro.</p></div>
+        <div><strong>Clone</strong><p>Duplicate a stopped workspace with a copy of its home — handy for trying a different distro.</p></div>
       </li>
       <li>
         <span class="quick-ic"><ArrowRightLeft :size="15" /></span>
-        <div><strong>Migrate</strong><p>Move a stopped node's storage to another zone (remote host).</p></div>
+        <div><strong>Migrate</strong><p>Move a stopped workspace's storage to another zone (remote host).</p></div>
       </li>
       <li>
         <span class="quick-ic"><Trash2 :size="15" /></span>
-        <div><strong>Purge</strong><p>Destroy the container, optionally deleting its saved home too. Can't be undone.</p></div>
+        <div><strong>Delete</strong><p>Remove the workspace and its container, optionally deleting its saved home too. Can't be undone.</p></div>
       </li>
     </ul>
   </div>

@@ -3,6 +3,8 @@ import type {
   User,
   Workspace,
   AuditEntry,
+  AuditFacets,
+  AuditQuery,
   AppSettings,
   EnvSummary,
   StorageInfo,
@@ -17,13 +19,23 @@ export const adminApi = {
     update: (id: number, payload: { username?: string; is_admin?: boolean; password?: string; docker_allowed?: boolean }) =>
       api.patch<User>(`/admin/users/${id}`, payload),
     remove: (id: number) => api.delete(`/admin/users/${id}`),
+    // Sign the user out everywhere (invalidates every token issued before now).
+    revokeSessions: (id: number) => api.post<void>(`/admin/users/${id}/revoke-sessions`),
   },
   sessions: {
     list: () => api.get<Workspace[]>('/admin/sessions'),
     kill: (id: number) => api.delete(`/admin/sessions/${id}`),
   },
   audit: {
-    list: () => api.get<AuditEntry[]>('/admin/audit'),
+    list: (q: AuditQuery = {}) => {
+      const params = new URLSearchParams()
+      for (const [k, v] of Object.entries(q)) {
+        if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
+      }
+      const qs = params.toString()
+      return api.get<AuditEntry[]>(`/admin/audit${qs ? `?${qs}` : ''}`)
+    },
+    facets: () => api.get<AuditFacets>('/admin/audit/facets'),
   },
   settings: {
     get: () => api.get<AppSettings>('/admin/settings'),
