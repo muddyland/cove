@@ -40,9 +40,9 @@
       <li
         v-if="ws.use_tailscale"
         class="chip ts"
-        :title="ws.ts_exit_node ? `Routed through Tailscale · exit node ${ws.ts_exit_node}` : 'Routed through Tailscale'"
-      ><Network :size="11" /> Tailscale<template v-if="ws.ts_exit_node"> · {{ ws.ts_exit_node }}</template></li>
-      <li v-else-if="ws.use_gluetun" class="chip vpn" title="Routed through the Gluetun VPN"><ShieldCheck :size="11" /> VPN</li>
+        :title="[`Routed through Tailscale`, ws.routing_profile_name && `profile “${ws.routing_profile_name}”`, ws.ts_exit_node && `exit node ${ws.ts_exit_node}`].filter(Boolean).join(' · ')"
+      ><Network :size="11" /> Tailscale<template v-if="ws.routing_profile_name"> · {{ ws.routing_profile_name }}</template><template v-if="ws.ts_exit_node"> · {{ ws.ts_exit_node }}</template></li>
+      <li v-else-if="ws.use_gluetun" class="chip vpn" :title="ws.routing_profile_name ? `Routed through VPN profile “${ws.routing_profile_name}”` : 'Routed through the Gluetun VPN'"><ShieldCheck :size="11" /> VPN<template v-if="ws.routing_profile_name"> · {{ ws.routing_profile_name }}</template></li>
       <li v-else class="chip" title="Direct internet access (no VPN)"><Globe :size="11" /> Direct</li>
       <li v-if="ws.ephemeral" class="chip warn" title="Nothing is kept: the home directory is wiped when it stops"><Flame :size="11" /> Ephemeral</li>
       <li v-else class="chip" :title="ws.shared_profile ? 'Uses your shared browser profile' : 'Home directory is kept between runs'"><HardDrive :size="11" /> {{ ws.shared_profile ? 'Shared profile' : 'Persistent' }}</li>
@@ -92,7 +92,9 @@
     </div>
 
     <div v-if="ws.error_message" class="error-msg" role="alert">{{ ws.error_message }}</div>
-    <div v-if="vpnLocked" class="vpn-lock-msg"><Lock :size="11" /> VPN in use by another workspace</div>
+    <div v-if="vpnHolder" class="vpn-lock-msg">
+      <Lock :size="11" /> VPN profile{{ ws.routing_profile_name ? ` “${ws.routing_profile_name}”` : '' }} is connected in {{ vpnHolder.name }}
+    </div>
     <div class="card-actions" @click.stop>
       <!-- Primary: Connect (running), Start (stopped/error), or a disabled
            progress button while the workspace is transitioning. -->
@@ -102,7 +104,7 @@
         variant="success"
         :loading="acting"
         :disabled="vpnLocked"
-        :title="vpnLocked ? 'Another VPN workspace is active — only one VPN connection at a time. Stop it first.' : ''"
+        :title="vpnHolder ? `${vpnHolder.name} is using this VPN profile — one connection per profile. Stop it, or switch this workspace to another profile in Edit.` : ''"
         @click="handleStart"
       ><component :is="vpnLocked ? Lock : Power" :size="14" /> {{ ws.status === 'error' ? 'RESTART' : 'START' }}</NeonButton>
       <NeonButton v-else variant="secondary" disabled :loading="true">{{ transientLabel }}</NeonButton>
@@ -215,15 +217,20 @@ const zonesStore = useZonesStore()
 const ui = useUiStore()
 const router = useRouter()
 
-// A Gluetun config allows a single connection, so a stopped/errored VPN
-// workspace can't start while another VPN workspace is already active.
-const vpnLocked = computed(() =>
+// A VPN profile allows a single connection, so a stopped/errored VPN
+// workspace can't start while another workspace on the same profile is active.
+// (Different profiles — e.g. two keys for one provider — can run side by side.)
+const vpnHolder = computed(() =>
   props.ws.use_gluetun &&
-  (props.ws.status === 'stopped' || props.ws.status === 'error') &&
-  store.items.some(
-    w => w.id !== props.ws.id && w.use_gluetun && (w.status === 'running' || w.status === 'creating'),
-  ),
+  (props.ws.status === 'stopped' || props.ws.status === 'error')
+    ? store.items.find(
+        w => w.id !== props.ws.id && w.use_gluetun &&
+          w.gluetun_profile_id === props.ws.gluetun_profile_id &&
+          (w.status === 'running' || w.status === 'creating'),
+      ) ?? null
+    : null,
 )
+const vpnLocked = computed(() => vpnHolder.value !== null)
 
 const acting = ref(false)
 const removing = ref(false)

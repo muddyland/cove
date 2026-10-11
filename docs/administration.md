@@ -117,7 +117,7 @@ user, action, detail, and client IP. Recorded actions include:
 - **Auth:** `setup`, `login.success`, `login.fail`, `login.oidc`, `logout`, `stream.deny`.
 - **Workspaces:** `workspace.launch`, `workspace.clone`, `workspace.update`, `workspace.stop`, `workspace.start`, `workspace.delete`, `workspace.migrate`.
 - **Files:** `files.upload`, `files.delete`, `files.copy`, `files.move`, `files.trash`, `files.restore`, `files.purge`.
-- **User secrets:** `user.tailscale.update`, `user.gluetun.update`, `user.ssh.upload`, `user.ssh.generate`, `user.ssh.clear`.
+- **User secrets:** `user.tailscale.create` / `.update` / `.delete`, `user.gluetun.create` / `.update` / `.delete` (detail: profile name), `user.ssh.upload`, `user.ssh.generate`, `user.ssh.clear`.
 - **Admin:** `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.session.kill`, `admin.settings.update`, `admin.storage.prune`.
 - **Zones:** `admin.zone.create`, `admin.zone.update`, `admin.zone.delete`, `admin.zone.enroll_token`, `admin.zone.rotate_cert`, `admin.zone.update_agent`.
 

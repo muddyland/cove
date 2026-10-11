@@ -54,8 +54,8 @@ Tailscale workspaces**, because `tailscaled` owns the namespace's `resolv.conf`.
 
 Route a workspace's traffic through your tailnet, optionally via an exit node.
 
-1. In **Preferences → Tailscale**, enable Tailscale and store a **preauth key** (encrypted at rest). Optionally set a custom **login/control server** (e.g. Headscale).
-2. At launch, tick **Route through Tailscale** and pick per-connection options: **exit node**, **accept routes**, **accept DNS**.
+1. In **Preferences → Tailscale profiles**, add a profile: a name, a **pre-auth key** (encrypted at rest) and optionally a custom **control server** (e.g. Headscale). Add more profiles to join different tailnets or keep separate keys (e.g. tagged and untagged).
+2. At launch (or in **Edit** while stopped), pick **Tailscale**, choose the **profile**, and set the per-connection options: **exit node**, **accept routes**, **accept DNS**.
 
 Cove starts a dedicated `tailscale/tailscale` sidecar for that workspace; the
 workspace shares the sidecar's network namespace, so its egress leaves via your
@@ -70,14 +70,21 @@ see [Admin → Settings](administration.md#settings)).
 
 Route a workspace's egress through a commercial/self-hosted VPN.
 
-1. In **Preferences → Gluetun**, enable it, choose **OpenVPN** or **WireGuard**, and upload your config file (encrypted at rest, ≤128 KiB). Optionally override the WireGuard private key or OpenVPN credentials as separate secrets.
-2. At launch, tick **Route through Gluetun**.
+1. In **Preferences → VPN profiles**, add a profile. Each one is set up from either:
+   - **VPN provider** — one of Gluetun's built-in providers (Mullvad, Proton VPN, AirVPN, NordVPN, Surfshark, Windscribe, IVPN, PIA…). Give it your WireGuard private key (plus the WireGuard address / pre-shared key where that provider needs one) or your OpenVPN username and password, and optionally the **countries**, **cities** or **server hostnames** to pick from. No file needed.
+   - **Config file** — upload a WireGuard `.conf` or OpenVPN `.ovpn` (≤128 KiB). Optionally override the private key or OpenVPN credentials, so one file can serve several keys.
+
+   Everything secret is encrypted at rest. Add one profile per key: two keys for the same provider are two profiles.
+2. At launch (or in **Edit** while stopped), pick **Gluetun** and choose the **profile**.
 
 The workspace joins a per-workspace [Gluetun](https://github.com/qdm12/gluetun)
 sidecar and inherits its VPN tunnel. Gluetun's own **killswitch firewall** is the
 egress control here (Cove doesn't add its own rules, which would fight it); it's
-configured to still let Traefik reach the stream port. **Only one active Gluetun
-workspace per user** is allowed at a time. Tailscale and Gluetun are mutually
+configured to still let Traefik reach the stream port. **Each VPN profile carries one
+connection at a time** (providers usually limit a key's simultaneous connections), so
+a second workspace on the same profile can't start until the first stops; workspaces
+on different profiles run side by side. A profile a workspace still uses can't be
+deleted. Tailscale and Gluetun are mutually
 exclusive on a single workspace. The sidecar image is pinned by the admin
 (default `qmcgaw/gluetun:latest`).
 

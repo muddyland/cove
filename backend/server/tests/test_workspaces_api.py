@@ -239,8 +239,8 @@ def test_create_with_tailscale_configured_accepted(client, fake_docker_manager):
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")
     # Configure Tailscale with a non-empty auth_key.
-    cfg = client.put("/api/users/me/tailscale", json={"auth_key": "tskey-abc"})
-    assert cfg.status_code == 200, cfg.text
+    cfg = client.post("/api/users/me/tailscale-profiles", json={"name": "ts", "auth_key": "tskey-abc"})
+    assert cfg.status_code == 201, cfg.text
 
     resp = client.post(
         "/api/workspaces",
@@ -255,8 +255,8 @@ def test_create_with_tailscale_configured_accepted(client, fake_docker_manager):
 def test_create_with_tailscale_persists_routing_options(client, fake_docker_manager):
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")
-    cfg = client.put("/api/users/me/tailscale", json={"auth_key": "tskey-abc"})
-    assert cfg.status_code == 200, cfg.text
+    cfg = client.post("/api/users/me/tailscale-profiles", json={"name": "ts", "auth_key": "tskey-abc"})
+    assert cfg.status_code == 201, cfg.text
 
     resp = client.post(
         "/api/workspaces",
@@ -656,12 +656,13 @@ def test_create_persists_ephemeral_flag(client, fake_docker_manager):
         db.close()
 
 
-def _configure_gluetun(client, vpn_type="openvpn"):
-    resp = client.put(
-        "/api/users/me/gluetun",
-        json={"enabled": True, "vpn_type": vpn_type, "config_file": "CONFIG", "config_filename": "x.conf"},
+def _configure_gluetun(client, vpn_type="openvpn", name="vpn"):
+    resp = client.post(
+        "/api/users/me/vpn-profiles",
+        json={"name": name, "vpn_type": vpn_type, "config_file": "CONFIG", "config_filename": "x.conf"},
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
 
 
 def test_create_with_gluetun_requires_config(client, fake_docker_manager):
@@ -689,7 +690,7 @@ def test_create_rejects_tailscale_and_gluetun_together(client, fake_docker_manag
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")
     _configure_gluetun(client)
-    client.put("/api/users/me/tailscale", json={"auth_key": "tskey-x", "enabled": True})
+    client.post("/api/users/me/tailscale-profiles", json={"name": "ts", "auth_key": "tskey-x"})
     resp = client.post(
         "/api/workspaces",
         json={"name": "both", "image_id": image_id, "use_gluetun": True, "use_tailscale": True},
@@ -712,7 +713,7 @@ def test_gluetun_single_connection_enforced(client, fake_docker_manager):
         "/api/workspaces", json={"name": "g2", "image_id": image_id, "use_gluetun": True}
     )
     assert second.status_code == 409, second.text
-    assert "one connection" in second.json()["detail"]
+    assert "One connection per profile" in second.json()["detail"]
 
     # Stop the first; a second may then start.
     db = SessionLocal()
@@ -725,6 +726,60 @@ def test_gluetun_single_connection_enforced(client, fake_docker_manager):
         "/api/workspaces", json={"name": "g3", "image_id": image_id, "use_gluetun": True}
     )
     assert third.status_code == 201, third.text
+
+
+def test_gluetun_lock_is_per_profile(client, fake_docker_manager):
+    """Two keys (profiles) for the same provider can be connected at once;
+    the same profile still can't be used twice."""
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    a = _configure_gluetun(client, name="key A")
+    b = _configure_gluetun(client, name="key B")
+    first = client.post(
+        "/api/workspaces",
+        json={"name": "g1", "image_id": image_id, "use_gluetun": True, "gluetun_profile_id": a},
+    )
+    assert first.status_code == 201, first.text
+    other = client.post(
+        "/api/workspaces",
+        json={"name": "g2", "image_id": image_id, "use_gluetun": True, "gluetun_profile_id": b},
+    )
+    assert other.status_code == 201, other.text
+    same = client.post(
+        "/api/workspaces",
+        json={"name": "g3", "image_id": image_id, "use_gluetun": True, "gluetun_profile_id": a},
+    )
+    assert same.status_code == 409, same.text
+    assert '"key A"' in same.json()["detail"] and '"g1"' in same.json()["detail"]
+
+
+def test_routing_profile_resolution_and_edit(client, fake_docker_manager):
+    setup_admin(client)
+    image_id = add_image(name="Desktop", image_type="desktop")
+    first = _configure_gluetun(client, name="first")
+    second = _configure_gluetun(client, name="second")
+    # Omitted id -> the first profile, pinned on the workspace.
+    ws = client.post(
+        "/api/workspaces", json={"name": "g", "image_id": image_id, "use_gluetun": True}
+    ).json()
+    assert ws["gluetun_profile_id"] == first
+    # Someone else's / missing profile id is refused.
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "x", "image_id": image_id, "use_gluetun": True, "gluetun_profile_id": 9999},
+    )
+    assert resp.status_code == 400 and "not found" in resp.json()["detail"]
+    # Switch the workspace to the other profile while stopped.
+    set_workspace_status(ws["id"], "stopped")
+    resp = client.patch(f"/api/workspaces/{ws['id']}", json={"gluetun_profile_id": second})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["gluetun_profile_id"] == second
+    assert resp.json()["routing_profile_name"] == "second"
+    # A profile that can't connect yet is refused with the reason.
+    client.put(f"/api/users/me/vpn-profiles/{second}", json={"config_file": ""})
+    resp = client.patch(f"/api/workspaces/{ws['id']}", json={"name": "renamed"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == 'VPN profile "second" has no config file uploaded'
 
 
 def test_browser_workspace_accepts_multiple_urls(client, fake_docker_manager):

@@ -27,99 +27,71 @@
         </form>
       </section>
 
-      <section class="panel">
-        <h3>TAILSCALE</h3>
-        <LoadingSpinner v-if="tsLoading" block />
-        <form v-else class="form" @submit.prevent="handleTailscale">
-          <label class="checkbox-row">
-            <input type="checkbox" v-model="ts.enabled" />
-            <span>Enabled</span>
-          </label>
-          <div class="form-group">
-            <label>Auth key</label>
-            <input
-              v-model="ts.auth_key"
-              type="password"
-              :placeholder="hasAuthKey ? 'configured ✓ (leave blank to keep)' : 'tskey-…'"
-              autocomplete="off"
-            />
-          </div>
-          <div class="form-group">
-            <label>Login server (optional)</label>
-            <input v-model="ts.login_server" type="url" placeholder="https://login.tailscale.com" />
-          </div>
+      <section id="vpn" class="panel">
+        <div class="panel-head">
+          <h3>VPN PROFILES</h3>
+          <NeonButton variant="ghost" @click="editVpn(null)"><Plus :size="13" /> Add</NeonButton>
+        </div>
+        <LoadingSpinner v-if="vpnLoading" block />
+        <template v-else>
+          <p v-if="vpnError" class="form-error">⚠ {{ vpnError }}</p>
+          <ul v-if="vpnProfiles.length" class="profiles">
+            <li v-for="p in vpnProfiles" :key="p.id" class="profile" @contextmenu="vpnMenus.get(p.id)?.openAt($event)">
+              <component :is="p.problem ? AlertTriangle : ShieldCheck" :size="16" class="p-icon" :class="{ bad: !!p.problem }" />
+              <div class="p-main">
+                <div class="p-name">{{ p.name }}</div>
+                <div class="p-sub">{{ vpnSummary(p) }}</div>
+                <div class="p-state">
+                  <span v-if="p.problem" class="st bad">Can't connect: {{ p.problem }}</span>
+                  <span v-else-if="p.active_in" class="st on">● Connected in {{ p.active_in }}</span>
+                  <span v-else class="st">Ready</span>
+                  <span v-if="p.used_by.length" class="st" :title="p.used_by.join(', ')">
+                    · used by {{ p.used_by.length === 1 ? p.used_by[0] : `${p.used_by.length} workspaces` }}
+                  </span>
+                </div>
+              </div>
+              <RowMenu :ref="(el: unknown) => setMenu(vpnMenus, p.id, el)" :items="vpnMenu(p)" :label="`Actions for ${p.name}`" />
+            </li>
+          </ul>
+          <p v-else class="empty">No VPN profiles yet. Add one to route workspaces through a VPN.</p>
           <p class="hint">
-            Per-connection options (exit node, accept routes, accept DNS) are now chosen
-            per workspace at launch time.
+            Each profile is one connection: two keys for the same provider are two profiles, and both
+            can be connected at once. You pick the profile per workspace when launching or editing it.
           </p>
-          <div v-if="tsError" class="form-error">⚠ {{ tsError }}</div>
-          <div class="form-actions">
-            <NeonButton type="submit" variant="primary" :loading="tsSaving">Save Tailscale</NeonButton>
-          </div>
-        </form>
+        </template>
       </section>
 
-      <section class="panel">
-        <h3>GLUETUN VPN</h3>
-        <LoadingSpinner v-if="gLoading" block />
-        <form v-else class="form" @submit.prevent="handleGluetun">
-          <label class="checkbox-row">
-            <input type="checkbox" v-model="g.enabled" />
-            <span>Enabled</span>
-          </label>
-          <div class="form-group">
-            <label>VPN type</label>
-            <select v-model="g.vpn_type">
-              <option value="openvpn">OpenVPN</option>
-              <option value="wireguard">WireGuard</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Config file ({{ g.vpn_type === 'wireguard' ? '.conf' : '.ovpn' }})</label>
-            <input type="file" accept=".ovpn,.conf,.txt" @change="onConfigFile" />
-            <p class="hint">
-              <template v-if="gFilename">Stored: <code>{{ gFilename }}</code> — upload to replace.</template>
-              <template v-else>Upload your VPN config. Stored <strong>encrypted</strong> at rest (it may contain credentials).</template>
-            </p>
-          </div>
-          <div v-if="g.vpn_type === 'wireguard'" class="form-group">
-            <label>Private key override (optional)</label>
-            <input
-              v-model="g.wireguard_private_key"
-              type="password"
-              :placeholder="hasWgKey ? 'configured ✓ (leave blank to keep)' : 'overrides PrivateKey in the config'"
-              autocomplete="off"
-            />
-          </div>
-          <template v-else>
-            <div class="form-group">
-              <label>OpenVPN username override (optional)</label>
-              <input
-                v-model="g.openvpn_user"
-                type="text"
-                :placeholder="hasOvpnUser ? 'configured ✓ (leave blank to keep)' : 'overrides config'"
-                autocomplete="off"
-              />
-            </div>
-            <div class="form-group">
-              <label>OpenVPN password override (optional)</label>
-              <input
-                v-model="g.openvpn_password"
-                type="password"
-                :placeholder="hasOvpnPass ? 'configured ✓ (leave blank to keep)' : 'overrides config'"
-                autocomplete="off"
-              />
-            </div>
-          </template>
+      <section id="tailscale" class="panel">
+        <div class="panel-head">
+          <h3>TAILSCALE PROFILES</h3>
+          <NeonButton variant="ghost" @click="editTs(null)"><Plus :size="13" /> Add</NeonButton>
+        </div>
+        <LoadingSpinner v-if="tsLoading" block />
+        <template v-else>
+          <p v-if="tsError" class="form-error">⚠ {{ tsError }}</p>
+          <ul v-if="tsProfiles.length" class="profiles">
+            <li v-for="p in tsProfiles" :key="p.id" class="profile" @contextmenu="tsMenus.get(p.id)?.openAt($event)">
+              <component :is="p.problem ? AlertTriangle : Network" :size="16" class="p-icon" :class="{ bad: !!p.problem }" />
+              <div class="p-main">
+                <div class="p-name">{{ p.name }}</div>
+                <div class="p-sub">{{ p.login_server ? host(p.login_server) : 'Tailscale' }}</div>
+                <div class="p-state">
+                  <span v-if="p.problem" class="st bad">Can't connect: {{ p.problem }}</span>
+                  <span v-else class="st">Ready</span>
+                  <span v-if="p.used_by.length" class="st" :title="p.used_by.join(', ')">
+                    · used by {{ p.used_by.length === 1 ? p.used_by[0] : `${p.used_by.length} workspaces` }}
+                  </span>
+                </div>
+              </div>
+              <RowMenu :ref="(el: unknown) => setMenu(tsMenus, p.id, el)" :items="tsMenu(p)" :label="`Actions for ${p.name}`" />
+            </li>
+          </ul>
+          <p v-else class="empty">No Tailscale profiles yet. Add one with an auth key to put workspaces on a tailnet.</p>
           <p class="hint">
-            Direct secrets override the matching values inside the config file. Pick
-            "Route through Gluetun" per workspace at launch.
+            Use several to join different tailnets or Headscale servers, or to keep tagged and untagged
+            keys apart. Exit node and route options are set per workspace.
           </p>
-          <div v-if="gError" class="form-error">⚠ {{ gError }}</div>
-          <div class="form-actions">
-            <NeonButton type="submit" variant="primary" :loading="gSaving">Save Gluetun</NeonButton>
-          </div>
-        </form>
+        </template>
       </section>
 
       <section class="panel">
@@ -210,6 +182,15 @@
       </section>
     </div>
 
+    <VpnProfileModal v-model="showVpnModal" :profile="vpnEditing" :providers="providers" @saved="loadVpn" />
+    <TailscaleProfileModal v-model="showTsModal" :profile="tsEditing" @saved="loadTs" />
+    <ConfirmModal
+      v-model="showDeleteProfile"
+      :title="deleting?.kind === 'vpn' ? 'Delete VPN profile' : 'Delete Tailscale profile'"
+      :message="`Delete “${deleting?.name}”? Its stored key${deleting?.kind === 'vpn' ? ' / config' : ''} is removed for good.`"
+      confirm-label="Delete"
+      @confirm="doDeleteProfile"
+    />
     <ConfirmModal
       v-model="showSshReplace"
       title="Replace SSH Key"
@@ -228,16 +209,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Download } from 'lucide-vue-next'
+import RowMenu, { type RowMenuItem } from '@/components/RowMenu.vue'
+import VpnProfileModal from '@/components/VpnProfileModal.vue'
+import TailscaleProfileModal from '@/components/TailscaleProfileModal.vue'
+import { AlertTriangle, Download, Network, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-vue-next'
 import { authApi } from '@/api/auth'
 import { extensionApi } from '@/api/extension'
-import { usersApi, type GluetunUpdate } from '@/api/users'
-import type { ExtensionInfo, SshKeyConfig } from '@/types'
+import { usersApi } from '@/api/users'
+import type { ExtensionInfo, SshKeyConfig, TailscaleProfile, VpnProfile, VpnProvider } from '@/types'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 
@@ -292,46 +276,129 @@ async function handlePassword() {
   }
 }
 
-// --- Tailscale ---
+// --- VPN / Tailscale profiles ---
+type MenuHandle = { openAt: (e: MouseEvent) => void }
+const vpnMenus = new Map<number, MenuHandle>()
+const tsMenus = new Map<number, MenuHandle>()
+function setMenu(map: Map<number, MenuHandle>, id: number, el: unknown) {
+  if (el) map.set(id, el as MenuHandle)
+  else map.delete(id)
+}
+
+const vpnLoading = ref(true)
+const vpnError = ref('')
+const vpnProfiles = ref<VpnProfile[]>([])
+const providers = ref<VpnProvider[]>([])
+const showVpnModal = ref(false)
+const vpnEditing = ref<VpnProfile | null>(null)
+
 const tsLoading = ref(true)
-const tsSaving = ref(false)
 const tsError = ref('')
-const hasAuthKey = ref(false)
-const ts = reactive({
-  enabled: false,
-  auth_key: '',
-  login_server: '' as string,
-})
+const tsProfiles = ref<TailscaleProfile[]>([])
+const showTsModal = ref(false)
+const tsEditing = ref<TailscaleProfile | null>(null)
 
-onMounted(async () => {
-  // Best-effort: a deployment without the extension just doesn't show the panel.
-  extensionApi.info().then(info => { extension.value = info }).catch(() => {})
+const showDeleteProfile = ref(false)
+const deleting = ref<{ kind: 'vpn' | 'ts'; id: number; name: string } | null>(null)
 
+async function loadVpn() {
   try {
-    const cfg = await usersApi.getTailscale()
-    ts.enabled = cfg.enabled
-    ts.login_server = cfg.login_server ?? ''
-    hasAuthKey.value = cfg.has_auth_key
+    vpnProfiles.value = await usersApi.listVpnProfiles()
+    vpnError.value = ''
+  } catch (e: any) {
+    vpnError.value = e.message
+  } finally {
+    vpnLoading.value = false
+  }
+}
+async function loadTs() {
+  try {
+    tsProfiles.value = await usersApi.listTailscaleProfiles()
+    tsError.value = ''
   } catch (e: any) {
     tsError.value = e.message
   } finally {
     tsLoading.value = false
   }
+}
 
+function editVpn(p: VpnProfile | null) {
+  vpnEditing.value = p
+  showVpnModal.value = true
+}
+function editTs(p: TailscaleProfile | null) {
+  tsEditing.value = p
+  showTsModal.value = true
+}
+
+function inUseTitle(used: string[]) {
+  return used.length ? `In use by ${used.join(', ')} — switch them to another profile first` : undefined
+}
+function vpnMenu(p: VpnProfile): RowMenuItem[] {
+  return [
+    { key: 'edit', label: 'Edit', icon: Pencil, action: () => editVpn(p) },
+    {
+      key: 'delete', label: 'Delete…', icon: Trash2, danger: true, separator: true,
+      disabled: p.used_by.length > 0, title: inUseTitle(p.used_by),
+      action: () => askDelete('vpn', p.id, p.name),
+    },
+  ]
+}
+function tsMenu(p: TailscaleProfile): RowMenuItem[] {
+  return [
+    { key: 'edit', label: 'Edit', icon: Pencil, action: () => editTs(p) },
+    {
+      key: 'delete', label: 'Delete…', icon: Trash2, danger: true, separator: true,
+      disabled: p.used_by.length > 0, title: inUseTitle(p.used_by),
+      action: () => askDelete('ts', p.id, p.name),
+    },
+  ]
+}
+function askDelete(kind: 'vpn' | 'ts', id: number, name: string) {
+  deleting.value = { kind, id, name }
+  showDeleteProfile.value = true
+}
+async function doDeleteProfile() {
+  const d = deleting.value
+  showDeleteProfile.value = false
+  if (!d) return
   try {
-    const cfg = await usersApi.getGluetun()
-    g.enabled = cfg.enabled
-    g.vpn_type = cfg.vpn_type
-    gFilename.value = cfg.config_filename
-    hasWgKey.value = cfg.has_wireguard_private_key
-    hasOvpnUser.value = cfg.has_openvpn_user
-    hasOvpnPass.value = cfg.has_openvpn_password
+    if (d.kind === 'vpn') {
+      await usersApi.deleteVpnProfile(d.id)
+      await loadVpn()
+    } else {
+      await usersApi.deleteTailscaleProfile(d.id)
+      await loadTs()
+    }
+    ui.toast(`Deleted “${d.name}”`, 'success')
   } catch (e: any) {
-    gError.value = e.message
-  } finally {
-    gLoading.value = false
+    ui.toast(e?.message || 'Delete failed', 'error')
   }
+}
 
+function host(url: string) {
+  try { return new URL(url).host } catch { return url }
+}
+function vpnSummary(p: VpnProfile) {
+  const kind = p.vpn_type === 'wireguard' ? 'WireGuard' : 'OpenVPN'
+  if (p.mode === 'provider') {
+    const where = [p.server_countries, p.server_cities, p.server_hostnames].filter(Boolean).join(' / ')
+    return [p.provider_label ?? p.provider, kind, where || 'any server'].join(' · ')
+  }
+  return [kind, p.config_filename ?? 'config file'].join(' · ')
+}
+
+onMounted(async () => {
+  // Best-effort: a deployment without the extension just doesn't show the panel.
+  extensionApi.info().then(info => { extension.value = info }).catch(() => {})
+  usersApi.listVpnProviders().then(p => { providers.value = p }).catch(() => {})
+  await Promise.all([loadVpn(), loadTs()])
+  // Launch / edit forms link here as #vpn or #tailscale (in a new tab); the
+  // panels only exist once rendered, so the browser's own jump misses them.
+  if (location.hash) {
+    await nextTick()
+    document.querySelector(location.hash)?.scrollIntoView({ block: 'start' })
+  }
   try {
     ssh.value = await usersApi.getSshKey()
   } catch (e: any) {
@@ -340,79 +407,6 @@ onMounted(async () => {
     sshLoading.value = false
   }
 })
-
-// --- Gluetun ---
-const gLoading = ref(true)
-const gSaving = ref(false)
-const gError = ref('')
-const gFilename = ref<string | null>(null)
-const hasWgKey = ref(false)
-const hasOvpnUser = ref(false)
-const hasOvpnPass = ref(false)
-const gConfigContent = ref<string | null>(null) // text of a newly-uploaded file
-const g = reactive({
-  enabled: false,
-  vpn_type: 'openvpn' as 'openvpn' | 'wireguard',
-  wireguard_private_key: '',
-  openvpn_user: '',
-  openvpn_password: '',
-})
-
-async function onConfigFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  gConfigContent.value = await file.text()
-  gFilename.value = file.name
-}
-
-async function handleGluetun() {
-  gError.value = ''
-  gSaving.value = true
-  try {
-    const payload: GluetunUpdate = { enabled: g.enabled, vpn_type: g.vpn_type }
-    if (gConfigContent.value !== null) {
-      payload.config_file = gConfigContent.value
-      payload.config_filename = gFilename.value
-    }
-    if (g.wireguard_private_key) payload.wireguard_private_key = g.wireguard_private_key
-    if (g.openvpn_user) payload.openvpn_user = g.openvpn_user
-    if (g.openvpn_password) payload.openvpn_password = g.openvpn_password
-    const cfg = await usersApi.updateGluetun(payload)
-    gFilename.value = cfg.config_filename
-    hasWgKey.value = cfg.has_wireguard_private_key
-    hasOvpnUser.value = cfg.has_openvpn_user
-    hasOvpnPass.value = cfg.has_openvpn_password
-    g.wireguard_private_key = ''
-    g.openvpn_user = ''
-    g.openvpn_password = ''
-    gConfigContent.value = null
-    ui.toast('Gluetun settings saved', 'success')
-  } catch (e: any) {
-    gError.value = e.message
-  } finally {
-    gSaving.value = false
-  }
-}
-
-async function handleTailscale() {
-  tsError.value = ''
-  tsSaving.value = true
-  try {
-    const payload: Record<string, unknown> = {
-      enabled: ts.enabled,
-      login_server: ts.login_server || null,
-    }
-    if (ts.auth_key) payload.auth_key = ts.auth_key
-    const cfg = await usersApi.updateTailscale(payload)
-    hasAuthKey.value = cfg.has_auth_key
-    ts.auth_key = ''
-    ui.toast('Tailscale settings saved', 'success')
-  } catch (e: any) {
-    tsError.value = e.message
-  } finally {
-    tsSaving.value = false
-  }
-}
 
 // --- SSH key ---
 const sshLoading = ref(true)
@@ -562,4 +556,22 @@ async function doRemove() {
   resize: vertical;
 }
 .ssh-actions { gap: 10px; flex-wrap: wrap; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.panel-head h3 { margin-bottom: 0; }
+.profiles { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; }
+.profile {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px 4px;
+  border-top: 1px solid var(--border);
+}
+.profile:last-child { border-bottom: 1px solid var(--border); }
+.p-icon { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+.p-icon.bad { color: var(--amber); }
+.p-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.p-name { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.p-sub { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.p-state { font-size: 12px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 0 6px; }
+.st.on { color: var(--green); }
+.st.bad { color: var(--amber); }
+.empty { font-size: 13px; color: var(--text-muted); margin: 0 0 14px; }
+.form-error { color: var(--red); font-size: 13px; margin: 0 0 10px; }
 </style>

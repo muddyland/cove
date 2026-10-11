@@ -8,7 +8,10 @@ vi.mock('@/api/proot', () => ({
 }))
 
 vi.mock('@/api/users', () => ({
-  usersApi: { getGluetun: vi.fn().mockResolvedValue({ enabled: false, vpn_type: 'openvpn', has_config: false, config_filename: null, has_wireguard_private_key: false, has_openvpn_user: false, has_openvpn_password: false }) },
+  usersApi: {
+    listVpnProfiles: vi.fn().mockResolvedValue([]),
+    listTailscaleProfiles: vi.fn().mockResolvedValue([]),
+  },
 }))
 
 vi.mock('@/api/workspaces', () => ({
@@ -63,6 +66,9 @@ const desktopWs: Workspace = {
   favicon_at: null,
   use_tailscale: false,
   use_gluetun: false,
+  tailscale_profile_id: null,
+  gluetun_profile_id: null,
+  routing_profile_name: null,
   ephemeral: false,
   auto_remove: false,
   lan_access: false,

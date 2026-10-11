@@ -10,13 +10,13 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.favicons import refresh_workspace_favicon
 from server.icons import bake_watermarked_icon
-from server.models import UserGluetun, UserTailscale, Workspace, WorkspaceImage, Zone
+from server.models import Workspace, WorkspaceImage, Zone
 from server.net import client_ip
 from server.preview import is_connectable
 from server.proot import APP_NAME_RE as PROOT_APP_NAME_RE
@@ -37,6 +37,13 @@ from server.schemas import (
     WorkspaceUpdate,
 )
 from server.security import create_stream_bootstrap_token
+from server.vpn_profiles import (
+    active_vpn_users,
+    get_tailscale_profile,
+    get_vpn_profile,
+    tailscale_profile_ready,
+    vpn_profile_ready,
+)
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -187,22 +194,49 @@ def _validate_app_fields(kind: str, install_packages, proot_apps, appimages) -> 
         _validate_appimage_list(appimages)
 
 
-def _validate_routing(db, user_id: int, use_tailscale: bool, use_gluetun: bool) -> None:
-    """Validate the (mutually exclusive) VPN routing choice for a workspace."""
+def _validate_routing(
+    db,
+    user_id: int,
+    use_tailscale: bool,
+    use_gluetun: bool,
+    tailscale_profile_id: int | None = None,
+    gluetun_profile_id: int | None = None,
+) -> tuple[int | None, int | None]:
+    """Validate the (mutually exclusive) VPN routing choice for a workspace and
+    resolve which saved profile it uses. Returns (tailscale_profile_id,
+    gluetun_profile_id); an omitted id picks the user's first profile."""
     if use_tailscale and use_gluetun:
         raise HTTPException(
             status_code=400, detail="Choose either Tailscale or Gluetun, not both"
         )
+    ts_id = g_id = None
     if use_tailscale:
-        ts = db.scalar(select(UserTailscale).where(UserTailscale.user_id == user_id))
-        if not ts or not ts.auth_key:
-            raise HTTPException(status_code=400, detail="Tailscale not configured")
-    if use_gluetun:
-        g = db.scalar(select(UserGluetun).where(UserGluetun.user_id == user_id))
-        if not g or not g.enabled or not g.config_file:
+        ts = get_tailscale_profile(db, user_id, tailscale_profile_id)
+        if ts is None:
             raise HTTPException(
-                status_code=400, detail="Gluetun not configured (upload a VPN config in Preferences)"
+                status_code=400,
+                detail="Tailscale not configured (add a Tailscale profile in Preferences)"
+                if tailscale_profile_id is None else "Tailscale profile not found",
             )
+        problem = tailscale_profile_ready(ts)
+        if problem:
+            raise HTTPException(
+                status_code=400, detail=f'Tailscale profile "{ts.name}" has {problem}'
+            )
+        ts_id = ts.id
+    if use_gluetun:
+        g = get_vpn_profile(db, user_id, gluetun_profile_id)
+        if g is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Gluetun not configured (add a VPN profile in Preferences)"
+                if gluetun_profile_id is None else "VPN profile not found",
+            )
+        problem = vpn_profile_ready(g)
+        if problem:
+            raise HTTPException(status_code=400, detail=f'VPN profile "{g.name}" has {problem}')
+        g_id = g.id
+    return ts_id, g_id
 
 
 def _validate_auto_remove(auto_remove: bool, ephemeral: bool) -> None:
@@ -280,21 +314,22 @@ def _validate_zone(db, zone_id: int) -> None:
         )
 
 
-def _check_gluetun_single_connection(db, user_id: int, exclude_ws_id: int | None = None) -> None:
-    """A Gluetun VPN config typically allows only one simultaneous connection, so
-    permit at most one active Gluetun workspace per user at a time."""
-    q = select(func.count()).select_from(Workspace).where(
-        Workspace.user_id == user_id,
-        Workspace.use_gluetun.is_(True),
-        Workspace.status.in_(("running", "creating")),
-    )
-    if exclude_ws_id is not None:
-        q = q.where(Workspace.id != exclude_ws_id)
-    if db.scalar(q):
+def _check_gluetun_single_connection(
+    db, user_id: int, profile_id: int | None, exclude_ws_id: int | None = None
+) -> None:
+    """A VPN key / login typically allows only one simultaneous connection, so
+    permit at most one active workspace per saved VPN profile. Separate
+    profiles (e.g. two keys for the same provider) can be up at once."""
+    g = get_vpn_profile(db, user_id, profile_id)
+    if g is None:
+        return
+    busy = active_vpn_users(db, g, exclude_ws_id=exclude_ws_id)
+    if busy:
         raise HTTPException(
             status_code=409,
-            detail="A Gluetun VPN workspace is already active — only one connection is "
-            "allowed at a time. Stop it first.",
+            detail=f'VPN profile "{g.name}" is already connected in "{busy[0].name}". '
+            "One connection per profile: stop that workspace first, or pick another "
+            "VPN profile.",
         )
 
 
@@ -370,9 +405,12 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     _validate_app_fields(image.image_type, body.install_packages, body.proot_apps, body.appimages)
 
     _validate_auto_remove(body.auto_remove, body.ephemeral)
-    _validate_routing(db, user.id, body.use_tailscale, body.use_gluetun)
+    ts_profile_id, g_profile_id = _validate_routing(
+        db, user.id, body.use_tailscale, body.use_gluetun,
+        body.tailscale_profile_id, body.gluetun_profile_id,
+    )
     if body.use_gluetun:
-        _check_gluetun_single_connection(db, user.id)
+        _check_gluetun_single_connection(db, user.id, g_profile_id)
     _validate_docker(db, body.use_docker, body.zone_id, user)
     _validate_gpu(body.gpu_accel, body.pixelflux_wayland)
 
@@ -391,6 +429,8 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         kiosk_menu=body.kiosk_menu,
         use_tailscale=body.use_tailscale,
         use_gluetun=body.use_gluetun,
+        tailscale_profile_id=ts_profile_id,
+        gluetun_profile_id=g_profile_id,
         ephemeral=body.ephemeral,
         auto_remove=body.auto_remove,
         lan_access=body.lan_access,
@@ -514,9 +554,12 @@ def clone_workspace(
     if image.image_type == "link" and not target_url:
         raise HTTPException(status_code=400, detail="target_url is required for link workspaces")
 
-    _validate_routing(db, user.id, src.use_tailscale, src.use_gluetun)
+    ts_profile_id, g_profile_id = _validate_routing(
+        db, user.id, src.use_tailscale, src.use_gluetun,
+        src.tailscale_profile_id, src.gluetun_profile_id,
+    )
     if src.use_gluetun:
-        _check_gluetun_single_connection(db, user.id)
+        _check_gluetun_single_connection(db, user.id, g_profile_id)
     _validate_docker(db, src.use_docker, src.zone_id)
 
     clone = Workspace(
@@ -537,6 +580,8 @@ def clone_workspace(
         kiosk_menu=src.kiosk_menu,
         use_tailscale=src.use_tailscale,
         use_gluetun=src.use_gluetun,
+        tailscale_profile_id=ts_profile_id,
+        gluetun_profile_id=g_profile_id,
         ephemeral=src.ephemeral,
         lan_access=src.lan_access,
         ts_exit_node=src.ts_exit_node,
@@ -1022,13 +1067,26 @@ def update_workspace(
     _validate_app_fields(
         ws.kind, data.get("install_packages"), data.get("proot_apps"), data.get("appimages")
     )
-    # Validate the effective routing choice (incoming value, else current).
-    _validate_routing(
+    # Validate the effective routing choice (incoming value, else current) and
+    # pin the profile it resolves to. Turning routing off keeps the last
+    # profile id so switching back on picks the same one; the API never
+    # reports a profile as "in use" by a workspace with routing off.
+    ts_profile_id, g_profile_id = _validate_routing(
         db,
         ws.user_id,
         data.get("use_tailscale", ws.use_tailscale),
         data.get("use_gluetun", ws.use_gluetun),
+        data.get("tailscale_profile_id", ws.tailscale_profile_id),
+        data.get("gluetun_profile_id", ws.gluetun_profile_id),
     )
+    if ts_profile_id is not None:
+        data["tailscale_profile_id"] = ts_profile_id
+    else:
+        data.pop("tailscale_profile_id", None)
+    if g_profile_id is not None:
+        data["gluetun_profile_id"] = g_profile_id
+    else:
+        data.pop("gluetun_profile_id", None)
     _validate_auto_remove(
         data.get("auto_remove", ws.auto_remove), data.get("ephemeral", ws.ephemeral)
     )
@@ -1094,7 +1152,9 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
     if ws.status not in ("stopped", "error"):
         raise HTTPException(status_code=400, detail=f"Cannot start workspace in state: {ws.status}")
     if ws.use_gluetun:
-        _check_gluetun_single_connection(db, user.id, exclude_ws_id=ws.id)
+        _check_gluetun_single_connection(
+            db, ws.user_id, ws.gluetun_profile_id, exclude_ws_id=ws.id
+        )
     # Conditional UPDATE: a second concurrent start sees rowcount 0 and stops
     # here instead of launching a duplicate container.
     if not _transition(db, ws.id, ("stopped", "error"), "creating", clear_error=True):

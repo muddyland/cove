@@ -15,7 +15,7 @@
         type="button" role="tab" :aria-selected="mode === 'tailscale'"
         :class="{ on: mode === 'tailscale' }"
         :disabled="!tailscaleReady && !form.use_tailscale"
-        :title="!tailscaleReady && !form.use_tailscale ? 'Add a Tailscale pre-auth key in Preferences to enable' : ''"
+        :title="!tailscaleReady && !form.use_tailscale ? 'Add a Tailscale profile in Preferences to enable' : ''"
         :aria-describedby="!tailscaleReady && !form.use_tailscale ? 'net-unavailable' : undefined"
         @click="setMode('tailscale')"
       >
@@ -26,7 +26,7 @@
         type="button" role="tab" :aria-selected="mode === 'gluetun'"
         :class="{ on: mode === 'gluetun' }"
         :disabled="!gluetunReady && !form.use_gluetun"
-        :title="!gluetunReady && !form.use_gluetun ? 'Add a Gluetun VPN config in Preferences to enable' : ''"
+        :title="!gluetunReady && !form.use_gluetun ? 'Add a VPN profile in Preferences to enable' : ''"
         :aria-describedby="!gluetunReady && !form.use_gluetun ? 'net-unavailable' : undefined"
         @click="setMode('gluetun')"
       >
@@ -70,6 +70,18 @@
     <!-- Tailscale -->
     <template v-else-if="mode === 'tailscale'">
       <div class="form-group ts-field">
+        <label for="net-ts-profile">Tailscale profile</label>
+        <select id="net-ts-profile" v-model="form.tailscale_profile_id">
+          <option
+            v-for="p in tsProfiles" :key="p.id" :value="p.id" :disabled="!!p.problem"
+          >{{ p.name }}{{ p.login_server ? ` · ${host(p.login_server)}` : '' }}{{ p.problem ? ` — ${p.problem}` : '' }}</option>
+        </select>
+        <p class="hint">
+          Which auth key / tailnet this workspace joins.
+          <a href="/app/preferences#tailscale" target="_blank" rel="noopener">Manage profiles</a>
+        </p>
+      </div>
+      <div class="form-group ts-field">
         <label>Exit node (optional)</label>
         <input v-model="form.ts_exit_node" type="text" placeholder="us-nyc-1 or 100.x.y.z" />
       </div>
@@ -77,17 +89,31 @@
         <ToggleRow v-model="form.ts_accept_routes">Accept routes</ToggleRow>
         <ToggleRow v-model="form.ts_accept_dns">Accept DNS</ToggleRow>
       </div>
-      <p class="hint">
-        Egress routes through your tailnet (set the auth key in Preferences → Tailscale).
-        A workspace launch fails if Tailscale isn't configured.
-      </p>
+      <p class="hint">Egress routes through the tailnet of the profile above.</p>
     </template>
 
     <!-- Gluetun -->
     <template v-else>
-      <p class="hint">
-        All egress goes through your Gluetun VPN tunnel (config in Preferences → Gluetun).
-      </p>
+      <div class="form-group ts-field">
+        <label for="net-vpn-profile">VPN profile</label>
+        <select id="net-vpn-profile" v-model="form.gluetun_profile_id">
+          <option
+            v-for="p in vpnProfileList" :key="p.id" :value="p.id" :disabled="!!p.problem"
+          >{{ p.name }} · {{ vpnSummary(p) }}{{ p.problem ? ` — ${p.problem}` : busyElsewhere(p) ? ` — connected in ${p.active_in}` : '' }}</option>
+        </select>
+        <p v-if="selectedVpn && busyElsewhere(selectedVpn)" class="hint warn">
+          <AlertTriangle :size="12" />
+          <span>
+            “{{ selectedVpn.name }}” is connected in <strong>{{ selectedVpn.active_in }}</strong>. A VPN
+            profile allows one connection at a time, so this workspace can't start until that one
+            stops — or pick another profile.
+          </span>
+        </p>
+        <p v-else class="hint">
+          All egress goes through this VPN tunnel; nothing leaves if it drops.
+          <a href="/app/preferences#vpn" target="_blank" rel="noopener">Manage profiles</a>
+        </p>
+      </div>
     </template>
 
     <!-- Direct LAN access — orthogonal to the mode; only offered when an admin
@@ -105,9 +131,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Globe, Info } from 'lucide-vue-next'
+import { AlertTriangle, Globe, Info } from 'lucide-vue-next'
 import ToggleRow from './ToggleRow.vue'
-import type { LanPolicy } from '@/types'
+import type { LanPolicy, TailscaleProfile, VpnProfile } from '@/types'
 import {
   CLOUDFLARE_ICON, GOOGLE_ICON, QUAD9_ICON, TAILSCALE_ICON, WIREGUARD_ICON,
 } from '@/utils/brandIcons'
@@ -116,6 +142,8 @@ import {
 export interface NetworkForm {
   use_tailscale: boolean
   use_gluetun: boolean
+  tailscale_profile_id: number | null
+  gluetun_profile_id: number | null
   lan_access: boolean
   ts_exit_node: string
   ts_accept_routes: boolean
@@ -127,22 +155,49 @@ export interface NetworkForm {
 const props = defineProps<{
   form: NetworkForm
   lanPolicy: LanPolicy
-  gluetunReady?: boolean
-  tailscaleReady?: boolean
+  tailscaleProfiles?: TailscaleProfile[]
+  vpnProfiles?: VpnProfile[]
+  // The workspace being edited, so its own VPN connection isn't reported as
+  // "connected elsewhere".
+  selfName?: string
   // Validation is owned by the parent (see utils/workspaceForm) and passed in.
   dnsError?: string
 }>()
 
+const tsProfiles = computed(() => props.tailscaleProfiles ?? [])
+const vpnProfileList = computed(() => props.vpnProfiles ?? [])
+// A mode is usable once at least one of its profiles is complete.
+const tailscaleReady = computed(() => tsProfiles.value.some(p => !p.problem))
+const gluetunReady = computed(() => vpnProfileList.value.some(p => !p.problem))
+const selectedVpn = computed(() =>
+  vpnProfileList.value.find(p => p.id === props.form.gluetun_profile_id) ?? null,
+)
+
+function host(url: string) {
+  try { return new URL(url).host } catch { return url }
+}
+function vpnSummary(p: VpnProfile) {
+  const kind = p.vpn_type === 'wireguard' ? 'WireGuard' : 'OpenVPN'
+  if (p.mode === 'provider') {
+    const where = [p.server_countries, p.server_cities].filter(Boolean).join(' / ')
+    return [p.provider_label ?? p.provider, kind, where].filter(Boolean).join(' · ')
+  }
+  return p.config_filename ? `${kind} · ${p.config_filename}` : kind
+}
+function busyElsewhere(p: VpnProfile) {
+  return !!p.active_in && p.active_in !== props.selfName
+}
+
 // Modes greyed out because the user hasn't configured them yet.
 const unavailable = computed(() => {
   const out: string[] = []
-  if (!props.tailscaleReady && !props.form.use_tailscale) out.push('Tailscale')
-  if (!props.gluetunReady && !props.form.use_gluetun) out.push('Gluetun')
+  if (!tailscaleReady.value && !props.form.use_tailscale) out.push('Tailscale')
+  if (!gluetunReady.value && !props.form.use_gluetun) out.push('Gluetun')
   return out
 })
 const unavailableNeeds = computed(() =>
   unavailable.value
-    .map(m => (m === 'Tailscale' ? 'a Tailscale auth key' : 'a Gluetun VPN config'))
+    .map(m => (m === 'Tailscale' ? 'a Tailscale profile' : 'a VPN profile'))
     .join(' / '),
 )
 
@@ -154,6 +209,14 @@ const mode = computed<Mode>(() =>
 function setMode(m: Mode) {
   props.form.use_tailscale = m === 'tailscale'
   props.form.use_gluetun = m === 'gluetun'
+  // Pre-select a usable profile (preferring a VPN one that's free right now).
+  if (m === 'tailscale' && !tsProfiles.value.some(p => p.id === props.form.tailscale_profile_id && !p.problem)) {
+    props.form.tailscale_profile_id = tsProfiles.value.find(p => !p.problem)?.id ?? null
+  }
+  if (m === 'gluetun' && !vpnProfileList.value.some(p => p.id === props.form.gluetun_profile_id && !p.problem)) {
+    const ready = vpnProfileList.value.filter(p => !p.problem)
+    props.form.gluetun_profile_id = (ready.find(p => !busyElsewhere(p)) ?? ready[0])?.id ?? null
+  }
   // Custom DNS only applies to Direct networking.
   if (m !== 'direct') props.form.custom_dns = false
 }
@@ -185,6 +248,9 @@ function addDns(ip: string) {
 .hint { font-size: 12px; line-height: 1.5; color: var(--text-muted); margin: 4px 0 0; }
 .hint code { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
 .hint.unavailable { display: flex; gap: 6px; align-items: flex-start; margin-top: -8px; }
+.hint.warn { display: flex; gap: 6px; align-items: flex-start; color: var(--amber); }
+.hint.warn svg { flex-shrink: 0; margin-top: 3px; }
+.hint a { color: var(--accent); }
 .hint.unavailable svg { flex-shrink: 0; margin-top: 3px; }
 .field-error { font-size: 12px; color: var(--red); margin: 4px 0 0; }
 .dns-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
