@@ -76,7 +76,7 @@ export function uniqueName(base, existingNames) {
  * cards that can only ever start blank. Everything else mirrors cove's own
  * defaults so the API never has to reject a field we invented.
  */
-export function buildLaunchPayload({ name, imageId, targetUrl, network = 'direct', ephemeral = true, autoRemove = true, advanced = {}, features = null }) {
+export function buildLaunchPayload({ name, imageId, targetUrl, network = 'direct', ephemeral = true, autoRemove = true, advanced = {}, features = null, profileId = null }) {
   if (!name) throw new Error('A workspace name is required');
   if (!Number.isInteger(imageId)) throw new Error('Pick a browser');
   const f = features || { kiosk: true, fullscreen: true, dark: true };
@@ -124,18 +124,47 @@ export function buildLaunchPayload({ name, imageId, targetUrl, network = 'direct
   if (network === 'tailscale' && (a.tsExitNode || '').trim()) {
     payload.ts_exit_node = a.tsExitNode.trim();
   }
+  // Which saved profile carries the route. Omitted, Cove uses the first one
+  // (and an older Cove, which has no profiles, never sees the field).
+  if (Number.isInteger(profileId)) {
+    if (network === 'gluetun') payload.gluetun_profile_id = profileId;
+    if (network === 'tailscale') payload.tailscale_profile_id = profileId;
+  }
   return payload;
 }
 
-/** Which network modes this account can actually use, given cove's own gates. */
-export function availableNetworks(tailscale, gluetun) {
-  return {
-    direct: true,
-    // _validate_routing requires an auth key on the user's Tailscale config.
-    tailscale: !!(tailscale && tailscale.has_auth_key),
-    // …and an enabled Gluetun config with a config file uploaded.
-    gluetun: !!(gluetun && gluetun.enabled && gluetun.has_config),
-  };
+/** Which network modes this account can actually use: a mode needs at least
+ *  one profile Cove reports as complete (`problem` is null). */
+export function availableNetworks(tailscaleProfiles, vpnProfiles) {
+  const ready = (list) => (list || []).some((p) => !p.problem);
+  return { direct: true, tailscale: ready(tailscaleProfiles), gluetun: ready(vpnProfiles) };
+}
+
+/**
+ * The profile to pre-select: the remembered one (by name — ids are per install)
+ * if it is still usable, else the first usable one, preferring a VPN profile
+ * that isn't already connected elsewhere (one connection per profile).
+ */
+export function pickProfile(profiles, rememberedName) {
+  const usable = (profiles || []).filter((p) => !p.problem);
+  return (
+    usable.find((p) => p.name === rememberedName) ||
+    usable.find((p) => !p.active_in) ||
+    usable[0] ||
+    null
+  );
+}
+
+/** One line per profile for the picker: what it is, and why it can't be used. */
+export function profileLabel(p) {
+  const what = [p.name, p.provider_label, p.login_server && hostOf(p.login_server)].filter(Boolean).join(' · ');
+  if (p.problem) return `${what} — ${p.problem}`;
+  if (p.active_in) return `${what} — connected in ${p.active_in}`;
+  return what;
+}
+
+function hostOf(url) {
+  try { return new URL(url).host; } catch { return url; }
 }
 
 /** Only browser images take a startup URL; the rest cannot open a link at all. */

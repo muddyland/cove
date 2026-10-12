@@ -1,4 +1,4 @@
-import { buildLaunchPayload, browserFeatures, deriveName, uniqueName, availableNetworks, browserImages, hasNonDefaultAdvanced, resolveDarkDefault, darkIsInherited, darkPreferenceToSave, loginPageUrl, NETWORK_MODES } from './lib/cove.js';
+import { buildLaunchPayload, browserFeatures, deriveName, uniqueName, availableNetworks, pickProfile, profileLabel, browserImages, hasNonDefaultAdvanced, resolveDarkDefault, darkIsInherited, darkPreferenceToSave, loginPageUrl, NETWORK_MODES } from './lib/cove.js';
 import * as cove from './lib/client.js';
 
 const api = globalThis.browser ?? globalThis.chrome;
@@ -7,15 +7,19 @@ const $ = (id) => document.getElementById(id);
 const NETWORK_LABELS = { direct: 'Direct', gluetun: 'VPN', tailscale: 'Tailscale' };
 const NETWORK_HINTS = {
   direct: 'Straight out to the internet, firewalled off from your LAN.',
-  gluetun: 'All traffic through your Gluetun VPN config.',
-  tailscale: 'Joined to your tailnet; optionally via an exit node.',
+  gluetun: 'All traffic through the VPN profile below.',
+  tailscale: 'Joined to the tailnet of the profile below; optionally via an exit node.',
 };
 const UNAVAILABLE = {
-  gluetun: 'No Gluetun VPN config — upload one in Cove → Preferences.',
-  tailscale: 'No Tailscale auth key — add one in Cove → Preferences.',
+  gluetun: 'No usable VPN profile — add one in Cove → Preferences.',
+  tailscale: 'No usable Tailscale profile — add one in Cove → Preferences.',
 };
+const PROFILE_LABELS = { gluetun: 'VPN profile', tailscale: 'Tailscale profile' };
 
-let state = { images: [], networks: { direct: true }, network: 'direct', existingNames: [], prefersDark: false };
+let state = {
+  images: [], networks: { direct: true }, network: 'direct', existingNames: [], prefersDark: false,
+  profiles: { gluetun: [], tailscale: [] }, rememberedProfile: {},
+};
 
 init();
 
@@ -31,11 +35,13 @@ async function init() {
     // in series would show an empty form for as long as the slowest one takes.
     const [images, tailscale, gluetun, workspaces] = await Promise.all([
       cove.listImages(),
-      cove.tailscaleConfig().catch(() => null),
-      cove.gluetunConfig().catch(() => null),
+      cove.tailscaleProfiles().catch(() => []),
+      cove.vpnProfiles().catch(() => []),
       cove.listWorkspaces().catch(() => []),
     ]);
     state.images = browserImages(images);
+    state.profiles = { gluetun: gluetun || [], tailscale: tailscale || [] };
+    state.rememberedProfile = defaults.profiles || {};
     state.networks = availableNetworks(tailscale, gluetun);
     state.existingNames = (workspaces || []).map((w) => w.name);
   } catch (e) {
@@ -139,6 +145,49 @@ function selectNetwork(mode) {
   for (const b of $('network').children) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
   $('network-hint').textContent = NETWORK_HINTS[mode];
   $('exit-field').hidden = mode !== 'tailscale';
+  renderProfiles(mode);
+}
+
+/**
+ * The profile picker for the chosen route. Incomplete profiles are listed but
+ * disabled (with what they lack), and a VPN profile already connected in
+ * another workspace says so — Cove allows one connection per profile, so
+ * launching on it would fail. A Cove without profiles yields one stand-in
+ * entry, which needs no picker.
+ */
+function renderProfiles(mode) {
+  const list = state.profiles[mode] || [];
+  const field = $('profile-field');
+  const sel = $('profile');
+  const show = mode !== 'direct' && list.length > 0 && !list[0].legacy;
+  field.hidden = !show;
+  if (!show) { sel.replaceChildren(); return; }
+  $('profile-label').textContent = PROFILE_LABELS[mode];
+  sel.replaceChildren(
+    ...list.map((p) => {
+      const o = document.createElement('option');
+      o.value = String(p.id);
+      o.textContent = profileLabel(p);
+      o.disabled = !!p.problem;
+      return o;
+    }),
+  );
+  const chosen = pickProfile(list, state.rememberedProfile[mode]);
+  if (chosen) sel.value = String(chosen.id);
+  sel.onchange = syncProfileWarning;
+  syncProfileWarning();
+}
+
+function currentProfile() {
+  const list = state.profiles[state.network] || [];
+  return list.find((p) => String(p.id) === $('profile').value) || null;
+}
+
+function syncProfileWarning() {
+  const p = currentProfile();
+  $('network-hint').textContent = p && p.active_in
+    ? `“${p.name}” is connected in ${p.active_in}. A VPN profile carries one connection at a time, so stop that workspace first or pick another profile.`
+    : NETWORK_HINTS[state.network];
 }
 
 function applyDefaults(d) {
@@ -225,6 +274,7 @@ async function launch() {
       autoRemove: $('autoRemove').checked,
       advanced,
       features: currentFeatures(),
+      profileId: currentProfile()?.id ?? null,
     });
   } catch (e) {
     status.className = 'status error';
@@ -246,6 +296,11 @@ async function launch() {
         defaults: {
           imageName: image.name,
           network: state.network,
+          // By name, like the browser: profile ids are per install.
+          profiles: {
+            ...state.rememberedProfile,
+            ...(currentProfile() && !currentProfile().legacy ? { [state.network]: currentProfile().name } : {}),
+          },
           ephemeral: $('ephemeral').checked,
           autoRemove: $('autoRemove').checked,
           advanced: savedAdvanced,

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Open in Cove",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open links in a disposable Cove browser workspace \u2014 pick the browser, the network route, and kiosk/dark options. For Chrome-based browsers.",
   "icons": {
     "48": "icons/icon-48.png",
