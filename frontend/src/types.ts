@@ -443,3 +443,91 @@ export interface PruneResult {
   deep: boolean
   space_reclaimed: number
 }
+
+// ── System info (stream page) ──────────────────────────────────────────────
+export interface SysContainer {
+  id: string
+  name: string
+  state: string | null
+  started_at: string | null
+  restart_count: number
+  image_id: string
+  cpu_limit: number | null
+  mem_limit: number | null
+  pids_limit: number | null
+  shm_size: number | null
+  privileged: boolean
+  no_new_privileges: boolean
+}
+
+export interface SysResources {
+  cpu_pct: number | null
+  mem_used: number | null
+  mem_limit: number | null
+  mem_pct: number | null
+  net_rx: number | null
+  net_tx: number | null
+  blk_read: number | null
+  blk_write: number | null
+  pids: number | null
+  pids_limit: number | null
+  online_cpus: number | null
+}
+
+export interface SysSidecar {
+  name: string
+  state: string | null
+  health: string | null
+  started_at: string | null
+  restart_count: number
+}
+
+export interface SysNetwork {
+  mode: 'direct' | 'tailscale' | 'gluetun'
+  profile_name: string | null
+  vpn_provider: string | null
+  vpn_type: string | null
+  vpn_servers: string | null
+  tailscale_ip: string | null
+  tailscale_hostname: string | null
+  login_server: string | null
+  exit_node: string | null
+  accept_routes: boolean | null
+  accept_dns: boolean | null
+  bridge_ip: string | null
+  custom_dns: string | null
+  lan_access: boolean
+  lan_subnets: string[]
+  sidecar: SysSidecar | null
+}
+
+export interface SystemInfo {
+  status: string
+  zone_name: string | null
+  image_name: string
+  image_ref: string | null
+  started_at: string | null
+  auto_stop_at: string | null
+  container: SysContainer | null
+  resources: SysResources | null
+  network: SysNetwork
+  storage: { kind: 'persistent' | 'ephemeral' | 'shared'; measurable: boolean }
+  features: Record<string, boolean>
+}
+
+export interface DiskUsage { bytes: number; files: number; partial: boolean }
+
+export interface PublicIp {
+  ip: string
+  city: string | null
+  region: string | null
+  country: string | null
+  org: string | null
+  timezone: string | null
+  source: string
+}
+
+// ── Files inside a running workspace (stream page) ─────────────────────────
+export interface WsFileEntry { name: string; type: 'dir' | 'file' | 'link'; size: number; modified: string }
+export interface WsListing { path: string; entries: WsFileEntry[] }
+export interface WsUpload { path: string; name: string; size: number }

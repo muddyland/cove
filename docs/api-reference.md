@@ -53,6 +53,13 @@ cookies.
 | GET | `/api/workspaces/{id}/stream-ready` | owner/admin | Whether Traefik already has a route for the stream (the SPA polls this before loading the iframe). |
 | GET | `/api/workspaces/{id}/logs` | owner/admin | Container logs (desktop / tailscale / gluetun). |
 | GET | `/api/workspaces/{id}/tailscale-status` | owner/admin | `tailscale status` from the sidecar. |
+| GET | `/api/workspaces/{id}/info` | owner/admin | System info for the stream page in one call: uptime / auto-stop, container (IDs, restarts, real CPU/memory/PID/shm limits, hardening), live resources (CPU, memory, processes, network and block I/O totals), network route with profile and sidecar health, storage kind, features. Fields are `null` when not running or not reported. |
+| GET | `/api/workspaces/{id}/disk-usage` | owner/admin | Size of the workspace home: `{bytes, files, partial}` (`partial` when counting hit its time budget). `404` when there is no home Cove can measure on this server (ephemeral, or on a remote zone). |
+| POST | `/api/workspaces/{id}/public-ip` | owner/admin | Look up the workspace's public IP from inside it (via ipinfo.io), so it shows the VPN/Tailscale exit. `409` unless running. |
+| GET | `/api/workspaces/{id}/fs?path=` | owner/admin | List a folder of the running workspace's home (`/config`); paths are home-relative and can't leave it. `409` unless running. |
+| GET | `/api/workspaces/{id}/fs/download?path=` | owner/admin | Download one file from the workspace (streamed; `400` for a folder). Audited. |
+| POST | `/api/workspaces/{id}/fs/upload` | owner/admin | Multipart `path` (folder, created if missing) + `file` → `201 {path, name, size}`. Written as the workspace user; an existing name gets ` (2)`. `413` over the upload limit. Audited. |
+| POST | `/api/workspaces/{id}/fs/mkdir` | owner/admin | `{"path": "a/b"}` → `201`. |
 | GET | `/api/workspaces/{id}/manifest.webmanifest` | owner/admin | Per-workspace PWA manifest. |
 | GET | `/api/workspaces/{id}/preview.jpg` | owner/admin | Stored still frame of the workspace screen (`404` when there is none). `private` caching + ETag. |
 | POST | `/api/workspaces/{id}/preview/refresh` | owner/admin | Re-capture the preview from an already-running stream (passive only; `409` unless the workspace is running). |

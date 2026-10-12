@@ -615,6 +615,193 @@ def _parse_stats(raw: dict) -> dict | None:
     }
 
 
+def _parse_stats_detail(raw: dict) -> dict:
+    """The rest of a ``stats(stream=False)`` payload, for the System info view:
+    network and disk totals since the container started, and process count.
+    Each field is None when the daemon didn't report it (cgroup v1/v2 and
+    rootless setups differ in what they fill in)."""
+    out: dict = {"net_rx": None, "net_tx": None, "blk_read": None, "blk_write": None,
+                 "pids": None, "pids_limit": None, "online_cpus": None}
+    nets = raw.get("networks") or {}
+    if nets:
+        out["net_rx"] = sum(int(n.get("rx_bytes", 0)) for n in nets.values())
+        out["net_tx"] = sum(int(n.get("tx_bytes", 0)) for n in nets.values())
+    io = (raw.get("blkio_stats") or {}).get("io_service_bytes_recursive") or []
+    if io:
+        # cgroup v1 says "Read"/"Write", v2 "read"/"write".
+        out["blk_read"] = sum(int(e.get("value", 0)) for e in io if str(e.get("op", "")).lower() == "read")
+        out["blk_write"] = sum(int(e.get("value", 0)) for e in io if str(e.get("op", "")).lower() == "write")
+    pids = raw.get("pids_stats") or {}
+    if "current" in pids:
+        out["pids"] = int(pids["current"])
+    # An unlimited cgroup reports 2^64-1 (or nothing); treat that as no limit.
+    if pids.get("limit") and int(pids["limit"]) < 2**31:
+        out["pids_limit"] = int(pids["limit"])
+    cpus = (raw.get("cpu_stats") or {}).get("online_cpus")
+    if cpus:
+        out["online_cpus"] = int(cpus)
+    return out
+
+
+def _docker_time(value: "str | None") -> "datetime | None":
+    """Docker's RFC 3339 timestamps carry nanoseconds, which fromisoformat
+    rejects before Python 3.11 and \"0001-01-01…\" means never."""
+    if not value or value.startswith("0001-"):
+        return None
+    v = value.rstrip("Z")
+    if "." in v:
+        head, frac = v.split(".", 1)
+        frac = "".join(ch for ch in frac if ch.isdigit())[:6]
+        v = f"{head}.{frac}"
+    try:
+        return datetime.fromisoformat(v).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def workspace_home_path(ws) -> "Path | None":
+    """Where a workspace's persistent home lives on the control plane, without
+    creating it (unlike _resolve_mount). None for ephemeral workspaces, remote
+    zones (their storage is on the agent), or a path outside the storage base."""
+    if getattr(ws, "ephemeral", False) or getattr(ws, "zone_id", 0):
+        return None
+    settings = get_settings()
+    base = (settings.storage_path or (settings.data_dir / "workspaces")).resolve()
+    if getattr(ws, "shared_profile", False):
+        path = base / ws.user.username / "_profile"
+    elif ws.volume_name:
+        path = Path(ws.volume_name)
+    else:
+        path = base / ws.user.username / f"workspace-{_sanitize(ws.name)}"
+    try:
+        path = path.resolve()
+    except OSError:
+        return None
+    if path == base or base not in path.parents:
+        return None
+    return path
+
+
+def measure_dir(path: Path, budget_s: float = 3.0) -> dict:
+    """Total size and file count under ``path``, giving up after ``budget_s``
+    (a browser profile can hold hundreds of thousands of files). Symlinks are
+    never followed: the workspace owns this tree and can plant one pointing
+    anywhere on the host."""
+    deadline = time.monotonic() + budget_s
+    total = files = 0
+    partial = False
+    stack = [path]
+    while stack:
+        if time.monotonic() > deadline:
+            partial = True
+            break
+        d = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    try:
+                        if e.is_symlink():
+                            continue
+                        if e.is_dir(follow_symlinks=False):
+                            stack.append(e.path)
+                        elif e.is_file(follow_symlinks=False):
+                            total += e.stat(follow_symlinks=False).st_size
+                            files += 1
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return {"bytes": total, "files": files, "partial": partial}
+
+
+def _parse_ipinfo(text_out: str) -> "dict | None":
+    import json as _json
+
+    try:
+        data = _json.loads(text_out)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not data.get("ip"):
+        return None
+    keep = ("ip", "city", "region", "country", "org", "timezone")
+    return {k: str(data[k])[:200] for k in keep if data.get(k)}
+
+
+# ── Files inside a running workspace (stream page) ─────────────────────────────
+# Everything goes through the container itself rather than the host's copy of
+# /config: that works for ephemeral and remote-zone workspaces too, and files
+# land owned by the workspace user (PUID) instead of the backend.
+
+WS_HOME = "/config"
+
+
+def ws_abs_path(rel: str) -> str:
+    """Map a home-relative path to an absolute one under /config. ``..`` can't
+    climb out: normpath of a rooted path clamps at the root."""
+    import posixpath
+
+    if "\x00" in (rel or ""):
+        raise ValueError("bad path")
+    norm = posixpath.normpath("/" + (rel or "").strip("/"))
+    return WS_HOME if norm == "/" else WS_HOME + norm
+
+
+def ws_safe_name(name: str) -> str:
+    name = (name or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not name or name in (".", "..") or "\x00" in name or len(name.encode()) > 255:
+        raise ValueError("bad file name")
+    return name
+
+
+_LIST_SCRIPT = (
+    'cd -- "$1" 2>/dev/null || exit 3; '
+    'for f in * .[!.]* ..?*; do [ -e "$f" ] || [ -L "$f" ] || continue; '
+    "stat -c '%F|%s|%Y|%n' -- \"$f\" 2>/dev/null; done"
+)
+
+
+def _parse_listing(text_out: str) -> list[dict]:
+    entries = []
+    for line in text_out.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) != 4:
+            continue
+        kind, size, mtime, name = parts
+        if not name or "/" in name:
+            continue
+        try:
+            entries.append({
+                "name": name,
+                "type": "dir" if "directory" in kind else "link" if "symbolic" in kind else "file",
+                "size": int(size),
+                "modified": datetime.fromtimestamp(int(mtime), tz=timezone.utc),
+            })
+        except ValueError:
+            continue
+    entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
+    return entries
+
+
+class _ChunkReader:
+    """File-like view over docker-py's chunk generator, for tarfile's stream mode."""
+
+    def __init__(self, chunks):
+        self._it = iter(chunks)
+        self._buf = b""
+
+    def read(self, n=-1):
+        while n < 0 or len(self._buf) < n:
+            try:
+                self._buf += next(self._it)
+            except StopIteration:
+                break
+        if n < 0:
+            out, self._buf = self._buf, b""
+        else:
+            out, self._buf = self._buf[:n], self._buf[n:]
+        return out
+
+
 def _zone_cert_dir(zone_id: int) -> Path:
     settings = get_settings()
     return Path(settings.data_dir) / "zone-certs" / str(zone_id)
@@ -1905,6 +2092,197 @@ class DockerManager:
             logger.debug("stats read failed for %s: %s", container_id[:12], exc)
             return None
         return _parse_stats(raw)
+
+    def runtime_info(self, ws) -> dict:
+        """Live facts about a running workspace for the System info view: the
+        container (when it started, restarts, the limits it actually runs
+        with), resource totals, and its routing sidecar's state. Every part is
+        best-effort; a missing piece comes back as None, never an error."""
+        info: dict = {"container": None, "stats": None, "detail": None, "sidecar": None, "bridge_ip": None}
+        if not ws.container_id:
+            return info
+        try:
+            c = self._client.containers.get(ws.container_id)
+            attrs = c.attrs or {}
+        except (docker.errors.NotFound, docker.errors.APIError):
+            return info
+        except Exception as exc:  # defensive: never break the endpoint
+            logger.debug("inspect failed for ws %s: %s", ws.id, exc)
+            return info
+        state = attrs.get("State") or {}
+        host = attrs.get("HostConfig") or {}
+        info["container"] = {
+            "id": (attrs.get("Id") or "")[:12],
+            "name": (attrs.get("Name") or "").lstrip("/"),
+            "state": state.get("Status"),
+            "started_at": _docker_time(state.get("StartedAt")),
+            "restart_count": int(attrs.get("RestartCount") or 0),
+            "image_id": (attrs.get("Image") or "").replace("sha256:", "")[:12],
+            "cpu_limit": (host.get("NanoCpus") or 0) / 1e9 or None,
+            "mem_limit": host.get("Memory") or None,
+            "pids_limit": host.get("PidsLimit") if (host.get("PidsLimit") or 0) > 0 else None,
+            "shm_size": host.get("ShmSize") or None,
+            "privileged": bool(host.get("Privileged")),
+            "no_new_privileges": any("no-new-privileges" in o for o in host.get("SecurityOpt") or []),
+        }
+        for net in ((attrs.get("NetworkSettings") or {}).get("Networks") or {}).values():
+            if net.get("IPAddress"):
+                info["bridge_ip"] = net["IPAddress"]
+                break
+        raw = None
+        if state.get("Status") == "running":
+            try:
+                raw = c.stats(stream=False)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("stats failed for ws %s: %s", ws.id, exc)
+        if raw:
+            info["stats"] = _parse_stats(raw)
+            info["detail"] = _parse_stats_detail(raw)
+
+        sidecar_name = (
+            self._gluetun_sidecar_name(ws.id) if ws.use_gluetun
+            else self._ts_sidecar_name(ws.id) if ws.use_tailscale
+            else None
+        )
+        if sidecar_name:
+            try:
+                s = self._client.containers.get(sidecar_name)
+                sstate = (s.attrs or {}).get("State") or {}
+                info["sidecar"] = {
+                    "name": sidecar_name,
+                    "state": sstate.get("Status"),
+                    "health": (sstate.get("Health") or {}).get("Status"),
+                    "started_at": _docker_time(sstate.get("StartedAt")),
+                    "restart_count": int((s.attrs or {}).get("RestartCount") or 0),
+                }
+                # The workspace shares the sidecar's network namespace, so the
+                # traffic counters live on the sidecar, not the workspace.
+                d = info["detail"]
+                if d is not None and d.get("net_rx") is None and sstate.get("Status") == "running":
+                    sd = _parse_stats_detail(s.stats(stream=False) or {})
+                    d["net_rx"], d["net_tx"] = sd["net_rx"], sd["net_tx"]
+            except (docker.errors.NotFound, docker.errors.APIError):
+                info["sidecar"] = {"name": sidecar_name, "state": "missing", "health": None,
+                                   "started_at": None, "restart_count": 0}
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("sidecar inspect failed for ws %s: %s", ws.id, exc)
+        return info
+
+    def _running_container(self, ws):
+        if not ws.container_id:
+            raise FileNotFoundError("workspace has no container")
+        c = self._client.containers.get(ws.container_id)
+        if c.status != "running":
+            raise FileNotFoundError("workspace is not running")
+        return c
+
+    def _ws_user(self) -> str:
+        s = get_settings()
+        return f"{s.workspace_puid}:{s.workspace_pgid}"
+
+    def ws_list(self, ws, rel: str) -> list[dict]:
+        """Entries of a folder in the workspace's home, read as the workspace
+        user (so it shows what that user can see)."""
+        c = self._running_container(ws)
+        code, out = c.exec_run(["/bin/sh", "-c", _LIST_SCRIPT, "sh", ws_abs_path(rel)], user=self._ws_user())
+        if code == 3:
+            raise FileNotFoundError("folder not found")
+        return _parse_listing((out or b"").decode(errors="replace"))
+
+    def ws_mkdir(self, ws, rel: str) -> None:
+        c = self._running_container(ws)
+        code, out = c.exec_run(["mkdir", "-p", "--", ws_abs_path(rel)], user=self._ws_user())
+        if code != 0:
+            raise PermissionError((out or b"").decode(errors="replace").strip() or "mkdir failed")
+
+    def ws_put_file(self, ws, rel_dir: str, name: str, fileobj, size: int) -> str:
+        """Write one file into a folder of the workspace's home, owned by the
+        workspace user. A name that already exists gets " (2)", " (3)"… so a
+        drop never overwrites anything. Returns the name used."""
+        import tarfile
+        import tempfile
+
+        name = ws_safe_name(name)
+        folder = ws_abs_path(rel_dir)
+        c = self._running_container(ws)
+        # mkdir -p and pick a free name in one exec, as the workspace user.
+        pick = (
+            'mkdir -p -- "$1" || exit 4; cd -- "$1" || exit 4; n="$2"; '
+            'case "$n" in *.*) stem="${n%.*}"; ext=".${n##*.}";; *) stem="$n"; ext="";; esac; '
+            'i=2; while [ -e "$n" ] || [ -L "$n" ]; do n="$stem ($i)$ext"; i=$((i+1)); done; '
+            'printf %s "$n"'
+        )
+        code, out = c.exec_run(["/bin/sh", "-c", pick, "sh", folder, name], user=self._ws_user())
+        if code != 0:
+            raise PermissionError(f"can't write to {folder}")
+        final = (out or b"").decode(errors="replace") or name
+        s = get_settings()
+        with tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024) as tmp:
+            with tarfile.open(fileobj=tmp, mode="w") as tar:
+                info = tarfile.TarInfo(final)
+                info.size = size
+                info.mode = 0o644
+                info.uid, info.gid = int(s.workspace_puid), int(s.workspace_pgid)
+                info.mtime = int(time.time())
+                fileobj.seek(0)
+                tar.addfile(info, fileobj)
+            tmp.seek(0)
+            if not c.put_archive(folder, tmp.read()):
+                raise PermissionError("upload refused by the container")
+        return final
+
+    def ws_open_file(self, ws, rel: str):
+        """(name, size, chunk iterator) for one regular file in the workspace."""
+        import tarfile
+
+        c = self._running_container(ws)
+        stream, stat = c.get_archive(ws_abs_path(rel))
+        mode = int((stat or {}).get("mode") or 0)
+        if mode & (1 << 31):  # Go's os.ModeDir bit
+            raise IsADirectoryError("is a folder")
+        tar = tarfile.open(fileobj=_ChunkReader(stream), mode="r|")
+        member = next(iter(tar), None)
+        if member is None or not member.isfile():
+            raise FileNotFoundError("not a regular file")
+        fh = tar.extractfile(member)
+
+        def chunks():
+            try:
+                while True:
+                    b = fh.read(256 * 1024)
+                    if not b:
+                        break
+                    yield b
+            finally:
+                tar.close()
+
+        return member.name.rsplit("/", 1)[-1], member.size, chunks()
+
+    def public_ip(self, ws) -> "dict | None":
+        """Where this workspace's traffic actually comes out, asked from inside
+        its own network namespace — so it reflects the VPN, the Tailscale exit
+        node or the direct route, whichever is really in effect. Runs only when
+        the user asks (it calls ipinfo.io). None if the container can't reach
+        it or has neither curl nor wget."""
+        if not ws.container_id:
+            return None
+        script = (
+            "curl -fsS --max-time 8 https://ipinfo.io/json 2>/dev/null"
+            " || wget -qO- -T 8 https://ipinfo.io/json 2>/dev/null"
+        )
+        try:
+            c = self._client.containers.get(ws.container_id)
+            if c.status != "running":
+                return None
+            code, out = c.exec_run(["/bin/sh", "-c", script])
+        except (docker.errors.NotFound, docker.errors.APIError):
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("public ip check failed for ws %s: %s", ws.id, exc)
+            return None
+        if code != 0 or not out:
+            return None
+        return _parse_ipinfo(out.decode(errors="ignore"))
 
     def get_tailscale_ip(self, ws_id: int) -> str | None:
         """The tailnet IPv4 of a workspace's Tailscale sidecar, or None.

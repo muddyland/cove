@@ -22,12 +22,20 @@ from server.preview import is_connectable
 from server.proot import APP_NAME_RE as PROOT_APP_NAME_RE
 from server.schemas import (
     ContainerLogsOut,
+    DiskUsageOut,
     DockerPolicyOut,
     GpuPolicyOut,
     LanPolicyOut,
+    PublicIpOut,
     RuntimePolicyOut,
     StreamAuthOut,
     StreamReadyOut,
+    SysContainerOut,
+    SysNetworkOut,
+    SysResourcesOut,
+    SysSidecarOut,
+    SysStorageOut,
+    SystemInfoOut,
     TailscaleStatusOut,
     WorkspaceClone,
     WorkspaceCreate,
@@ -859,6 +867,149 @@ def tailscale_status(ws_id: int, user: CurrentUser, db: DbSession):
 
     out = get_docker_manager(ws.zone_id).tailscale_status(ws.id)
     return TailscaleStatusOut(available=out is not None, output=out or "")
+
+
+# ── System info (stream page) ───────────────────────────────────────────────────
+
+def _vpn_servers(g) -> "str | None":
+    if g.mode != "provider":
+        return g.config_filename
+    where = [x for x in (g.server_countries, g.server_cities, g.server_hostnames) if x]
+    return " / ".join(where) if where else "any server"
+
+
+@router.get("/{ws_id}/info", response_model=SystemInfoOut)
+def workspace_info(ws_id: int, user: CurrentUser, db: DbSession):
+    """Everything the stream page's System info dialog shows in one call:
+    uptime and auto-stop, the container and the limits it really runs with,
+    live resource totals, the network route with its profile and sidecar
+    state, and storage. Docker reads are best-effort; a stopped workspace
+    returns the configuration part with the live parts empty."""
+    from server import settings_store
+    from server.docker_manager import get_docker_manager, runtime_anchor, workspace_home_path
+    from server.vpn_profiles import PROVIDERS
+
+    ws = _get_workspace_or_404(ws_id, user, db)
+    dm = get_docker_manager(ws.zone_id)
+    rt = dm.runtime_info(ws) if ws.status == "running" else {}
+
+    mode = "gluetun" if ws.use_gluetun else "tailscale" if ws.use_tailscale else "direct"
+    net = SysNetworkOut(mode=mode, profile_name=None)
+    if ws.use_gluetun:
+        g = get_vpn_profile(db, ws.user_id, ws.gluetun_profile_id)
+        if g is not None:
+            net.profile_name = g.name
+            net.vpn_provider = (
+                PROVIDERS.get(g.provider or "", {}).get("label") if g.mode == "provider" else "Config file"
+            )
+            net.vpn_type = "WireGuard" if g.vpn_type == "wireguard" else "OpenVPN"
+            net.vpn_servers = _vpn_servers(g)
+    elif ws.use_tailscale:
+        t = get_tailscale_profile(db, ws.user_id, ws.tailscale_profile_id)
+        if t is not None:
+            net.profile_name = t.name
+            net.login_server = t.login_server
+        net.tailscale_hostname = f"cove-{ws.id}"
+        net.exit_node = ws.ts_exit_node
+        net.accept_routes = ws.ts_accept_routes
+        net.accept_dns = ws.ts_accept_dns
+        if ws.status == "running":
+            net.tailscale_ip = dm.get_tailscale_ip(ws.id)
+    else:
+        net.bridge_ip = rt.get("bridge_ip")
+        if ws.custom_dns:
+            net.custom_dns = ws.dns_servers or "1.1.1.1 9.9.9.9"
+    if ws.lan_access and settings_store.get_workspace_lan_access(db):
+        net.lan_access = True
+        net.lan_subnets = settings_store.get_workspace_lan_subnets(db)
+    if rt.get("sidecar"):
+        net.sidecar = SysSidecarOut(**rt["sidecar"])
+
+    resources = None
+    if rt.get("stats") or rt.get("detail"):
+        resources = SysResourcesOut(**(rt.get("stats") or {}), **(rt.get("detail") or {}))
+
+    auto_stop_at = None
+    max_h = settings_store.get_workspace_max_runtime_hours(db)
+    anchor = runtime_anchor(ws) if ws.status == "running" else None
+    if max_h and anchor:
+        from datetime import timedelta
+
+        auto_stop_at = anchor + timedelta(hours=max_h)
+
+    started = ws.started_at
+    if started is not None and started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return SystemInfoOut(
+        status=ws.status,
+        zone_name=ws.zone.name if ws.zone else None,
+        image_name=ws.image.name if ws.image else "",
+        image_ref=ws.image.docker_image if ws.image else None,
+        started_at=started if ws.status == "running" else None,
+        auto_stop_at=auto_stop_at,
+        container=SysContainerOut(**rt["container"]) if rt.get("container") else None,
+        resources=resources,
+        network=net,
+        storage=SysStorageOut(
+            kind="ephemeral" if ws.ephemeral else "shared" if ws.shared_profile else "persistent",
+            measurable=workspace_home_path(ws) is not None,
+        ),
+        features={
+            "gpu_accel": bool(ws.gpu_accel and settings_store.get_workspace_gpu_accel(db)),
+            "docker": bool(ws.use_docker and settings_store.get_workspace_docker(db)),
+            "sudo": bool(ws.allow_sudo),
+            "ssh_key": bool(ws.inject_ssh_key),
+            "wayland": bool(ws.pixelflux_wayland),
+            "kiosk": bool(ws.kiosk),
+        },
+    )
+
+
+@router.get("/{ws_id}/disk-usage", response_model=DiskUsageOut)
+def workspace_disk_usage(ws_id: int, user: CurrentUser, db: DbSession):
+    """Size of the workspace's persistent home. Counting stops after a few
+    seconds (``partial``), since a browser profile can be huge in file count.
+    404 when there's nothing to measure here (ephemeral, or a remote zone)."""
+    from server.docker_manager import measure_dir, workspace_home_path
+
+    ws = _get_workspace_or_404(ws_id, user, db)
+    path = workspace_home_path(ws)
+    if path is None:
+        raise HTTPException(status_code=404, detail="No persistent home to measure on this server")
+    if not path.exists():
+        return DiskUsageOut(bytes=0, files=0, partial=False)
+    return DiskUsageOut(**measure_dir(path))
+
+
+# Per-workspace cache: the check calls a third party from inside the workspace,
+# so repeated clicks shouldn't each fire one.
+_PUBLIC_IP_CACHE: dict[int, tuple[float, dict]] = {}
+_PUBLIC_IP_TTL = 30.0
+
+
+@router.post("/{ws_id}/public-ip", response_model=PublicIpOut)
+def workspace_public_ip(ws_id: int, user: CurrentUser, db: DbSession):
+    """Where this workspace's traffic comes out, asked from inside the
+    workspace (via ipinfo.io), so it shows what the VPN / exit node / direct
+    route really does. Only on request; cached for 30 s."""
+    import time as _time
+
+    ws = _get_workspace_or_404(ws_id, user, db)
+    if ws.status != "running":
+        raise HTTPException(status_code=409, detail="Workspace is not running")
+    hit = _PUBLIC_IP_CACHE.get(ws.id)
+    if hit and _time.monotonic() - hit[0] < _PUBLIC_IP_TTL:
+        return PublicIpOut(**hit[1])
+    from server.docker_manager import get_docker_manager
+
+    data = get_docker_manager(ws.zone_id).public_ip(ws)
+    if not data:
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't reach ipinfo.io from inside the workspace (no route out, or no curl/wget in the image)",
+        )
+    _PUBLIC_IP_CACHE[ws.id] = (_time.monotonic(), data)
+    return PublicIpOut(**data)
 
 
 @router.get("/{ws_id}/preview.jpg")

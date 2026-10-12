@@ -220,11 +220,25 @@ encode (GPU off) can genuinely be the smoother choice.
 
 ## Resource usage
 
-A running workspace's toolbar has a **gauge** icon next to the **Online** badge.
-Click it for a live **CPU** and **memory** readout (usage vs. the container's
-limit), refreshed every few seconds. CPU is shown as the container's share of
-the whole host, on a 0-100% scale. Admins can also cap per-workspace CPU/memory
-in Administration → Settings.
+On the stream page, the **gauge** button next to the status badge opens
+**System info**, refreshed every few seconds while it's open (paused when the
+tab is hidden):
+
+- **CPU** as a share of the whole host (0–100%); the bar measures against the
+  workspace's CPU cap when an admin set one, so a capped workspace at its limit
+  reads full. **Memory** against its limit, **processes** against the PID
+  limit, **network** received/sent since start with the current rate, and
+  **disk I/O**.
+- **Network**: the route and profile, VPN provider / type / servers or tailnet
+  IP / hostname / exit node, the VPN or Tailscale sidecar's health and restarts,
+  LAN access, and on request the **public IP** traffic exits from (fetched from
+  inside the workspace via ipinfo.io, so it reflects the VPN).
+- **Storage**: persistent, shared or ephemeral, and the home folder's size
+  (counting stops after a few seconds on huge homes and shows "over …").
+- **Container**: image and image ID, container name/ID, restarts, zone,
+  enabled options, and hardening (no-new-privileges, privileged).
+
+Admins can cap per-workspace CPU/memory in Administration → Settings.
 
 ## Screen previews
 

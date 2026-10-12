@@ -620,6 +620,103 @@ class TailscaleStatusOut(BaseModel):
     output: str
 
 
+# ── System info (stream page) ───────────────────────────────────────────────────
+
+class SysContainerOut(BaseModel):
+    id: str
+    name: str
+    state: Optional[str]
+    started_at: Optional[datetime]
+    restart_count: int
+    image_id: str
+    cpu_limit: Optional[float]  # cores
+    mem_limit: Optional[int]  # bytes
+    pids_limit: Optional[int]
+    shm_size: Optional[int]
+    privileged: bool
+    no_new_privileges: bool
+
+
+class SysResourcesOut(BaseModel):
+    cpu_pct: Optional[float] = None
+    mem_used: Optional[int] = None
+    mem_limit: Optional[int] = None
+    mem_pct: Optional[float] = None
+    net_rx: Optional[int] = None
+    net_tx: Optional[int] = None
+    blk_read: Optional[int] = None
+    blk_write: Optional[int] = None
+    pids: Optional[int] = None
+    pids_limit: Optional[int] = None
+    online_cpus: Optional[int] = None
+
+
+class SysSidecarOut(BaseModel):
+    name: str
+    state: Optional[str]
+    health: Optional[str]  # gluetun: starting / healthy / unhealthy; tailscale: None
+    started_at: Optional[datetime]
+    restart_count: int
+
+
+class SysNetworkOut(BaseModel):
+    mode: str  # direct | tailscale | gluetun
+    profile_name: Optional[str] = None
+    # VPN profile summary (never secrets).
+    vpn_provider: Optional[str] = None
+    vpn_type: Optional[str] = None
+    vpn_servers: Optional[str] = None
+    # Tailscale.
+    tailscale_ip: Optional[str] = None
+    tailscale_hostname: Optional[str] = None
+    login_server: Optional[str] = None
+    exit_node: Optional[str] = None
+    accept_routes: Optional[bool] = None
+    accept_dns: Optional[bool] = None
+    # Direct.
+    bridge_ip: Optional[str] = None
+    custom_dns: Optional[str] = None
+    lan_access: bool = False
+    lan_subnets: list[str] = []
+    sidecar: Optional[SysSidecarOut] = None
+
+
+class SysStorageOut(BaseModel):
+    kind: str  # persistent | ephemeral | shared
+    measurable: bool  # whether /disk-usage can size it (local zone, persistent)
+
+
+class SystemInfoOut(BaseModel):
+    status: str
+    zone_name: Optional[str]
+    image_name: str
+    image_ref: Optional[str]
+    started_at: Optional[datetime]
+    auto_stop_at: Optional[datetime]
+    container: Optional[SysContainerOut]
+    resources: Optional[SysResourcesOut]
+    network: SysNetworkOut
+    storage: SysStorageOut
+    # Per-workspace options that change how it runs.
+    features: dict[str, bool]
+
+
+class DiskUsageOut(BaseModel):
+    bytes: int
+    files: int
+    partial: bool  # stopped counting at the time budget: the real total is larger
+
+
+class PublicIpOut(BaseModel):
+    ip: str
+    city: Optional[str] = None
+    region: Optional[str] = None
+    country: Optional[str] = None
+    org: Optional[str] = None
+    timezone: Optional[str] = None
+    source: str = "ipinfo.io"
+
+
 class ContainerLogsOut(BaseModel):
     source: str  # 'desktop' | 'tailscale' | 'gluetun'
     available: bool  # False when the backing container is missing
