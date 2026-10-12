@@ -17,7 +17,7 @@
 </div>
 
 <p align="center">
-  <img src="screenshots/cove-launch.gif" width="90%" alt="Launching a workspace in Cove — deploy a node, then a full Linux desktop streams into the browser" />
+  <img src="screenshots/cove-launch.gif" width="90%" alt="Launching a workspace in Cove: Launch, pick Desktop, search for XFCE, name it, then the Starting screen gives way to a full Linux desktop streamed into the browser" />
 </p>
 
 ---
