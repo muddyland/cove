@@ -109,7 +109,7 @@ def test_proxy_passthrough_to_local_socket(monkeypatch):
     def _ping():
         return PlainTextResponse("OK")
 
-    config = uvicorn.Config(upstream, host="127.0.0.1", port=0, log_level="error")
+    config = uvicorn.Config(upstream, host="127.0.0.1", port=0, log_level="error", loop="asyncio", ws="none")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()

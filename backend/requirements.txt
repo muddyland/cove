@@ -1,5 +1,5 @@
 fastapi==0.137.1
-uvicorn[standard]==0.32.1
+uvicorn[standard]==0.54.0
 sqlalchemy==2.0.50
 pydantic-settings==2.6.1
 # PyJWT replaces python-jose: jose 3.5.0 carries CVE-2024-33663 (CVSS 9.1, algorithm
@@ -21,4 +21,7 @@ Pillow==12.3.0
 # itself stops at cp313).
 sqlcipher3-binary==0.5.4.post2; platform_machine == "x86_64"
 pytest==9.0.3
+# Starlette's TestClient wants httpx2 (it deprecates driving it with httpx);
+# test-only, the app itself still uses httpx.
+httpx2==2.13.1
 pytest-asyncio==1.4.0

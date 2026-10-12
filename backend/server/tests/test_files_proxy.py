@@ -50,7 +50,7 @@ def agent_transport(monkeypatch):
     uses a synchronous httpx client, which can't drive an in-process ASGI app."""
     app = FastAPI()
     app.include_router(agent_router.router)
-    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error", loop="asyncio", ws="none")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
