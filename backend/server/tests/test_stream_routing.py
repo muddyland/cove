@@ -127,7 +127,7 @@ def test_traefik_config_excludes_local_and_stopped(client):
 
 # ── Agent ForwardAuth (defense-in-depth) ───────────────────────────────────
 
-def _agent_client(with_settings, domain="ws.example.com", key="streamkey-xyz"):
+def _agent_client(with_settings, domain="ws.example.com", key="streamkey-xyz-0123456789abcdef0123456789"):
     with_settings(
         COVE_AGENT_MODE="1", COVE_WORKSPACE_DOMAIN=domain, COVE_STREAM_SIGNING_KEY=key
     )

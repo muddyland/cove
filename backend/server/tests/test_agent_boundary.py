@@ -184,7 +184,7 @@ def upstream(monkeypatch):
         hits.append(f"{request.method} /{rest}")
         return PlainTextResponse("OK")
 
-    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error", loop="asyncio", ws="none")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -367,7 +367,7 @@ def test_central_forward_auth_hands_remote_subpath_a_stream_token(client):
 
 def test_agent_forward_auth_subpath_verifies_relayed_token(monkeypatch):
     monkeypatch.setenv("COVE_AGENT_MODE", "1")
-    monkeypatch.setenv("COVE_STREAM_SIGNING_KEY", "streamkey-xyz")
+    monkeypatch.setenv("COVE_STREAM_SIGNING_KEY", "streamkey-xyz-0123456789abcdef0123456789")
     monkeypatch.delenv("COVE_WORKSPACE_DOMAIN", raising=False)
     get_settings.cache_clear()
     try:
