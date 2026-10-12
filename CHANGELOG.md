@@ -2,6 +2,21 @@
 
 ## Unreleased — usability pass
 
+- **System info on the stream page.** The separate VPN and Tailscale indicators
+  and the CPU/memory gauge are now one **System info** button (it keeps a green
+  lock / network icon when a route is up). The dialog adds what was missing:
+  uptime and auto-stop with Extend, processes, network and disk I/O, the real
+  container limits, the VPN profile / provider / servers or tailnet IP /
+  hostname / exit node with the sidecar's health and restarts, LAN access, the
+  public IP the workspace really exits from (on request), home folder type and
+  size, and container details (image ID, restarts, zone, options, hardening).
+- **Files on the stream page.** Drop files onto the stream to copy them into the
+  workspace (`~/Desktop`, or `~/Downloads` for browser/app workspaces), with
+  progress and no overwrites. **Menu → Files** browses the home folder, downloads
+  files, makes folders and uploads (button or drop). It works through the
+  container, so ephemeral and remote-zone workspaces are covered, and files
+  belong to the workspace user.
+
 - **The browser extension understands VPN and Tailscale profiles** (Open in
   Cove 0.2.0). Since profiles landed, the extension still read the removed
   single-config endpoints, so VPN and Tailscale showed as unavailable in its

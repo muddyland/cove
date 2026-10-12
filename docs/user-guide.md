@@ -101,10 +101,32 @@ While viewing a running workspace, a top bar provides:
 - **Fullscreen** (`FULL` / `WINDOW`) — expand the stream to fill the window.
 - **CRT** — a retro scanline/flicker overlay (cosmetic; per-user toggle).
 - **Apps** — on a desktop workspace, manage its proot-apps and AppImages (see [above](#managing-apps-in-a-workspace)).
+- **Files** — browse the workspace's home folder, download files, make folders, and upload (pick files, or drop them onto the dialog). See [Moving files in and out](#moving-files-in-and-out).
 - **Logs** — opens diagnostics: container logs and (for tailnet workspaces) `tailscale status`.
 - **HALT** — stop and remove the container (persistent data is kept).
 - **APP / install** — install *this* workspace as its own PWA (its own icon and window). Handy for a single-purpose browser workspace.
-- **Connection indicators** — a lock icon when routed through a VPN (Gluetun), a network icon when routed through Tailscale (with the exit node in the tooltip).
+- **System info** — the gauge button next to the status badge. It carries a green lock when the workspace is routed through a VPN and a network icon for Tailscale (the tooltip names the profile and exit node), and opens one dialog with everything about the running workspace: uptime and auto-stop (with **Extend**), live CPU / memory / processes / network / disk I/O against its limits, the network route (VPN profile, provider and servers with the tunnel's health, or the tailnet IP, hostname, exit node and `tailscale status`), LAN access, the public IP it really exits from (**Check**, looked up from inside the workspace), home folder type and size, and container details (image, IDs, restarts, zone, options, hardening).
+
+## Moving files in and out
+
+- **Drop files onto the stream** to copy them into the workspace: they land in
+  `~/Desktop` on a desktop and `~/Downloads` on a browser or app workspace, with
+  a progress strip in the corner and a note saying where each one went. A name
+  that already exists gets ` (2)` added rather than overwriting it. Folders are
+  skipped (drop the files inside).
+- **Menu → Files** browses the home folder (`/config`): click into folders,
+  download a file (button or double-click), make a folder, or upload into the
+  folder on screen with **Upload** or by dropping onto the list. Dotfiles are
+  hidden until you press the eye button.
+
+Files are written by the workspace's own user, so the desktop can open, edit and
+delete them normally. Uploads follow the admin's upload size limit. On an
+ephemeral workspace they are gone when it stops, like everything else in it.
+
+> Dropping onto the stream: when workspaces are served on their own subdomains,
+> the page can't see a drag that enters straight over the stream, so the drop
+> target appears once the drag crosses the top bar or the page edge. Drag in
+> from the top if nothing happens.
 
 ## Managing apps in a workspace
 

@@ -1,5 +1,8 @@
 import { api } from './client'
-import type { ContainerLogs, DockerPolicy, GpuPolicy, LanPolicy, RuntimePolicy, TailscaleStatus, Workspace, WorkspaceStats } from '@/types'
+import type {
+  ContainerLogs, DiskUsage, DockerPolicy, GpuPolicy, LanPolicy, PublicIp, RuntimePolicy, SystemInfo,
+  TailscaleStatus, Workspace, WorkspaceStats,
+} from '@/types'
 
 export type LogSource = 'desktop' | 'tailscale' | 'gluetun'
 
@@ -78,6 +81,9 @@ export const workspacesApi = {
     api.post<Workspace>(`/workspaces/${id}/clone`, payload),
   migrate: (id: number, payload: { zone_id: number }) =>
     api.post<Workspace>(`/workspaces/${id}/migrate`, { target_zone_id: payload.zone_id }),
+  info: (id: number) => api.get<SystemInfo>(`/workspaces/${id}/info`),
+  diskUsage: (id: number) => api.get<DiskUsage>(`/workspaces/${id}/disk-usage`),
+  publicIp: (id: number) => api.post<PublicIp>(`/workspaces/${id}/public-ip`),
   tailscaleStatus: (id: number) =>
     api.get<TailscaleStatus>(`/workspaces/${id}/tailscale-status`),
   logs: (id: number, source: LogSource, tail = 200) =>

@@ -43,25 +43,22 @@
           <Timer :size="13" /> stops in {{ fmtDuration(stopIn) }}
           <button type="button" class="link-btn" :disabled="extending" @click="handleExtend">Extend</button>
         </span>
+        <!-- One entry point for resources, route and container details. The
+             route glyph keeps the at-a-glance "VPN / Tailscale is up" signal
+             the separate indicators used to give (a running node with a
+             routing flag has a healthy sidecar, or it would be in error). -->
         <button
           v-if="ws?.status === 'running'"
-          class="conn-icon gauge-btn"
-          title="CPU &amp; memory usage"
-          aria-label="Resource usage"
-          @click="showMetrics = true"
-        ><Gauge :size="14" /></button>
-        <!-- Connection indicators: a running node with a routing flag means its
-             sidecar is healthy (a failed one would force the node into error). -->
-        <span
-          v-if="ws?.status === 'running' && ws.use_gluetun"
-          class="conn-icon vpn-on"
-          title="VPN connected"
-        ><Lock :size="14" /></span>
-        <span
-          v-if="ws?.status === 'running' && ws.use_tailscale"
-          class="conn-icon ts-on"
-          :title="ws.ts_exit_node ? `Tailscale connected · exit node: ${ws.ts_exit_node}` : 'Tailscale connected'"
-        ><Network :size="14" /></span>
+          class="sys-btn"
+          :class="{ vpn: ws.use_gluetun, ts: ws.use_tailscale }"
+          :title="sysInfoTitle"
+          aria-label="System info"
+          @click="showSysInfo = true"
+        >
+          <Gauge :size="14" />
+          <Lock v-if="ws.use_gluetun" :size="13" class="route-glyph" />
+          <Network v-else-if="ws.use_tailscale" :size="13" class="route-glyph" />
+        </button>
       </div>
       <RouterLink v-if="!lockedToWorkspace" to="/app" class="brand-center" title="Back to grid">
         <img src="/favicon.svg" alt="" />
@@ -110,6 +107,9 @@
             >
               <Package :size="15" /> Apps
             </button>
+            <button class="menu-item" @click="runAction(() => (showFiles = true))">
+              <FolderOpen :size="15" /> Files
+            </button>
             <button class="menu-item" @click="runAction(() => (showDiag = true))">
               <Activity :size="15" /> Logs
             </button>
@@ -122,8 +122,9 @@
     </div>
 
     <DiagnosticsModal v-if="ws" v-model="showDiag" :ws="ws" />
+    <WorkspaceFilesModal v-if="ws && ws.status === 'running'" v-model="showFiles" :ws="ws" />
     <ProotAppsModal v-if="ws && ws.workspace_type === 'desktop'" v-model="showApps" :ws="ws" />
-    <WorkspaceMetricsModal v-if="ws" v-model="showMetrics" :ws-id="ws.id" :name="ws.name" />
+    <SystemInfoModal v-if="ws" v-model="showSysInfo" :ws="ws" :extending="extending" @extend="handleExtend" />
 
     <DocsModal v-model="showHelp" initial="__quick" />
 
@@ -169,6 +170,7 @@
 
     <div class="frame-wrap" v-else-if="ws?.status === 'running' && streamUrl" ref="frameWrap">
       <iframe
+        ref="streamFrame"
         :src="streamUrl"
         class="workspace-frame"
         allow="autoplay; clipboard-read; clipboard-write; fullscreen; camera; microphone; screen-wake-lock"
@@ -177,6 +179,26 @@
       <!-- CRT scanline / flicker overlay (pointer-events:none so the stream stays
            interactive). Toggled per-user from the top bar. -->
       <div v-if="ui.crt" class="crt-overlay" aria-hidden="true" />
+      <!-- Drop files onto the stream. A page can't see a drag over a
+           cross-origin iframe, so the overlay goes up as soon as a file drag
+           shows up anywhere we can see it (the top bar, the page edges, or the
+           stream itself when it's same-origin) and then catches the drop. -->
+      <div
+        v-if="dropActive"
+        class="drop-overlay"
+        @dragover.prevent="onOverlayDragOver"
+        @dragleave="onOverlayDragLeave"
+        @drop.prevent="onStreamDrop"
+      >
+        <div class="drop-card">
+          <Upload :size="28" />
+          <p>Drop to copy into <strong>~/{{ dropFolder }}</strong></p>
+          <p class="drop-sub">{{ ws?.ephemeral ? 'This workspace is ephemeral: files are gone when it stops.' : 'Kept with the workspace\'s home folder.' }}</p>
+        </div>
+      </div>
+      <div v-if="ws && streamTransfers.length && !showFiles" class="drop-progress">
+        <WsTransferList :ws-id="ws.id" source="stream" />
+      </div>
     </div>
 
     <!-- Node is up but the route isn't live yet (or stream-auth failed): hold
@@ -229,11 +251,15 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
 import ProotAppsModal from '@/components/ProotAppsModal.vue'
-import WorkspaceMetricsModal from '@/components/WorkspaceMetricsModal.vue'
+import SystemInfoModal from '@/components/SystemInfoModal.vue'
 import DocsModal from '@/components/DocsModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
 import { workspaceIconUrl, type IconSource } from '@/utils/workspaceIcon'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package, Timer } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package, Timer, FolderOpen, Upload } from 'lucide-vue-next'
+import WorkspaceFilesModal from '@/components/WorkspaceFilesModal.vue'
+import WsTransferList from '@/components/WsTransferList.vue'
+import { useWsTransfersStore } from '@/stores/wsTransfers'
+import { dropFolderFor, filesFromDrop, isFileDrag } from '@/utils/wsDrop'
 import { autoStopAt, displayStatus, fmtDuration, pullPercent, startingDetail, statusLabel } from '@/utils/workspaceStatus'
 import { useNow } from '@/composables/useNow'
 
@@ -278,7 +304,108 @@ const stopping = ref(false)
 const showDiag = ref(false)
 const showApps = ref(false)
 const showHelp = ref(false)
-const showMetrics = ref(false)
+const showSysInfo = ref(false)
+const showFiles = ref(false)
+
+// ── Drop files onto the stream ──
+const transfers = useWsTransfersStore()
+const streamFrame = ref<HTMLIFrameElement | null>(null)
+const dropActive = ref(false)
+const dropFolder = computed(() => (ws.value ? dropFolderFor(ws.value) : 'Desktop'))
+// The progress strip only shows uploads started by a drop on the stream; the
+// Files dialog shows its own.
+const streamTransfers = computed(() =>
+  ws.value ? transfers.items.filter(t => t.wsId === ws.value!.id && t.source === 'stream') : [],
+)
+let dropHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function canDrop() {
+  return ws.value?.status === 'running' && !showFiles.value
+}
+function armDrop(e: DragEvent) {
+  if (!canDrop() || !isFileDrag(e)) return
+  e.preventDefault()
+  dropActive.value = true
+  if (dropHideTimer) { clearTimeout(dropHideTimer); dropHideTimer = null }
+}
+function onOverlayDragOver(e: DragEvent) {
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  if (dropHideTimer) { clearTimeout(dropHideTimer); dropHideTimer = null }
+}
+// dragleave also fires when moving between the overlay's own children, so
+// wait a moment for a following dragover before taking the overlay down.
+function onOverlayDragLeave() {
+  if (dropHideTimer) clearTimeout(dropHideTimer)
+  dropHideTimer = setTimeout(() => { dropActive.value = false }, 120)
+}
+function onStreamDrop(e: DragEvent) {
+  dropActive.value = false
+  if (!ws.value) return
+  const { files, folders } = filesFromDrop(e.dataTransfer)
+  if (folders) ui.toast(`Skipped ${folders} folder${folders === 1 ? '' : 's'} — drop the files inside instead`, 'info')
+  if (files.length) transfers.enqueue(ws.value.id, dropFolder.value, files, 'stream')
+}
+// A drop that misses the overlay (released over the top bar) must not make
+// the browser navigate to the file.
+function swallowDrop(e: DragEvent) {
+  if (isFileDrag(e)) e.preventDefault()
+  dropActive.value = false
+}
+function endDrag() { dropActive.value = false }
+// Same-origin stream (subpath mode): listen inside the iframe too, so a drag
+// that enters straight over the stream still raises the overlay.
+let frameDoc: Document | null = null
+function hookFrame() {
+  unhookFrame()
+  try {
+    const doc = streamFrame.value?.contentDocument
+    if (!doc) return
+    doc.addEventListener('dragenter', armDrop as EventListener, true)
+    doc.addEventListener('dragover', armDrop as EventListener, true)
+    frameDoc = doc
+  } catch {
+    // Cross-origin (subdomain mode): the page-level listeners are all we get.
+  }
+}
+function unhookFrame() {
+  frameDoc?.removeEventListener('dragenter', armDrop as EventListener, true)
+  frameDoc?.removeEventListener('dragover', armDrop as EventListener, true)
+  frameDoc = null
+}
+watch(streamFrame, el => { if (el) el.addEventListener('load', hookFrame); hookFrame() })
+window.addEventListener('dragenter', armDrop)
+window.addEventListener('dragover', armDrop)
+window.addEventListener('drop', swallowDrop)
+window.addEventListener('dragend', endDrag)
+onUnmounted(() => {
+  window.removeEventListener('dragenter', armDrop)
+  window.removeEventListener('dragover', armDrop)
+  window.removeEventListener('drop', swallowDrop)
+  window.removeEventListener('dragend', endDrag)
+  unhookFrame()
+  if (dropHideTimer) clearTimeout(dropHideTimer)
+})
+// The corner strip says where each dropped file went; failures also toast.
+// Once the last one finishes cleanly, the strip clears itself.
+let stripTimer: ReturnType<typeof setTimeout> | null = null
+const offTransfer = transfers.onFinished(t => {
+  if (!ws.value || t.wsId !== ws.value.id || t.source !== 'stream') return
+  if (t.status === 'error') ui.toast(`${t.name}: ${t.error}`, 'error')
+  if (stripTimer) clearTimeout(stripTimer)
+  const busy = streamTransfers.value.some(x => x.status === 'queued' || x.status === 'uploading')
+  if (!busy) stripTimer = setTimeout(() => ws.value && transfers.clearDone(ws.value.id, 'stream'), 6000)
+})
+onUnmounted(() => { offTransfer(); if (stripTimer) clearTimeout(stripTimer) })
+const sysInfoTitle = computed(() => {
+  const w = ws.value
+  if (!w) return 'System info'
+  const route = w.use_gluetun
+    ? `VPN connected${w.routing_profile_name ? ` (${w.routing_profile_name})` : ''}`
+    : w.use_tailscale
+      ? `Tailscale connected${w.routing_profile_name ? ` (${w.routing_profile_name})` : ''}${w.ts_exit_node ? ` · exit node ${w.ts_exit_node}` : ''}`
+      : 'Direct'
+  return `System info · ${route}`
+})
 const streamUrl = ref<string | null>(null)
 // A same-origin (subpath) stream URL for a node the current user does not own,
 // held back until the admin explicitly accepts the exposure (see loadStreamUrl).
@@ -803,14 +930,27 @@ async function handleStop() {
 .ws-name { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; }
 .ws-name-locked { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; color: var(--text); }
 .ws-icon { width: 16px; height: 16px; border-radius: 3px; object-fit: contain; flex-shrink: 0; }
-.conn-icon { display: inline-flex; align-items: center; flex-shrink: 0; }
-.gauge-btn {
-  background: none; border: none; padding: 2px; cursor: pointer;
-  color: var(--text-muted); transition: color 0.15s;
+.drop-overlay {
+  position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(2px);
+  outline: 2px dashed var(--accent); outline-offset: -14px;
 }
-.gauge-btn:hover { color: var(--accent); }
-.conn-icon.vpn-on { color: var(--green); filter: drop-shadow(0 0 4px rgba(0, 255, 157, 0.5)); }
-.conn-icon.ts-on { color: var(--accent-2); filter: drop-shadow(0 0 4px rgba(255, 0, 170, 0.5)); }
+.drop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px 30px; pointer-events: none;
+  background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); color: var(--accent);
+  box-shadow: var(--glow-sm);
+}
+.drop-card p { margin: 0; color: var(--text); font-size: 14px; }
+.drop-card .drop-sub { color: var(--text-muted); font-size: 12px; font-family: var(--font-mono); }
+.drop-progress { position: absolute; right: 16px; bottom: 16px; z-index: 15; width: min(460px, calc(100% - 32px)); box-shadow: var(--shadow); }
+.sys-btn {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-muted); padding: 3px 7px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.sys-btn:hover { color: var(--accent); border-color: var(--accent); }
+.sys-btn.vpn .route-glyph { color: var(--green); filter: drop-shadow(0 0 4px rgba(0, 255, 157, 0.5)); }
+.sys-btn.ts .route-glyph { color: var(--accent-2); filter: drop-shadow(0 0 4px rgba(255, 0, 170, 0.5)); }
 
 /* Quick-switch dropdown */
 .ws-switcher { position: relative; }
