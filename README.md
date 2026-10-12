@@ -85,7 +85,7 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
 - **Persistent storage** — per-workspace home directories that survive restarts (or go fully ephemeral, wiped on halt).
 
-- **Browser extension** — *Open in Cove* sends any link from your own Chrome-based browser into a disposable Cove browser workspace. Served by your own server from **Preferences → Browser extension**, no store or internet needed.
+- **Browser extension** — *Open in Cove* sends any link from your own Chrome-based browser into a disposable Cove browser workspace. Served by your own server from the **user menu → Browser extension**, no store or internet needed.
 
 ### 🌐 Networking & privacy
 

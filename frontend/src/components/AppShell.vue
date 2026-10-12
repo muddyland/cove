@@ -71,6 +71,15 @@
               <RouterLink to="/app/preferences" class="user-menu-item">
                 <SlidersHorizontal class="nav-icon" :size="15" /> Preferences
               </RouterLink>
+              <!-- Only when this deployment ships the extension (a build may omit it). -->
+              <button
+                v-if="extension.available"
+                type="button"
+                class="user-menu-item"
+                @click="userOpen = false; extensionOpen = true"
+              >
+                <Puzzle class="nav-icon" :size="15" /> Browser extension
+              </button>
               <button type="button" class="user-menu-item danger" @click="handleLogout">
                 <LogOut class="nav-icon" :size="15" /> Sign out
               </button>
@@ -89,6 +98,8 @@
     </main>
 
     <DocsModal v-model="docsOpen" />
+
+    <ExtensionModal v-model="extensionOpen" :info="extension" />
   </div>
 </template>
 
@@ -98,10 +109,13 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import DocsModal from '@/components/DocsModal.vue'
 import TasksMenu from '@/components/TasksMenu.vue'
+import ExtensionModal from '@/components/ExtensionModal.vue'
+import { extensionApi } from '@/api/extension'
+import type { ExtensionInfo } from '@/types'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
   ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle, HardDrive,
-  SlidersHorizontal,
+  SlidersHorizontal, Puzzle,
 } from 'lucide-vue-next'
 
 withDefaults(defineProps<{ wide?: boolean }>(), { wide: false })
@@ -127,6 +141,18 @@ const adminDropdown = ref<HTMLElement | null>(null)
 const userOpen = ref(false)
 const userDropdown = ref<HTMLElement | null>(null)
 const isAdminRoute = computed(() => route.path.startsWith('/app/admin'))
+
+// The "Open in Cove" extension download lives in the user menu. Asked for the
+// first time the menu opens rather than on every page load; a deployment
+// without it (or a failed request) just shows no menu item.
+const extension = ref<ExtensionInfo>({ available: false, version: null, size_bytes: 0, filename: '' })
+const extensionOpen = ref(false)
+let extensionAsked = false
+watch(userOpen, isOpen => {
+  if (!isOpen || extensionAsked) return
+  extensionAsked = true
+  extensionApi.info().then(info => { extension.value = info }).catch(() => { extensionAsked = false })
+})
 
 // Collapse the mobile drawer + dropdowns whenever navigation happens.
 watch(() => route.path, () => { mobileOpen.value = false; adminOpen.value = false; userOpen.value = false })
@@ -379,6 +405,7 @@ async function handleLogout() {
   border-radius: var(--radius-sm);
   text-align: left;
   transition: all 0.15s;
+  white-space: nowrap;
 }
 .user-menu-item:hover { color: var(--text); background: var(--accent-dim); }
 .user-menu-item.danger { color: var(--text-muted); }

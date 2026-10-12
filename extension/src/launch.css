@@ -100,6 +100,10 @@ summary:hover { color: var(--accent); }
 .status.error { color: var(--danger); }
 .status.ok { color: var(--ok); }
 
+/* A display rule would otherwise beat the hidden attribute: "Connecting to
+   Cove…" stayed on screen under the form once it had loaded. */
+[hidden] { display: none !important; }
+#profile-field { margin-top: 10px; }
 .centered { padding: 32px 16px; text-align: center; color: var(--muted); display: flex; flex-direction: column; gap: 14px; }
 
 /* Shown in the collapsed Advanced summary, so a default derived from the

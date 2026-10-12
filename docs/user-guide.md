@@ -192,8 +192,9 @@ start-up options, and the page loads in a container.
 **It is for Chrome-based browsers** — Chrome, Edge, Brave, Vivaldi, Opera, Helium
 and other Chromium forks. There is no Firefox build.
 
-Download it from **Preferences → Browser extension** (your Cove server ships the
-zip, so this works with no internet access), then:
+Download it from the **user menu → Browser extension** (click your account name,
+top right). Your Cove server ships the zip, so this works with no internet
+access. Then:
 
 1. **Unzip it somewhere it can stay** — Chrome loads an unpacked extension from
    that folder every time it starts, so deleting the folder uninstalls it.

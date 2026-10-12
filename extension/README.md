@@ -15,7 +15,7 @@ button to send the current page. A small launcher window asks:
 | | |
 |---|---|
 | **Browser** | Chromium, Brave, Firefox, Edge, Helium, Vivaldi, Opera — whichever browser images are enabled on your server |
-| **Network** | **Direct**, **VPN** (Gluetun), or **Tailscale**. Routes you have not configured are shown disabled, with the reason |
+| **Network** | **Direct**, **VPN** (Gluetun), or **Tailscale**, and which of your saved **profiles** carries it. Routes with no usable profile are shown disabled, with the reason; incomplete profiles are listed with what they lack, and a VPN profile already connected in another workspace says so |
 | **Ephemeral** | **On by default** — nothing is saved and the profile is discarded when the workspace stops |
 | **Discard when stopped** | **On by default** — `docker run --rm` for workspaces: the record is deleted when it halts, so opening links does not fill your grid with cards that can only start blank. Requires ephemeral, and follows it automatically |
 | **Advanced** | Kiosk mode, dark mode, LAN access, custom DNS, Tailscale exit node, GPU, Wayland, and the workspace name. The kiosk and dark options appear only for browsers that honour them — Cove reports that per image, so e.g. Firefox offers kiosk but not dark, and Vivaldi offers neither |
@@ -27,7 +27,7 @@ choices pre-filled.
 ## Install
 
 Not in any store — load it unpacked. Your own Cove server also offers it as a zip
-under **Preferences → Browser extension**, which saves cloning this repo.
+under **your user menu → Browser extension** (top right), which saves cloning this repo.
 
 1. Download the zip from Cove (or clone this repo) and **unzip it somewhere it can
    stay** — Chrome loads an unpacked extension from that folder every time it

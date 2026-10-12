@@ -1,6 +1,6 @@
 #!/bin/bash
 # Refresh the vendored copy of the browser extension that Cove offers for
-# download (Preferences → Browser extension).
+# download (user menu → Browser extension).
 #
 # The extension is developed in its own repo; this copies the files a browser
 # actually loads into extension/, and records which commit they came from. Run it

@@ -2,6 +2,19 @@
 
 ## Unreleased — usability pass
 
+- **The browser extension understands VPN and Tailscale profiles** (Open in
+  Cove 0.2.0). Since profiles landed, the extension still read the removed
+  single-config endpoints, so VPN and Tailscale showed as unavailable in its
+  launcher for everyone. It now lists your profiles under the network choice,
+  disables incomplete ones with the reason, warns when a VPN profile is already
+  connected elsewhere (and pre-selects a free one), sends the chosen profile,
+  and remembers it by name. Against an older Cove it falls back to the single
+  config. Also fixes "Connecting to Cove…" lingering under the loaded form.
+- **The extension download moved to the user menu** (your account name, top
+  right → **Browser extension**), out of Preferences: it is a download, not a
+  setting. It opens the same instructions in a dialog, and the item only shows
+  when this build ships the extension.
+
 - **Several VPN and Tailscale profiles per user.** Preferences now keeps a list
   of **VPN profiles** and **Tailscale profiles** instead of one config each, and
   you pick the profile per workspace when launching or editing it. A VPN profile

@@ -166,8 +166,34 @@ export async function authConfig(baseUrl) {
 export const me = () => request('/api/auth/me');
 export const listImages = () => request('/api/images');
 export const listWorkspaces = () => request('/api/workspaces');
-export const tailscaleConfig = () => request('/api/users/me/tailscale');
-export const gluetunConfig = () => request('/api/users/me/gluetun');
+/**
+ * The account's saved Tailscale / VPN profiles. A Cove from before profiles
+ * existed answers 404 there; fall back to its single config, shaped as a
+ * one-item list, so this extension keeps working against either.
+ */
+export async function tailscaleProfiles() {
+  try {
+    return await request('/api/users/me/tailscale-profiles');
+  } catch (e) {
+    if (e.status !== 404) throw e;
+    const c = await request('/api/users/me/tailscale');
+    return legacyProfile(c.has_auth_key ? null : 'no auth key', 'Tailscale');
+  }
+}
+export async function vpnProfiles() {
+  try {
+    return await request('/api/users/me/vpn-profiles');
+  } catch (e) {
+    if (e.status !== 404) throw e;
+    const c = await request('/api/users/me/gluetun');
+    return legacyProfile(c.enabled && c.has_config ? null : 'no config uploaded', 'VPN');
+  }
+}
+// id null = "the account's own config": the payload then omits the profile id,
+// which is exactly what an older Cove expects.
+function legacyProfile(problem, name) {
+  return [{ id: null, name, problem, used_by: [], active_in: null, legacy: true }];
+}
 export const createWorkspace = (payload) => request('/api/workspaces', { method: 'POST', body: payload });
 
 /** Where the SPA serves a single workspace's stream. */
