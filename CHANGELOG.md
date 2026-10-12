@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — usability pass
+## 1.3.0 — VPN profiles, in-stream files and a usability pass
 
 - **System info on the stream page.** The separate VPN and Tailscale indicators
   and the CPU/memory gauge are now one **System info** button (it keeps a green
@@ -102,6 +102,29 @@
 - **Fonts are bundled** (Orbitron, Share Tech Mono via fontsource) instead of
   loaded from Google Fonts, so the UI looks right on networks without internet and
   no longer contacts Google on every page load. The CSP drops the Google hosts.
+
+### Security and maintenance
+
+- **python-jose is replaced by PyJWT.** python-jose 3.5.0 lets a DER-encoded
+  public key slip past its algorithm-confusion guard (CVE-2024-33663, 9.1) and
+  has no fixed release. PyJWT 2.15.1 is a drop-in for what Cove uses; OIDC still
+  accepts only the asymmetric allowlist, and app tokens keep HS256 and the same
+  claims, so sessions issued before the upgrade stay valid.
+- **Frontend dependencies:** Vue 3.5.43 (the `@vue/server-renderer` attribute
+  XSS, GHSA-g2v6-rqmx-r4w6 — only reachable in the tests, since Cove is a
+  client-rendered SPA), source-map-js 1.2.2, brace-expansion 2.1.7 / 5.0.12 and
+  fast-uri 3.1.8. All build-time or dev-only.
+- **Python 3.14.** The image, CI and ruff target move from 3.12. The image can
+  also be built on a Docker Hardened Image (no shell, no package manager): layer
+  `docker-compose.dhi.yml` onto a stack, or set `USE_DHI=true` in CI. Slim stays
+  the default. The runtime stage runs no commands now, the app starts as
+  `python -m uvicorn` and runs as root explicitly. The image build honours
+  `PIP_INDEX_URL` and `NPM_CONFIG_REGISTRY`.
+- **CI:** Docker client and dind on 29.8.2 (builds pass `--provenance=false
+  --sbom=false` so the registry gets a single manifest), and job and base images
+  come straight from Docker Hub. The backend suite runs in about 3½ minutes
+  instead of 10 and no longer prints warnings (uvicorn 0.54.0, httpx2 for the
+  test client).
 
 ## 1.2.0 — apps, browsers and provider-generic SSO
 

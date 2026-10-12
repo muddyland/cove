@@ -90,7 +90,7 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 ### 🌐 Networking & privacy
 
 - **Per-user Tailscale routing** — opt a workspace into a per-workspace [Tailscale](https://tailscale.com/) sidecar using your own preauth key, with exit-node selection, accept-routes/DNS, and a custom control server.
-- **Per-user VPN via Gluetun** — route a workspace's egress through a per-workspace [Gluetun](https://github.com/qdm12/gluetun) sidecar. Upload an OpenVPN/WireGuard config (stored encrypted), optionally override the WireGuard key or OpenVPN credentials; one active VPN at a time.
+- **Per-user VPN via Gluetun** — route a workspace's egress through a per-workspace [Gluetun](https://github.com/qdm12/gluetun) sidecar. Keep several VPN profiles, each from an uploaded OpenVPN/WireGuard config or one of Gluetun's built-in providers (credentials stored encrypted), and pick one per workspace; each profile is connected to one workspace at a time.
 - **Custom DNS** — point a (non-VPN) workspace at public resolvers (e.g. `1.1.1.1`, `9.9.9.9`) instead of local DNS.
 - **Egress policy** — workspaces are WAN-only by default. Docker-internal and cloud-metadata ranges are *always* blocked (so workspaces can never reach the Cove backend, the socket proxy, or each other); admins can allow specific LAN subnets that a workspace opts into per launch. Tailscale workspaces keep tailnet/subnet/exit-node access while raw-bridge egress stays firewalled.
 - **Optional subdomain isolation** — set `COVE_WORKSPACE_DOMAIN` to stream each workspace from its own origin (`{id}.domain`) so it can't reach the SPA's token; unset falls back to subpath routing.
