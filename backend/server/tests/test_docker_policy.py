@@ -52,6 +52,14 @@ def test_policy_allows_hardening_cap_set():
     assert check_create_policy(body) is None
 
 
+def test_policy_allows_gpu_render_node():
+    """What launch_workspace sends for a GPU workspace (docker-py's parse of
+    "node:node" → CgroupPermissions rwm)."""
+    dev = {"PathOnHost": "/dev/dri/renderD129", "PathInContainer": "/dev/dri/renderD129",
+           "CgroupPermissions": "rwm"}
+    assert check_create_policy(_create(Devices=[dev], GroupAdd=["992"])) is None
+
+
 def test_policy_allows_cove_container_network():
     assert check_create_policy(_create(NetworkMode="container:cove-ts-5")) is None
 
@@ -65,6 +73,11 @@ def test_policy_allows_cove_container_network():
     ({"NetworkMode": "container:something-else"}, "network_mode"),
     ({"CapAdd": ["SYS_ADMIN"]}, "capability"),
     ({"Devices": [{"PathOnHost": "/dev/sda"}]}, "device"),
+    ({"Devices": [{"PathOnHost": "/dev/dri/card0"}]}, "device"),
+    ({"Devices": [{"PathOnHost": "/dev/dri/renderD128/../card0"}]}, "device"),
+    ({"Devices": [{"PathOnHost": "/dev/dri/renderD128",
+                   "PathInContainer": "/dev/net/tun"}]}, "keep its path"),
+    ({"Devices": ["/dev/dri/renderD128"]}, "not an object"),
     ({"Binds": ["/etc:/etc"]}, "outside"),
     ({"Binds": ["/var/run/docker.sock:/var/run/docker.sock"]}, "outside"),
     ({"Mounts": [{"Type": "bind", "Source": "/root", "Target": "/root"}]}, "outside"),

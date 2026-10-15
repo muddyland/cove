@@ -10,7 +10,12 @@
   the Files browser, app installs and Tailscale status misbehaved on zones too.
   Execs now start as plain HTTP requests, which any proxy relays (control-plane
   change only; agents need no update).
-
+- **GPU workspaces launch on remote zones.** The zone agent's Docker policy only
+  allowed the TUN device, so a GPU workspace failed with *"blocked by Cove agent
+  policy: device /dev/dri/renderD128 is not allowed"*. It now also allows DRI
+  render nodes (`/dev/dri/renderD<N>`, same path in the container); card/primary
+  nodes and every other device stay blocked. Update each zone's agent
+  (Administration → Zones → Update agent) to pick it up.
 - **Zones connect again on Python 3.14.** Since the image moved to Python 3.14,
   the control plane's TLS clients verify with `VERIFY_X509_STRICT`, which
   rejects certs without key identifiers, so every zone showed unreachable
