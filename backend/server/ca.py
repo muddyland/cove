@@ -45,6 +45,7 @@ def _generate_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
         .not_valid_before(_now() - datetime.timedelta(days=1))
         .not_valid_after(_now() + datetime.timedelta(days=_CA_VALID_DAYS))
         .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
         .add_extension(
             x509.KeyUsage(
                 digital_signature=True,
@@ -64,6 +65,42 @@ def _generate_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
     return cert, key
 
 
+def _has_ext(cert: x509.Certificate, ext_type) -> bool:
+    try:
+        cert.extensions.get_extension_for_class(ext_type)
+        return True
+    except x509.ExtensionNotFound:
+        return False
+
+
+def _resign_ca_with_ski(cert: x509.Certificate, key: rsa.RSAPrivateKey) -> x509.Certificate:
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(cert.subject)
+        .issuer_name(cert.issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(cert.not_valid_before_utc)
+        .not_valid_after(cert.not_valid_after_utc)
+    )
+    for ext in cert.extensions:
+        builder = builder.add_extension(ext.value, critical=ext.critical)
+    builder = builder.add_extension(
+        x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
+    )
+    return builder.sign(key, hashes.SHA256())
+
+
+def _leaf_key_ids(builder: x509.CertificateBuilder, public_key, ca_cert: x509.Certificate):
+    """Add SKI/AKI to a leaf. Python 3.13+ verifies with VERIFY_X509_STRICT by
+    default, which rejects a CA-issued cert without an Authority Key Identifier."""
+    return builder.add_extension(
+        x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False
+    ).add_extension(
+        x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()), critical=False
+    )
+
+
 def get_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
     """Load the CA cert+key, generating and persisting them on first use.
 
@@ -76,9 +113,23 @@ def get_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
     if cert_path.exists() and key_path.exists():
         cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
         key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+        if not _has_ext(cert, x509.SubjectKeyIdentifier):
+            # CAs made before 1.3.1 lack a Subject Key Identifier. Re-sign the same
+            # key and subject with one, so leaves still chain to copies of the old
+            # cert that agents and zone rows hold.
+            cert = _resign_ca_with_ski(cert, key)
+            _write_ca(cert, key)
         return cert, key
 
     cert, key = _generate_ca()
+    _write_ca(cert, key)
+    return cert, key
+
+
+def _write_ca(cert: x509.Certificate, key: rsa.RSAPrivateKey) -> None:
+    settings = get_settings()
+    cert_path = settings.ca_cert_file
+    key_path = settings.ca_key_file
     cert_path.parent.mkdir(parents=True, exist_ok=True)
     key_path.write_bytes(
         key.private_bytes(
@@ -90,7 +141,6 @@ def get_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
     os.chmod(key_path, 0o600)
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     os.chmod(cert_path, 0o644)
-    return cert, key
 
 
 def ca_cert_pem() -> str:
@@ -138,6 +188,7 @@ def issue_cert(
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(x509.ExtendedKeyUsage([eku]), critical=False)
     )
+    builder = _leaf_key_ids(builder, key.public_key(), ca_cert)
     san = _san(dns_names, ip_addresses)
     if san is not None:
         builder = builder.add_extension(san, critical=False)
@@ -185,6 +236,7 @@ def sign_csr(
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(x509.ExtendedKeyUsage([eku]), critical=False)
     )
+    builder = _leaf_key_ids(builder, csr.public_key(), ca_cert)
     san = _san(dns_names, ip_addresses)
     if san is not None:
         builder = builder.add_extension(san, critical=False)
