@@ -1618,21 +1618,12 @@ class DockerManager:
             return cached
         if not render_node.startswith("/dev/"):
             return None  # unusual path; leave it to the configured GID
-        # Bind /dev read-only so we can stat the node even when it's absent (a
-        # non-existent --device mount can't be created; a /dev bind can).
-        inside = "/hostdev" + render_node[len("/dev"):]
-        script = f'if [ -e "{inside}" ]; then stat -c "%g" "{inside}"; else echo MISSING; fi'
         try:
             self._pull_image(EGRESS_GUARD_IMAGE)
-            out = self._client.containers.run(
-                EGRESS_GUARD_IMAGE,
-                entrypoint="/bin/sh",
-                command=["-c", script],
-                volumes={"/dev": {"bind": "/hostdev", "mode": "ro"}},
-                network_mode="none",
-                remove=True,
-                detach=False,
-            )
+            if self.zone_id == 0:
+                out = self._probe_render_node_via_dev_bind(render_node)
+            else:
+                out = self._probe_render_node_via_device(render_node)
         except Exception as exc:
             logger.warning("Render-node probe failed for %s (zone %s): %s", render_node, self.zone_id, exc)
             return None
@@ -1649,6 +1640,54 @@ class DockerManager:
             return None
         self._render_gid_cache[render_node] = result
         return result
+
+    def _probe_render_node_via_dev_bind(self, render_node: str) -> "bytes | str":
+        """Local daemon: bind /dev read-only so the node can be stat'ed even when
+        it's absent (a non-existent --device mapping can't be created; a /dev
+        bind can)."""
+        inside = "/hostdev" + render_node[len("/dev"):]
+        script = f'if [ -e "{inside}" ]; then stat -c "%g" "{inside}"; else echo MISSING; fi'
+        return self._client.containers.run(
+            EGRESS_GUARD_IMAGE,
+            entrypoint="/bin/sh",
+            command=["-c", script],
+            volumes={"/dev": {"bind": "/hostdev", "mode": "ro"}},
+            network_mode="none",
+            remove=True,
+            detach=False,
+        )
+
+    def _probe_render_node_via_device(self, render_node: str) -> "bytes | str":
+        """Remote zone: the agent policy refuses a /dev bind (it's outside the
+        storage root), but allows mapping a DRI render node at its own path, the
+        same way the GPU launch does. The daemon creates the node in the
+        container with the host's owner and group, so stat'ing it there reads the
+        host GID. A node missing on the host makes the start fail with "no such
+        file or directory", which is reported as MISSING."""
+        container = self._client.containers.create(
+            EGRESS_GUARD_IMAGE,
+            entrypoint="/bin/sh",
+            command=["-c", f'stat -c "%g" "{render_node}"'],
+            devices=[f"{render_node}:{render_node}:r"],
+            network_mode="none",
+        )
+        try:
+            try:
+                container.start()
+            except docker.errors.APIError as exc:
+                if "no such file or directory" in str(exc).lower():
+                    return "MISSING"
+                raise
+            result = container.wait(timeout=60)
+            out = container.logs(stdout=True, stderr=False)
+            if (result or {}).get("StatusCode") != 0:
+                raise RuntimeError(f"probe exited {result}: {out!r}")
+            return out
+        finally:
+            try:
+                container.remove(force=True)
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
 
     def launch_workspace(self, ws_id: int) -> None:
         db = self._get_db()
