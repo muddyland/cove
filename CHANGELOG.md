@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Zones connect again on Python 3.14.** Since the image moved to Python 3.14,
+  the control plane's TLS clients verify with `VERIFY_X509_STRICT`, which
+  rejects certs without key identifiers, so every zone showed unreachable
+  (`certificate verify failed: Missing Authority Key Identifier`). The zone CA
+  now gets a Subject Key Identifier (an existing CA is re-signed in place with
+  the same key) and every leaf carries Subject and Authority Key Identifiers.
+  **Re-enroll each existing zone once** after upgrading: its agent server cert
+  and stored CA copy were issued without them.
+
 ## 1.3.0 — VPN profiles, in-stream files and a usability pass
 
 - **System info on the stream page.** The separate VPN and Tailscale indicators

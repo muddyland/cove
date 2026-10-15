@@ -130,9 +130,10 @@ def test_mtls_handshake_end_to_end(ca_settings, tmp_path):
     sctx.load_verify_locations(paths["ca.crt"])
     sctx.verify_mode = ssl.CERT_REQUIRED  # require a client cert (mutual)
 
-    cctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    # The default context, as requests/urllib3 (docker-py) and httpx build it:
+    # on Python 3.13+ it verifies with VERIFY_X509_STRICT.
+    cctx = ssl.create_default_context(cafile=paths["ca.crt"])
     cctx.load_cert_chain(paths["c.crt"], paths["c.key"])
-    cctx.load_verify_locations(paths["ca.crt"])
 
     lsock = socket.socket()
     lsock.bind(("127.0.0.1", 0))
@@ -162,6 +163,78 @@ def test_mtls_handshake_end_to_end(ca_settings, tmp_path):
     assert result.get("error") is None, result.get("error")
     assert data == b"ok"
     assert result.get("client_cert_seen") is True
+
+
+def _ski(cert):
+    return cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+
+
+def test_leaves_carry_key_identifiers(ca_settings):
+    """Strict X.509 verification (Python 3.13+ default) rejects a CA-issued
+    leaf with no Authority Key Identifier, so every leaf needs one."""
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    ca_cert, _ = ca.get_ca()
+    issued, _ = ca.issue_cert("zone-1", is_server=True, ip_addresses=["10.0.0.5"])
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "x")]))
+        .sign(key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+        .decode()
+    )
+    signed = ca.sign_csr(csr, "zone-1", is_server=True, ip_addresses=["10.0.0.5"])
+    for pem in (issued, signed):
+        leaf = x509.load_pem_x509_certificate(pem.encode())
+        aki = leaf.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value
+        assert aki.key_identifier == _ski(ca_cert)
+        _ski(leaf)
+
+
+def test_legacy_ca_gains_ski_with_same_key(ca_settings):
+    """A CA written before key identifiers is re-signed in place: same key and
+    subject (so existing trust still holds), now with a Subject Key Identifier."""
+    import datetime
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Cove Zone CA")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    old = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=30))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    ca_settings.ca_cert_file.parent.mkdir(parents=True)
+    ca_settings.ca_key_file.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    ca_settings.ca_cert_file.write_bytes(old.public_bytes(serialization.Encoding.PEM))
+
+    cert, loaded_key = ca.get_ca()
+    assert cert.public_key() == key.public_key()
+    assert cert.subject == old.subject
+    assert cert.not_valid_after_utc == old.not_valid_after_utc
+    assert _ski(cert)
+    # Persisted, so the next load doesn't re-sign again.
+    again, _ = ca.get_ca()
+    assert again.serial_number == cert.serial_number
 
 
 def test_zone_has_mtls():
