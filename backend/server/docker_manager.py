@@ -17,6 +17,7 @@ import docker.tls
 
 from server.config import get_settings
 from server.db import SessionLocal
+from server.docker_exec import proxy_safe
 from server.models import TailscaleProfile, VpnProfile, Workspace, WorkspaceImage, Zone
 from server.preview import capture as capture_preview_frame
 from server.preview import is_connectable
@@ -926,9 +927,12 @@ class DockerManager:
         # daemon rejects). Falls back to default behavior when unset.
         api_version = os.environ.get("DOCKER_API_VERSION")
         if zone_id == 0:
-            self._client = docker.from_env(version=api_version) if api_version else docker.from_env()
+            client = docker.from_env(version=api_version) if api_version else docker.from_env()
         else:
-            self._client = self._build_zone_client(zone_id, api_version)
+            client = self._build_zone_client(zone_id, api_version)
+        # Execs as plain HTTP: a zone's Docker API sits behind the agent's
+        # reverse proxy, which can't carry docker-py's upgraded exec socket.
+        self._client = proxy_safe(client)
         self._lock = Lock()
         # Image refs with a manual pull currently in flight (for the Images UI).
         self._pulling: set[str] = set()

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Remote-zone workspaces come up promptly and show previews.** Every Docker
+  exec on a zone went through the agent's reverse proxy, which can't carry
+  docker-py's upgraded exec socket, so exec output came back empty or garbled.
+  Workspaces sat on *Starting container…* while the first-frame capture timed
+  out, then on *Waiting for the first frame…* until the 90-second fallback, and
+  the Files browser, app installs and Tailscale status misbehaved on zones too.
+  Execs now start as plain HTTP requests, which any proxy relays (control-plane
+  change only; agents need no update).
+
 - **Zones connect again on Python 3.14.** Since the image moved to Python 3.14,
   the control plane's TLS clients verify with `VERIFY_X509_STRICT`, which
   rejects certs without key identifiers, so every zone showed unreachable
