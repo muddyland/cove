@@ -18,6 +18,7 @@ gains a new primitive.
 """
 
 import json
+import re
 from pathlib import Path
 
 from server.config import get_settings
@@ -33,8 +34,12 @@ _ALLOWED_CAPS = {
     # The egress guard + Tailscale/Gluetun sidecars.
     "NET_ADMIN", "NET_RAW",
 }
-# Devices Cove maps: the VPN sidecars need the TUN device. Nothing else.
+# Devices Cove maps: the VPN sidecars need the TUN device, and GPU workspaces a
+# DRI *render* node (VAAPI encode/compute only; the card*/primary nodes, which
+# allow modesetting, stay blocked). Each must keep its own path inside the
+# container.
 _ALLOWED_DEVICES = {"/dev/net/tun"}
+_RENDER_NODE_RE = re.compile(r"/dev/dri/renderD[0-9]{1,4}")
 
 # HostConfig keys Cove's launch flow (and docker-py's defaults) produce. Anything
 # else is rejected outright — that is what closes VolumesFrom, DeviceCgroupRules,
@@ -187,9 +192,9 @@ def check_create_policy(body: bytes) -> str | None:
             return f"capability {cap} is not allowed"
 
     for dev in hc.get("devices") or []:
-        path = dev.get("pathonhost") if isinstance(dev, dict) else None
-        if path not in _ALLOWED_DEVICES:
-            return f"device {path} is not allowed"
+        reason = _device_reason(dev)
+        if reason:
+            return reason
 
     for opt in hc.get("securityopt") or []:
         if str(opt) not in ("no-new-privileges", "no-new-privileges:true"):
@@ -228,6 +233,24 @@ def check_create_policy(body: bytes) -> str | None:
         else:
             return f"mount type {mtype!r} is not allowed"
 
+    return None
+
+
+def _device_reason(dev) -> str | None:
+    if not isinstance(dev, dict):
+        return "device entry is not an object"
+    d = {str(k).lower(): v for k, v in dev.items()}
+    path = d.get("pathonhost")
+    if not isinstance(path, str) or not (
+        path in _ALLOWED_DEVICES or _RENDER_NODE_RE.fullmatch(path)
+    ):
+        return f"device {path} is not allowed"
+    inside = d.get("pathincontainer") or path
+    if inside != path:
+        return f"device {path} must keep its path in the container"
+    perms = d.get("cgrouppermissions") or ""
+    if not isinstance(perms, str) or set(perms) - set("rwm"):
+        return f"device permissions {perms!r} are not allowed"
     return None
 
 
