@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **GPU workspaces on remote zones use the render node's real group.** Before a
+  GPU launch Cove checks which group owns the render node, so the workspace
+  user can open it. On zones that check bound the host's `/dev`, which the
+  agent policy refuses, so Cove silently fell back to the GID in Admin →
+  Settings, and a wrong value there meant a stuttering, software-encoded
+  stream. On zones the check now maps just the render node (which the agent
+  allows) and reads its group; a missing node now fails the launch with a clear
+  message there too. Uses the render-node policy below, so zones need that
+  agent update.
 - **Remote-zone workspaces come up promptly and show previews.** Every Docker
   exec on a zone went through the agent's reverse proxy, which can't carry
   docker-py's upgraded exec socket, so exec output came back empty or garbled.
