@@ -81,14 +81,27 @@ async def _container_name(
 
 
 async def _policy_reason(
-    client: httpx.AsyncClient, upstream_base: str, method: str, path: str, body: bytes
+    client: httpx.AsyncClient,
+    upstream_base: str,
+    method: str,
+    path: str,
+    body: bytes,
+    params=None,
 ) -> str | None:
     """Apply the agent policy to one request; return a rejection reason or None."""
     p = _unversioned(path)
     m = _VERSION_RE.match(path)
     version = m.group(0) if m else ""
+    allow_dind = get_settings().agent_allow_dind
     if method == "POST" and p == "/containers/create":
-        return docker_policy.check_create_policy(body)
+        # The daemon takes the container name from the query string; read it
+        # the same way (a repeated ``name`` is refused rather than guessed).
+        names = params.getlist("name") if params is not None else []
+        if len(names) > 1:
+            return "duplicate name parameter"
+        return docker_policy.check_create_policy(
+            body, name=names[0] if names else None, allow_dind=allow_dind
+        )
     if method == "POST" and p == "/volumes/create":
         return docker_policy.check_volume_create_policy(body)
     if method == "POST" and p == "/networks/create":
@@ -106,7 +119,9 @@ async def _policy_reason(
             if not name:
                 return f"container {ref!r} not found"
             if op == "exec" and method == "POST":
-                return docker_policy.check_exec_policy(name, body, _recreate_cmd())
+                return docker_policy.check_exec_policy(
+                    name, body, _recreate_cmd(), allow_dind=allow_dind
+                )
             if op == "archive":
                 return docker_policy.check_archive_policy(name)
     return None
@@ -133,7 +148,9 @@ def register_docker_proxy(app: FastAPI) -> None:
             content = request.stream()
         else:
             body = await request.body()
-            reason = await _policy_reason(client, upstream_base, request.method, path, body)
+            reason = await _policy_reason(
+                client, upstream_base, request.method, path, body, request.query_params
+            )
             if reason:
                 await client.aclose()
                 return JSONResponse(

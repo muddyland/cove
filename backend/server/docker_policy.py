@@ -80,6 +80,11 @@ _EXEC_TARGET_PREFIXES = ("cove-ws-", "cove-ts-", "cove-gluetun-")
 UPDATER_CONTAINER = "cove-agent-updater"
 # Containers the central Traefik is connected to per-workspace networks as.
 _CONNECT_ALLOWED = ("cove-traefik",)
+# The per-workspace Docker-in-Docker sidecar: the ONLY privileged container Cove
+# creates, and only on a zone whose host opted in (COVE_AGENT_ALLOW_DIND). Its
+# name is fixed (``cove-dind-<workspace id>``) and it must join a workspace's
+# (egress-guarded) netns, as DockerManager._launch_dind_sidecar builds it.
+_DIND_NAME_RE = re.compile(r"cove-dind-[0-9]{1,12}")
 
 # Sysctls Cove sets (none today) — reject everything so a caller can't flip
 # ``kernel.*`` or ``net.ipv4.ip_forward`` on the host's namespaces.
@@ -149,8 +154,27 @@ def _netns_owner_ok(mode: str) -> bool:
     return target.startswith(_NETNS_OWNER_PREFIXES)
 
 
-def check_create_policy(body: bytes) -> str | None:
+def _dind_sidecar_reason(name: str | None, hc: dict) -> str | None:
+    """A privileged create is allowed only in the exact DinD sidecar shape."""
+    if not name or not _DIND_NAME_RE.fullmatch(name):
+        return "privileged containers are allowed only for the Docker-in-Docker sidecar"
+    nm = hc.get("networkmode")
+    if not isinstance(nm, str) or not nm.startswith("container:") or not _netns_owner_ok(nm):
+        return "the Docker-in-Docker sidecar must join a workspace's network namespace"
+    if hc.get("devices") or hc.get("capadd") or hc.get("securityopt"):
+        return "the Docker-in-Docker sidecar takes no devices, capabilities or security options"
+    return None
+
+
+def check_create_policy(
+    body: bytes, name: str | None = None, allow_dind: bool = False
+) -> str | None:
     """Return a violation reason, or None if the create request is allowed.
+
+    ``name`` is the requested container name (the ``name`` query parameter);
+    ``allow_dind`` is this agent's host-side opt-in (COVE_AGENT_ALLOW_DIND).
+    With it, exactly one privileged shape is accepted: the per-workspace DinD
+    sidecar. Everything else about the body is checked the same way.
 
     Conservative: an unparseable or unexpectedly-shaped body is rejected."""
     cfg = _load(body)
@@ -165,7 +189,11 @@ def check_create_policy(body: bytes) -> str | None:
             return f"HostConfig.{key} is not allowed"
 
     if hc.get("privileged"):
-        return "privileged containers are not allowed"
+        if not allow_dind:
+            return "privileged containers are not allowed"
+        reason = _dind_sidecar_reason(name, hc)
+        if reason:
+            return reason
 
     for key, display in _NS_KEYS.items():
         v = hc.get(key)
@@ -301,9 +329,13 @@ def check_network_connect_policy(body: bytes) -> str | None:
     return f"connecting {name!r} to a workspace network is not allowed"
 
 
-def check_exec_policy(container_name: str, body: bytes, recreate_cmd: list[str]) -> str | None:
+def check_exec_policy(
+    container_name: str, body: bytes, recreate_cmd: list[str], allow_dind: bool = False
+) -> str | None:
     """``POST /containers/{id}/exec``: unprivileged exec into a workspace or its
-    routing sidecar, or the single fixed agent-recreate command in the updater."""
+    routing sidecar, or the single fixed agent-recreate command in the updater.
+    With the host's DinD opt-in, also into the DinD sidecar (Cove installs the
+    nested daemon's egress guard from inside it)."""
     cfg = _load(body)
     if isinstance(cfg, str):
         return cfg
@@ -312,6 +344,8 @@ def check_exec_policy(container_name: str, body: bytes, recreate_cmd: list[str])
     if container_name == UPDATER_CONTAINER:
         if cfg.get("cmd") != recreate_cmd:
             return "only the agent-recreate command may run in the updater"
+        return None
+    if allow_dind and _DIND_NAME_RE.fullmatch(container_name):
         return None
     if not container_name.startswith(_EXEC_TARGET_PREFIXES):
         return f"exec into {container_name!r} is not allowed"

@@ -169,7 +169,7 @@
     <section v-else-if="step === 'apps'" class="wizard-step form">
       <AppsFields
         :form="form"
-        :docker-enabled="dockerPolicy.enabled && form.zone_id === 0"
+        :docker-enabled="dockerPolicy.enabled"
         :pkg-error="pkgErr"
         :app-image-error="appImageErr"
         :launchers="launchersAvailable"
@@ -400,6 +400,23 @@ async function loadAvailability() {
   }
 }
 watch(() => form.zone_id, loadAvailability)
+
+// GPU and Docker-in-Docker are per zone (each host has its own GPU, and DinD
+// is opted in zone by zone). A choice the new zone doesn't offer is cleared:
+// a hidden-but-set flag would fail the launch over a control the user can't see.
+async function loadZonePolicies() {
+  const zoneId = form.zone_id
+  const [gpu, docker] = await Promise.all([
+    workspacesApi.gpuPolicy(zoneId).catch(() => ({ enabled: false })),
+    workspacesApi.dockerPolicy(zoneId).catch(() => ({ enabled: false })),
+  ])
+  if (zoneId !== form.zone_id) return // the user picked another zone meanwhile
+  gpuPolicy.value = gpu
+  dockerPolicy.value = docker
+  if (!gpu.enabled) form.gpu_accel = false
+  if (!docker.enabled) form.use_docker = false
+}
+watch(() => form.zone_id, loadZonePolicies)
 watch(open, (o) => { if (o) loadAvailability() })
 const selectedAvailability = computed(() =>
   typeof form.image_id === 'number' ? availability.value[form.image_id] : undefined,
@@ -490,16 +507,7 @@ onMounted(async () => {
   } catch {
     // Non-fatal: the LAN checkbox just stays hidden if the policy can't load.
   }
-  try {
-    gpuPolicy.value = await workspacesApi.gpuPolicy()
-  } catch {
-    // Non-fatal: the GPU checkbox just stays hidden if the policy can't load.
-  }
-  try {
-    dockerPolicy.value = await workspacesApi.dockerPolicy()
-  } catch {
-    // Non-fatal: the Docker checkbox just stays hidden if the policy can't load.
-  }
+  await loadZonePolicies()
   // Non-fatal: without profiles the Tailscale / VPN segments stay disabled.
   usersApi.listVpnProfiles().then(v => { vpnProfiles.value = v }).catch(() => {})
   usersApi.listTailscaleProfiles().then(t => { tsProfiles.value = t }).catch(() => {})

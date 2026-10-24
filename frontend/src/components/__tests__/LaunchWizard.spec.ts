@@ -276,3 +276,36 @@ describe('LaunchWizard', () => {
     expect(wrapper.text()).toContain('ignores start-up window flags')
   })
 })
+describe('LaunchWizard: GPU and Docker per zone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+    vi.mocked(imagesApi.list).mockResolvedValue([desktopImage])
+    vi.mocked(prootApi.list).mockResolvedValue({ apps: [] })
+    vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
+    // Local offers both; zone 3 offers neither.
+    vi.mocked(workspacesApi.gpuPolicy).mockImplementation(async (z = 0) => ({ enabled: z === 0 }))
+    vi.mocked(workspacesApi.dockerPolicy).mockImplementation(async (z = 0) => ({ enabled: z === 0 }))
+    launchMock.mockResolvedValue({ id: 99 })
+  })
+
+  it('re-reads the policies for the chosen zone and drops choices it lacks', async () => {
+    const wrapper = mount(LaunchWizard, { props: { modelValue: true } })
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      form: { zone_id: number; use_docker: boolean; gpu_accel: boolean }
+      dockerPolicy: { enabled: boolean }
+    }
+    expect(vm.dockerPolicy.enabled).toBe(true)
+    vm.form.use_docker = true
+    vm.form.gpu_accel = true
+
+    vm.form.zone_id = 3
+    await flushPromises()
+    expect(workspacesApi.dockerPolicy).toHaveBeenLastCalledWith(3)
+    expect(workspacesApi.gpuPolicy).toHaveBeenLastCalledWith(3)
+    expect(vm.dockerPolicy.enabled).toBe(false)
+    expect(vm.form.use_docker).toBe(false)
+    expect(vm.form.gpu_accel).toBe(false)
+  })
+})

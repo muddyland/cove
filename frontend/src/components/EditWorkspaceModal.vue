@@ -41,7 +41,7 @@
       <div class="section-head">Access</div>
       <AccessFields
         :form="form"
-        :gpu-enabled="gpuPolicy.enabled"
+        :gpu-enabled="gpuPolicy.enabled || ws.gpu_accel"
         :show-browser-lock="urlCapable"
         :permissions="!urlCapable"
       />
@@ -50,11 +50,16 @@
         <div class="section-head">Apps</div>
         <AppsFields
           :form="form"
-          :docker-enabled="dockerPolicy.enabled && ws.zone_id === 0"
+          :docker-enabled="dockerPolicy.enabled || ws.use_docker"
           :pkg-error="pkgErr"
           :app-image-error="appImageErr"
           :launchers="launchersAvailable"
         />
+        <p v-if="form.use_docker && !dockerPolicy.enabled" class="apply-note warn">
+          Docker-in-Docker isn't enabled on this workspace's zone, so the nested
+          daemon won't start here. Turn it off, or ask an administrator to enable it
+          for the zone.
+        </p>
       </template>
 
       <p class="apply-note">Changes apply the next time the workspace boots.</p>
@@ -193,12 +198,12 @@ async function loadLanPolicy() {
     // Non-fatal: the LAN checkbox just stays hidden if the policy can't load.
   }
   try {
-    gpuPolicy.value = await workspacesApi.gpuPolicy()
+    gpuPolicy.value = await workspacesApi.gpuPolicy(props.ws.zone_id)
   } catch {
     // Non-fatal: the GPU checkbox just stays hidden if the policy can't load.
   }
   try {
-    dockerPolicy.value = await workspacesApi.dockerPolicy()
+    dockerPolicy.value = await workspacesApi.dockerPolicy(props.ws.zone_id)
   } catch {
     // Non-fatal: the Docker checkbox just stays hidden if the policy can't load.
   }
@@ -296,4 +301,5 @@ async function handleSubmit() {
   font-family: var(--font-mono);
   margin: 0;
 }
+.apply-note.warn { color: var(--amber); }
 </style>

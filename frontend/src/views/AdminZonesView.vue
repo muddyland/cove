@@ -59,6 +59,11 @@
               ><ArrowUpCircle :size="13" /> Update</NeonButton>
               <NeonButton
                 v-if="z.id !== 0"
+                variant="ghost"
+                @click="openSettings(z)"
+              ><SlidersHorizontal :size="13" /> Settings</NeonButton>
+              <NeonButton
+                v-if="z.id !== 0"
                 variant="danger"
                 :disabled="z.workspace_count > 0"
                 :title="z.workspace_count > 0 ? 'Migrate or delete its workspaces first' : ''"
@@ -94,6 +99,62 @@
       <NeonButton variant="ghost" @click="copyCmd"><Copy :size="13" /> Copy</NeonButton>
     </BaseModal>
 
+    <!-- Per-zone GPU + Docker-in-Docker -->
+    <BaseModal v-model="showSettings" :title="`Zone Settings · ${settingsTarget?.name ?? ''}`" width="560px">
+      <form class="form" @submit.prevent="handleSettings">
+        <div class="section-head">GPU acceleration</div>
+        <p class="hint">
+          This zone's host has its own GPU, so its render node and that node's group
+          can differ from the control plane's. Leave a field empty to inherit
+          Administration → Settings.
+        </p>
+        <label>
+          GPU acceleration
+          <select v-model="settingsForm.gpu_accel">
+            <option value="inherit">Inherit ({{ globalSettings?.workspace_gpu_accel ? 'on' : 'off' }})</option>
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <div class="row">
+          <label>
+            Render node
+            <input v-model="settingsForm.gpu_render_node" :placeholder="globalSettings?.workspace_gpu_render_node || '/dev/dri/renderD128'" />
+            <small>The DRI render node on this zone's host.</small>
+          </label>
+          <label>
+            Render group GID
+            <input v-model="settingsForm.gpu_render_gid" type="number" min="0" :placeholder="String(globalSettings?.workspace_gpu_render_gid ?? 992)" />
+            <small>Fallback only: Cove detects the node's real group at launch.</small>
+          </label>
+        </div>
+
+        <div class="section-head">Docker-in-Docker</div>
+        <ToggleRow v-model="settingsForm.docker_enabled" :disabled="!globalSettings?.workspace_docker">
+          Allow Docker-in-Docker on this zone
+          <template #hint>
+            <template v-if="!globalSettings?.workspace_docker">
+              Turn on the Docker-in-Docker master toggle in Administration → Settings first.
+            </template>
+            <template v-else>
+              The nested daemon runs <strong>privileged</strong>: root on this zone's host
+              for whoever holds it. The agent enforces its own opt-in too, so after
+              turning this on, click <strong>Enroll</strong> and re-run the installer on
+              the host.
+            </template>
+          </template>
+        </ToggleRow>
+        <p v-if="settingsTarget && settingsForm.docker_enabled" class="agent-state" :class="agentDindClass">
+          Agent: {{ agentDindText }}
+        </p>
+
+        <div class="form-actions">
+          <NeonButton variant="ghost" type="button" @click="showSettings = false">Cancel</NeonButton>
+          <NeonButton variant="primary" type="submit" :loading="savingSettings">Save</NeonButton>
+        </div>
+      </form>
+    </BaseModal>
+
     <ConfirmModal
       v-model="showConfirm"
       title="Delete Zone"
@@ -116,16 +177,18 @@
 
 <script setup lang="ts">
 import { absoluteTime, relativeTime } from '@/utils/workspaceStatus'
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { CheckCircle2, XCircle, Plus, Trash2, KeyRound, Copy, ArrowUpCircle } from 'lucide-vue-next'
+import ToggleRow from '@/components/ToggleRow.vue'
+import { CheckCircle2, XCircle, Plus, Trash2, KeyRound, Copy, ArrowUpCircle, SlidersHorizontal } from 'lucide-vue-next'
 import { zonesApi } from '@/api/zones'
+import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
-import type { ZoneHealth, Zone } from '@/types'
+import type { AppSettings, ZoneHealth, Zone } from '@/types'
 
 const zones = ref<Zone[]>([])
 const ui = useUiStore()
@@ -214,6 +277,71 @@ async function handleUpdate() {
   }
 }
 
+// --- Per-zone settings ------------------------------------------------------
+const showSettings = ref(false)
+const settingsTarget = ref<Zone | null>(null)
+const savingSettings = ref(false)
+const globalSettings = ref<AppSettings | null>(null)
+const settingsForm = ref({
+  gpu_accel: 'inherit' as 'inherit' | 'on' | 'off',
+  gpu_render_node: '',
+  gpu_render_gid: '' as string | number,
+  docker_enabled: false,
+})
+
+async function openSettings(z: Zone) {
+  settingsTarget.value = z
+  settingsForm.value = {
+    gpu_accel: z.gpu_accel === null ? 'inherit' : z.gpu_accel ? 'on' : 'off',
+    gpu_render_node: z.gpu_render_node ?? '',
+    gpu_render_gid: z.gpu_render_gid ?? '',
+    docker_enabled: z.docker_enabled,
+  }
+  showSettings.value = true
+  try {
+    globalSettings.value = await adminApi.settings.get()
+  } catch {
+    globalSettings.value = null
+  }
+}
+
+// The agent's own DinD opt-in: the zone list reports what was last seen, the
+// live health check refreshes it.
+const agentDind = computed(() => {
+  const z = settingsTarget.value
+  if (!z) return null
+  const live = health.value[z.id]?.agent_dind
+  return live ?? z.agent_allows_docker
+})
+const agentDindText = computed(() =>
+  agentDind.value === true
+    ? 'allows Docker-in-Docker.'
+    : agentDind.value === false
+      ? 'does not allow Docker-in-Docker yet. Click Enroll and re-run the installer on the host.'
+      : 'unknown (the agent is unreachable or predates this setting). Update or re-enroll it.'
+)
+const agentDindClass = computed(() => (agentDind.value === true ? 'ok' : 'bad'))
+
+async function handleSettings() {
+  const z = settingsTarget.value
+  if (!z || savingSettings.value) return
+  savingSettings.value = true
+  const f = settingsForm.value
+  const gid = String(f.gpu_render_gid).trim()
+  try {
+    await zonesApi.update(z.id, {
+      gpu_accel: f.gpu_accel === 'inherit' ? null : f.gpu_accel === 'on',
+      gpu_render_node: f.gpu_render_node.trim() || null,
+      gpu_render_gid: gid === '' ? null : Number(gid),
+      docker_enabled: f.docker_enabled,
+    })
+    showSettings.value = false
+    await load()
+    ui.toast('Zone settings saved', 'success')
+  } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { savingSettings.value = false }
+}
+
 function confirmDelete(z: Zone) { deleteTarget.value = z; showConfirm.value = true }
 async function handleDelete() {
   if (!deleteTarget.value) return
@@ -247,7 +375,16 @@ async function handleDelete() {
 .badge.offline, .badge.error { color: #ff6b6b; border-color: #ff6b6b; }
 .form { display: flex; flex-direction: column; gap: 12px; }
 .form label { display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
-.form input { padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-mono); }
+.form input, .form select { padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-mono); }
+.section-head {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.5px; color: var(--accent);
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.form .hint { margin: 0; }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.agent-state { font-family: var(--font-mono); font-size: 11px; margin: 0; }
+.agent-state.ok { color: var(--green); }
+.agent-state.bad { color: var(--amber); }
 .form small { color: var(--text-muted); font-size: 11px; }
 .row { display: flex; gap: 12px; }
 .row label { flex: 1; }

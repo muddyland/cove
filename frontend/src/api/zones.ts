@@ -7,12 +7,21 @@ export interface ZoneCreatePayload {
   endpoint_port?: number
 }
 
+// Per-zone GPU and Docker-in-Docker settings. null clears a GPU override (the
+// zone inherits the global setting again).
+export interface ZoneSettingsPayload {
+  gpu_accel?: boolean | null
+  gpu_render_node?: string | null
+  gpu_render_gid?: number | null
+  docker_enabled?: boolean
+}
+
 export const zonesApi = {
   list: () => api.get<Zone[]>('/admin/zones'),
   // User-facing: enrolled zones (id + name) for the launch/migrate pickers.
   userList: () => api.get<ZoneOption[]>('/zones'),
   create: (payload: ZoneCreatePayload) => api.post<Zone>('/admin/zones', payload),
-  update: (id: number, payload: Partial<ZoneCreatePayload> & { status?: string }) =>
+  update: (id: number, payload: Partial<ZoneCreatePayload> & ZoneSettingsPayload & { status?: string }) =>
     api.patch<Zone>(`/admin/zones/${id}`, payload),
   remove: (id: number) => api.delete(`/admin/zones/${id}`),
   health: (id: number) => api.get<ZoneHealth>(`/admin/zones/${id}/health`),

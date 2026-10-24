@@ -185,6 +185,11 @@ PORT="__PORT__"
 AGENT_IMAGE="__AGENT_IMAGE__"
 LOAD_IMAGE="__LOAD_IMAGE__"
 STORAGE_PATH="__STORAGE_PATH__"
+# 1 when the zone's Docker-in-Docker setting was on as this script was fetched.
+# It lets the control plane run ONE kind of privileged container here (the
+# per-workspace DinD sidecar), which is root on this host. Re-run the installer
+# after changing the zone's setting; an agent update keeps the current value.
+ALLOW_DIND="__ALLOW_DIND__"
 AGENT_DIR="/var/lib/cove-agent"
 CERT_DIR="$AGENT_DIR/certs"
 
@@ -252,7 +257,12 @@ STREAM_SIGNING_KEY=${STREAM_SIGNING_KEY}
 WORKSPACE_DOMAIN=${WORKSPACE_DOMAIN}
 EXPECTED_CLIENT_CN=${EXPECTED_CLIENT_CN}
 EDGE_CLIENT_CN=${EDGE_CLIENT_CN}
+ALLOW_DIND=${ALLOW_DIND}
 ENV
+if [ "$ALLOW_DIND" = "1" ]; then
+  echo "Docker-in-Docker is ALLOWED on this zone: the control plane may start a privileged"
+  echo "nested-Docker sidecar per workspace (root-equivalent on this host)."
+fi
 
 cat > "$AGENT_DIR/traefik-dynamic.yml" <<'DYN'
 tls:
@@ -301,6 +311,7 @@ services:
       - COVE_AGENT_DOCKER_SOCKET_URL=http://cove-agent-sockproxy:2375
       - COVE_AGENT_EXPECTED_CLIENT_CN=${EXPECTED_CLIENT_CN}
       - COVE_AGENT_EDGE_CLIENT_CN=${EDGE_CLIENT_CN}
+      - COVE_AGENT_ALLOW_DIND=${ALLOW_DIND:-0}
     volumes:
       - "${STORAGE_PATH}:${STORAGE_PATH}"
       - cove-agent-data:/app/data
@@ -397,6 +408,7 @@ def _render_install_sh(*, cp_url: str, token: str, zone: Zone) -> str:
         "__AGENT_IMAGE__": settings.zone_agent_image,
         "__LOAD_IMAGE__": "1" if settings.zone_agent_image_from_control_plane else "",
         "__STORAGE_PATH__": storage_path,
+        "__ALLOW_DIND__": "1" if zone.docker_enabled else "0",
     }
     script = _INSTALL_TEMPLATE
     for k, v in replacements.items():

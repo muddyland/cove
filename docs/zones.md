@@ -70,7 +70,11 @@ namespaces are all rejected; `volumes/create`, `networks/create`,
 `networks/{id}/connect` and `archive` are policy-checked; `rename` is refused;
 exec is allowed only into workspace/routing-sidecar containers and, for the
 single fixed recreate command, the updater sidecar. Only the listed API families
-are reachable at all, versioned or not.
+are reachable at all, versioned or not. Privileged containers are refused unless
+the zone host opted in to Docker-in-Docker (`COVE_AGENT_ALLOW_DIND`); then exactly
+one privileged shape is accepted, the `cove-dind-<id>` sidecar joined to a
+workspace's network namespace (see
+[GPU and Docker-in-Docker](#gpu-and-docker-in-docker-per-zone)).
 
 ---
 
@@ -167,7 +171,8 @@ plane's address only**:
 For the **DMZ-cannot-reach-LAN** pattern, open a single tightly-scoped pinhole from
 the DMZ control-plane host to the LAN agent's `8443`. The port requires a client
 certificate signed by the Cove CA, and the Docker API behind it is policy-filtered
-(no privileged/host-mount escapes), so the pinhole is not a broad exposure.
+(no privileged/host-mount escapes, unless the zone host opted in to
+Docker-in-Docker), so the pinhole is not a broad exposure.
 
 > The control plane reaches workspace streams by routing the workspace's
 > subdomain/path to the agent's `8443` over mTLS via Traefik's HTTP dynamic
@@ -238,6 +243,32 @@ compromised agent cannot forge session/refresh tokens.
 > Only **enrolled** zones appear in the pickers. If you added an agent but don't
 > see it, check **Admin → Zones** — it may still be `pending`/`enrolling`.
 
+### GPU and Docker-in-Docker per zone
+
+Each zone host has its own GPU and its own trust decision, so **Admin → Zones →
+Settings** holds them per zone. (The local zone uses Administration → Settings.)
+
+- **GPU acceleration**: *Inherit* (the master toggle), *On* or *Off*. **Render
+  node** and **Render group GID** default to the global values when left empty.
+  Set the render node when the zone's GPU isn't at `/dev/dri/renderD128` (a
+  multi-GPU host, or a host whose only GPU is `renderD129`). Cove still detects
+  the node's real group at launch; the GID is the fallback. A node missing on the
+  zone host fails the launch with *"no render node exists at … on this host's
+  GPU"*. GPU needs agent 1.3.1 or later (**Update** the agent), whose policy
+  allows mapping a DRI render node.
+- **Allow Docker-in-Docker on this zone** (needs the global master toggle). The
+  nested daemon is privileged, so it is root on the zone host. The agent has its
+  own opt-in on top: after turning this on, click **Enroll** and re-run the
+  installer on the host, which writes `ALLOW_DIND=1` to the agent's `.env`
+  (`COVE_AGENT_ALLOW_DIND`). The dialog shows whether the agent allows it. An
+  agent **Update** keeps the value; turning the setting off and re-running the
+  installer removes it.
+
+Moving a Docker-in-Docker workspace to a zone without it is refused: turn
+Docker off for the workspace first, or enable it on the target zone. A workspace
+that already sits on such a zone can still be edited, including to turn Docker
+off.
+
 ---
 
 ## 8. Operations
@@ -284,6 +315,7 @@ Agent-only settings (set by the installer, normally not edited by hand):
 | `COVE_AGENT_DOCKER_SOCKET_URL` | The local socket-proxy the Docker proxy forwards to (default `http://cove-agent-sockproxy:2375`). |
 | `COVE_AGENT_EXPECTED_CLIENT_CN` | The only client-cert CN the agent accepts (`cove-cp-<zone-id>`); pins the zone to its control plane. |
 | `COVE_AGENT_EDGE_CLIENT_CN` | CN of the relay (edge) cert the central Traefik presents on stream routes (`cove-edge-<zone-id>`). Informational: it is never accepted on the agent API or Docker paths. |
+| `COVE_AGENT_ALLOW_DIND` | `1` lets the control plane start the privileged Docker-in-Docker sidecar on this host (default `0`). Comes from `ALLOW_DIND` in the agent's `.env`, which the installer sets from the zone's Docker-in-Docker setting. |
 
 ---
 
@@ -312,6 +344,9 @@ After enrollment, exercise the full path:
 | Files/migration **409 "not enrolled for mTLS"** | The zone was manually registered (plain endpoint) but never enrolled — run the installer. |
 | **403 "client certificate not authorized for this zone"** | The presented client-cert CN doesn't match the agent's `COVE_AGENT_EXPECTED_CLIENT_CN` (e.g. after a control-plane re-issue with a different CN, or wrong zone). Re-enroll to re-provision. |
 | Bind mounts empty / wrong | `COVE_STORAGE_PATH` differs between control plane and agent (see [Storage parity](#5-storage-parity-important)). |
+| GPU workspace errors with *"device /dev/dri/renderD128 is not allowed"* | The agent predates 1.3.1. **Update** it from Admin → Zones. |
+| GPU workspace errors with *"no render node exists at …"* | The zone host has no GPU at that path. Set the zone's render node in its Settings (`ls /dev/dri` on the host), or turn GPU off for the zone. |
+| *"Docker-in-Docker … its agent does not allow it yet"* | The zone setting is on but the host hasn't opted in. Click **Enroll** and re-run the installer on the host. |
 
 Useful on the agent: `docker compose -p cove-agent ps`, `docker logs cove-agent`,
 `docker logs cove-traefik`.

@@ -195,6 +195,9 @@ desktops. It applies to desktop/app workspaces.
 - **Wayland streaming** is on — hardware encode needs it. Enabling GPU with
   Wayland off is rejected at create/edit with a clear error.
 - The workspace's host has a usable GPU with a DRI render node.
+- On a remote zone, GPU is on for that zone: it inherits the master toggle unless
+  **Admin → Zones → Settings** overrides it. Each zone can also set its own
+  render node and fallback GID, since its GPU isn't the control plane's.
 
 **Render node & group (auto-detected).** Cove bind-mounts the host's DRI render
 node (default `/dev/dri/renderD128`) and adds the workspace user to the node's

@@ -18,10 +18,10 @@ limits they started with.
 | **Process limit (pids)** | `8192` | Caps processes + threads per workspace container (a fork bomb otherwise exhausts the host). `0` = unlimited. |
 | **Max runtime (hours)** | `24` (`0` = unlimited) | Running workspaces older than this are auto-stopped. |
 | **Force-disable sudo** | off | Applies `no-new-privileges` to **all** workspaces, overriding the per-launch "Allow sudo". |
-| **GPU acceleration** (master toggle) | off | Allows workspaces to use host-GPU hardware video encode (each workspace must still opt in, and needs Wayland streaming). See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). |
+| **GPU acceleration** (master toggle) | off | Allows workspaces to use host-GPU hardware video encode (each workspace must still opt in, and needs Wayland streaming). See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). Remote zones inherit this and the two GPU settings below unless their own zone settings override them. |
 | **GPU render node** | `/dev/dri/renderD128` | DRI device bind-mounted for GPU workspaces. Change only on multi-GPU hosts. |
 | **GPU render group GID** | `992` | Group added so the workspace can open the render node. **Fallback only** — Cove auto-detects the node's real group on each host at launch; set this if detection can't run. |
-| **Docker-in-Docker** (master toggle) | off | Allows workspaces to run a **privileged** nested Docker daemon — effectively **host root** for whoever holds it. A non-admin account must additionally be granted *Allow Docker-in-Docker* under [User management](#user-management); each workspace still opts in; local zone only. |
+| **Docker-in-Docker** (master toggle) | off | Allows workspaces to run a **privileged** nested Docker daemon — effectively **host root** for whoever holds it. A non-admin account must additionally be granted *Allow Docker-in-Docker* under [User management](#user-management); each workspace still opts in. A remote zone must also be opted in under **Admin → Zones → Settings** (see [Zones](zones.md#gpu-and-docker-in-docker-per-zone)). |
 | **DinD image** | `docker:dind` | Image the per-workspace Docker-in-Docker sidecar runs (multi-arch). Shown only while the master toggle is on; blanking it restores the default. |
 | **LAN access** (master toggle) | off | Allows workspaces to reach the LAN directly (each workspace must still opt in). |
 | **Allowed LAN subnets** | _(empty)_ | IPv4 CIDRs reachable when LAN access is on. Invalid entries are dropped; bare IPs become `/32`. |

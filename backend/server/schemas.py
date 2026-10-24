@@ -202,16 +202,18 @@ class LanPolicyOut(BaseModel):
 
 
 class GpuPolicyOut(BaseModel):
-    # Admin master toggle for GPU (VAAPI) hardware acceleration. Surfaced to
+    # Whether GPU (VAAPI) hardware acceleration is on for the requested zone (the
+    # admin master toggle, or a remote zone's own override). Surfaced to
     # non-admin users so the launch/edit modals only show the per-workspace GPU
-    # checkbox when an admin has enabled it (and configured a usable render node).
+    # checkbox where an admin has enabled it.
     enabled: bool
 
 
 class DockerPolicyOut(BaseModel):
-    # Admin master toggle for Docker-in-Docker. Surfaced to non-admin users so the
-    # launch/edit modals only show the per-workspace "Docker (dev)" checkbox when
-    # an admin has enabled the (privileged) feature for the deployment.
+    # Whether Docker-in-Docker is available on the requested zone (the admin
+    # master toggle, plus the zone's own opt-in on a remote zone). Surfaced to
+    # non-admin users so the launch/edit modals only show the per-workspace
+    # "Docker (dev)" checkbox where an admin has enabled the privileged feature.
     enabled: bool
 
 
@@ -867,6 +869,14 @@ class ZoneUpdate(BaseModel):
     name: Optional[str] = None
     endpoint_host: Optional[str] = None
     endpoint_port: Optional[int] = None
+    # Per-zone GPU overrides. Sending null clears an override, so the zone
+    # inherits the global value from Administration → Settings again.
+    gpu_accel: Optional[bool] = None
+    gpu_render_node: Optional[str] = None
+    gpu_render_gid: Optional[int] = Field(default=None, ge=0, le=65535)
+    # Allow Docker-in-Docker on this zone (also needs the global master toggle
+    # and the agent host's own opt-in, which re-running the installer sets).
+    docker_enabled: Optional[bool] = None
 
 
 class ZoneEnrollTokenOut(BaseModel):
@@ -922,6 +932,13 @@ class ZoneOut(BaseModel):
     created_at: datetime
     # Number of workspaces pinned to this zone (drives the delete guard + UI).
     workspace_count: int = 0
+    # GPU overrides (null = inherit the global setting) and Docker-in-Docker.
+    gpu_accel: Optional[bool] = None
+    gpu_render_node: Optional[str] = None
+    gpu_render_gid: Optional[int] = None
+    docker_enabled: bool = False
+    # The agent's own DinD opt-in, as last reported (null = unknown).
+    agent_allows_docker: Optional[bool] = None
 
     model_config = {"from_attributes": True}
 
@@ -981,3 +998,6 @@ class ZoneHealthOut(BaseModel):
     docker_version: Optional[str] = None
     containers_running: Optional[int] = None
     error: Optional[str] = None
+    # Whether the agent allows the Docker-in-Docker sidecar (null for the local
+    # zone, or an agent too old to say).
+    agent_dind: Optional[bool] = None

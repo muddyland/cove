@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # accepted on the agent API / Docker proxy; recorded so operators can see
     # which cert the stream relay uses. (empty -> None)
     agent_edge_client_cn: Optional[str] = None
+    # On a zone agent: let the control plane start the per-workspace
+    # Docker-in-Docker sidecar (a PRIVILEGED container, so root on this host for
+    # whoever holds the control plane's client cert). Off by default; set on the
+    # zone host by the installer (ALLOW_DIND in the agent's .env) so the
+    # control plane alone can never turn it on.
+    agent_allow_dind: bool = False
     # Dial a zone that has no mTLS material over plain TCP. Off by default: a
     # cleartext, unauthenticated Docker channel ships user secrets (VPN configs,
     # Tailscale keys) to whatever answers. Only for a trusted private network,

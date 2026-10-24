@@ -221,8 +221,9 @@ def test_create_with_docker_accepted_when_enabled(client, fake_docker_manager):
 
 
 def test_create_with_docker_rejected_on_remote_zone(client):
-    # DinD is local-zone only: remote agents refuse privileged creates, so opting
-    # in on a non-zero zone is rejected up front (before the zone even resolves).
+    # DinD on a remote zone needs that zone's own opt-in (the agent refuses
+    # privileged creates unless its host allows them), so opting in on a zone
+    # without it is rejected up front (before the zone even resolves).
     setup_admin(client)
     image_id = add_image(name="Desktop", image_type="desktop")
     client.put("/api/admin/settings", json={"workspace_docker": True})
@@ -232,7 +233,7 @@ def test_create_with_docker_rejected_on_remote_zone(client):
         json={"name": "dev", "image_id": image_id, "use_docker": True, "zone_id": 1},
     )
     assert resp.status_code == 400, resp.text
-    assert "only available on the local zone" in resp.text
+    assert "Docker-in-Docker is not enabled on zone" in resp.text
 
 
 def test_create_with_tailscale_configured_accepted(client, fake_docker_manager):
