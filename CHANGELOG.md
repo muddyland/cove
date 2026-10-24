@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Saved apps install on first boot on every zone, and the dialog can install
+  them all.** A migration doesn't copy app files, so a workspace's first boot on
+  the new zone reinstalls them from its saved lists. That install was an init
+  script bind-mounted from the zone host's own copy of Cove's scripts, staged by
+  its agent. An agent older than the script had no copy, Docker mounted an
+  empty directory in its place, and nothing installed: every app had to be
+  installed again one by one. Now the control plane queues the missing apps
+  through the workspace's shell (as the Apps dialog already does) once the
+  desktop is up. It's one background task per kind, marked **saved apps** in
+  the tasks menu, which now checks for it as soon as the workspace comes up.
+  The Apps dialog counts saved apps that aren't installed, lists missing
+  AppImages too, and has **Install all**. Control-plane change: deploy only.
 - **Agent updates ship the control plane's own image.** Updating a zone's agent
   pushed whatever image was tagged `cove:local` on the control plane host (the
   `COVE_ZONE_AGENT_IMAGE` default), not the image the control plane runs. A

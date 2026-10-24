@@ -162,6 +162,7 @@ def test_parse_tasks_drops_malformed_rows():
             "created_at": 100,
             "started_at": 101,
             "finished_at": None,
+            "boot": False,
         }
     ]
 

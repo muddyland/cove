@@ -295,6 +295,8 @@ def parse_tasks(raw: bytes) -> list[dict]:
                 "created_at": _epoch(created),
                 "started_at": _epoch(started),
                 "finished_at": _epoch(finished),
+                # The driver names first-boot tasks <timestamp>-boot-<kind>.
+                "boot": task_id.endswith(f"-boot-{kind}"),
             }
         )
     return tasks

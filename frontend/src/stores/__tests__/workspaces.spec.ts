@@ -12,6 +12,9 @@ vi.mock('@/api/workspaces', () => ({
   },
 }))
 
+const kickMock = vi.fn()
+vi.mock('@/stores/tasks', () => ({ useTasksStore: () => ({ kick: kickMock }) }))
+
 import { workspacesApi } from '@/api/workspaces'
 import { useWorkspacesStore, FAST_POLL, IDLE_POLL } from '@/stores/workspaces'
 
@@ -137,5 +140,35 @@ describe('workspaces store polling', () => {
     expect(store.maxRuntimeHours).toBe(24)
     await store.fetch()
     expect(workspacesApi.runtimePolicy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('first-boot app installs', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
+    kickMock.mockReset()
+    vi.mocked(workspacesApi.list).mockReset()
+    vi.mocked(workspacesApi.stats).mockReset().mockResolvedValue({})
+    vi.mocked(workspacesApi.runtimePolicy).mockReset().mockResolvedValue({ max_hours: 24 })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('checks the tasks menu when a desktop with saved apps comes up', async () => {
+    const store = useWorkspacesStore()
+    vi.mocked(workspacesApi.list)
+      .mockResolvedValueOnce([ws({ status: 'creating', proot_apps: 'firefox' }), ws({ id: 2, status: 'creating' })])
+      .mockResolvedValueOnce([ws({ status: 'running', proot_apps: 'firefox' }), ws({ id: 2, status: 'running' })])
+      .mockResolvedValueOnce([ws({ status: 'running', proot_apps: 'firefox' }), ws({ id: 2, status: 'running' })])
+    await store.fetch()
+    await store.fetch()
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(kickMock).toHaveBeenCalledTimes(1)
+    // Already running: no new kick.
+    await store.fetch()
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(kickMock).toHaveBeenCalledTimes(1)
   })
 })

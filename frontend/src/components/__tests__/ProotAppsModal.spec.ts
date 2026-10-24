@@ -211,3 +211,75 @@ describe('AppImages section', () => {
     expect(prootApi.removeAppImages).toHaveBeenCalledWith(5, [img.slug])
   })
 })
+
+describe('Install all (saved apps that are missing)', () => {
+  const missingImg = {
+    slug: 'Bar', name: 'Bar', url: 'https://x.io/Bar.AppImage', size_kb: 0, installed_at: null, installed: false,
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(prootApi.installed).mockResolvedValue({
+      ...listing,
+      apps: [
+        ...listing.apps,
+        { name: 'krita', full_name: null, icon_url: null, folder: '', installed: false, downloading: false, in_config: true,
+          installed_digest: null, latest_digest: null, update_available: null },
+      ],
+    })
+    vi.mocked(prootApi.allTasks).mockResolvedValue([])
+    vi.mocked(prootApi.list).mockResolvedValue({ apps: [] })
+    vi.mocked(prootApi.startTask).mockResolvedValue({} as any)
+    vi.mocked(workspacesApi.get).mockResolvedValue(ws)
+    vi.mocked(prootApi.appImages).mockResolvedValue({ apps: [missingImg] })
+    vi.mocked(prootApi.installAppImages).mockResolvedValue({} as any)
+  })
+
+  it('queues every missing proot-app and AppImage at once', async () => {
+    const wrapper = await mountOpen()
+    expect(wrapper.text()).toContain('3 not installed')
+    const btn = wrapper.findAll('button').find(b => b.text().startsWith('Install all'))!
+    expect(btn.text()).toBe('Install all (3)')
+    await btn.trigger('click')
+    await flushPromises()
+    expect(prootApi.startTask).toHaveBeenCalledWith(5, 'install', ['blender', 'krita'])
+    expect(prootApi.installAppImages).toHaveBeenCalledWith(5, ['https://x.io/Bar.AppImage'])
+    expect(toastMock).toHaveBeenCalledWith('Installing 3 apps — follow it in the tasks menu', 'info')
+  })
+
+  it('leaves out apps a task is already installing', async () => {
+    vi.mocked(prootApi.allTasks).mockResolvedValue([{
+      workspace_id: 5, workspace_name: 'desk',
+      tasks: [{ id: '001789500000-boot-proot', kind: 'proot', op: 'install', state: 'running', exit_code: null,
+        apps: ['blender', 'krita'], failed_apps: [], current_app: 'blender', done_count: 0, created_at: 1,
+        started_at: 1, finished_at: null, boot: true }],
+    }])
+    const wrapper = await mountOpen()
+    await flushPromises()
+    const btn = wrapper.findAll('button').find(b => b.text().startsWith('Install all'))!
+    expect(btn.text()).toBe('Install all (1)')
+    await btn.trigger('click')
+    await flushPromises()
+    expect(prootApi.startTask).not.toHaveBeenCalled()
+    expect(prootApi.installAppImages).toHaveBeenCalledWith(5, ['https://x.io/Bar.AppImage'])
+    // The boot task shows as such in the dialog's task list.
+    expect(wrapper.text()).toContain('saved apps')
+  })
+
+  it('offers a single missing AppImage its own Install', async () => {
+    const wrapper = await mountOpen()
+    const section = wrapper.get('[data-test="appimages"]')
+    expect(section.text()).toContain('not installed')
+    await section.findAll('button').find(b => b.text() === 'Install')!.trigger('click')
+    await flushPromises()
+    expect(prootApi.installAppImages).toHaveBeenCalledWith(5, ['https://x.io/Bar.AppImage'])
+  })
+
+  it('has no Install all when everything saved is installed', async () => {
+    vi.mocked(prootApi.installed).mockResolvedValue({ ...listing, apps: listing.apps.slice(0, 2) })
+    vi.mocked(prootApi.appImages).mockResolvedValue({ apps: [] })
+    const wrapper = await mountOpen()
+    expect(wrapper.findAll('button').some(b => b.text().startsWith('Install all'))).toBe(false)
+  })
+})

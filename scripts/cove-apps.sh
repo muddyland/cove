@@ -4,14 +4,18 @@
 #
 # Two entry points:
 #
-#  * Boot: mounted twice under /custom-cont-init.d and run as root with no
+#  * Legacy boot: mounted under /custom-cont-init.d and run as root with no
 #    arguments; which list it installs comes from the name it was invoked as —
 #    98-install-proot-apps.sh installs $PROOT_APPS, 97-install-appimages.sh
-#    installs $COVE_APPIMAGES. Anything already installed is skipped.
+#    installs $COVE_APPIMAGES. Cove no longer mounts it (see boot-* below);
+#    kept so a container started by an older control plane still works.
 #
 #  * Control plane: the backend runs this file's text through
 #    `docker exec -u abc … bash -c "<script>" cove-apps <command> [args]`
-#    (so it works in containers launched before the script was mounted):
+#    (so it never depends on a copy of this file on the workspace's host):
+#      boot-proot <app>…             first-boot install of the saved proot-apps
+#      boot-appimage <url>…          first-boot install of the saved AppImages
+#                                    (both queue only what's missing, as a task)
 #      list                          installed proot-apps + their layer digests
 #      appimages                     installed AppImages + where they came from
 #      start <id> <kind> <op> <arg>… record a queued task
@@ -514,8 +518,23 @@ case "${cmd}" in
   boot-proot | boot-appimage)
     kind=proot; boot_log="${BOOT_LOG}"
     [ "${cmd}" = boot-appimage ] && { kind=appimage; boot_log="${AI_BOOT_LOG}"; }
+    # A log left by an older release (root-owned) can't be appended to, and a
+    # failed redirection on exec ends the script. Move it aside: rename(2) acts
+    # on the directory entry, which this user owns.
+    if [ -e "${boot_log}" ] && [ ! -w "${boot_log}" ]; then
+      mv -f -- "${boot_log}" "${boot_log}.old" 2>/dev/null
+    fi
     # Anything that goes wrong before the task log exists lands here instead.
     exec >>"${boot_log}" 2>&1
+    # The control plane asks again whenever the workspace comes (back) up, so a
+    # boot install already queued or running answers for this one.
+    if [ -d "${TASKS_DIR}" ]; then
+      while IFS= read -r t; do
+        case "${t}" in
+          *-boot-"${kind}") is_active "${t}" && exit 0 ;;
+        esac
+      done < <(task_ids)
+    fi
     # Queue only what's missing, so a reboot with everything installed records
     # no task at all.
     missing=()

@@ -5,6 +5,7 @@
         <span class="summary">
           <template v-if="state">
             {{ installedCount }} installed
+            <template v-if="missingCount"> · <span class="missing">{{ missingCount }} not installed</span></template>
             <template v-if="updatable.length"> · <span class="upd">{{ updatable.length }} update{{ updatable.length === 1 ? '' : 's' }}</span></template>
           </template>
         </span>
@@ -12,6 +13,14 @@
           <NeonButton variant="ghost" :loading="loading" @click="load">
             <RefreshCw :size="13" /> Refresh
           </NeonButton>
+          <NeonButton
+            v-if="missingCount"
+            variant="success"
+            :loading="starting === 'install-all'"
+            :disabled="!!starting"
+            :title="`Install the saved apps that aren't installed: ${missingNames.join(', ')}`"
+            @click="installAll"
+          ><Download :size="13" /> Install all ({{ missingCount }})</NeonButton>
           <NeonButton
             v-if="updatable.length"
             variant="primary"
@@ -103,6 +112,7 @@
             <div class="app-main">
               <AppIcon :size="22" />
               <span class="app-name">{{ img.name }}</span>
+              <span v-if="img.installed === false" class="chip bad">not installed</span>
               <span v-if="img.size_kb" class="chip muted">{{ fmtSize(img.size_kb) }}</span>
               <span v-if="!img.url" class="chip muted" title="Installed before Cove recorded where it came from — updating asks for a URL">source unknown</span>
               <a v-else class="src" :href="img.url" target="_blank" rel="noopener noreferrer" :title="img.url">{{ shortUrl(img.url) }}</a>
@@ -112,7 +122,14 @@
                 <span class="busy"><Loader2 :size="13" class="spin" /> {{ busy.get(img.slug) }}</span>
               </template>
               <template v-else>
-                <NeonButton variant="primary" :disabled="!!starting" @click="askUpdateImage(img)">
+                <NeonButton
+                  v-if="img.installed === false && img.url"
+                  variant="success"
+                  :disabled="!!starting"
+                  :loading="starting === `appimage-install:${img.slug}`"
+                  @click="installImage(img)"
+                ><Download :size="13" /> Install</NeonButton>
+                <NeonButton v-else variant="primary" :disabled="!!starting" @click="askUpdateImage(img)">
                   <ArrowUpCircle :size="13" /> Update
                 </NeonButton>
                 <NeonButton variant="ghost" class="remove" :disabled="!!starting" @click="askRemoveImage(img)">
@@ -271,6 +288,19 @@ const busy = computed(() => {
 })
 
 const installedCount = computed(() => state.value?.apps.filter(a => a.installed).length ?? 0)
+
+// Saved apps that aren't on disk (after a migration, or a failed first-boot
+// install) and aren't already being worked on.
+const missingProot = computed(() =>
+  (state.value?.apps ?? [])
+    .filter(a => a.name && a.in_config && !a.installed && !a.downloading && !busy.value.has(a.name))
+    .map(a => a.name as string),
+)
+const missingImages = computed(() =>
+  (images.value ?? []).filter(i => i.installed === false && i.url && !busy.value.has(i.slug)),
+)
+const missingCount = computed(() => missingProot.value.length + missingImages.value.length)
+const missingNames = computed(() => [...missingProot.value, ...missingImages.value.map(i => i.name)])
 const updatable = computed(() =>
   (state.value?.apps ?? [])
     .filter(a => a.name && a.update_available && !busy.value.has(a.name))
@@ -368,6 +398,54 @@ async function installImages() {
   if (ok) {
     newImageUrls.value = ''
     addingImage.value = false
+  }
+}
+
+async function installImage(img: AppImageApp) {
+  if (!img.url) return
+  await startImage(
+    `appimage-install:${img.slug}`,
+    () => prootApi.installAppImages(props.ws.id, [img.url as string]),
+    `Installing ${img.name} — follow it in the tasks menu`,
+  )
+}
+
+/** Queue every saved-but-missing app: one proot-apps task, one AppImage task. */
+async function installAll() {
+  if (starting.value || !missingCount.value) return
+  const apps = [...missingProot.value]
+  const urls = missingImages.value.map(i => i.url as string)
+  const n = apps.length + urls.length
+  starting.value = 'install-all'
+  const failed: string[] = []
+  try {
+    if (apps.length) {
+      try {
+        await prootApi.startTask(props.ws.id, 'install', apps)
+      } catch (e: any) {
+        failed.push(e?.message || 'proot-apps')
+      }
+    }
+    if (urls.length) {
+      try {
+        await prootApi.installAppImages(props.ws.id, urls)
+      } catch (e: any) {
+        failed.push(e?.message || 'AppImages')
+      }
+    }
+    if (failed.length) ui.toast(`Couldn't start every install: ${failed.join('; ')}`, 'error')
+    else ui.toast(`Installing ${n} app${n === 1 ? '' : 's'} — follow it in the tasks menu`, 'info')
+    tasks.kick()
+    // The saved lists may have been reordered; keep the dashboard's copy in step.
+    workspacesApi
+      .get(props.ws.id)
+      .then(fresh => {
+        const idx = workspaces.items.findIndex(w => w.id === fresh.id)
+        if (idx !== -1) workspaces.items[idx] = fresh
+      })
+      .catch(() => {})
+  } finally {
+    starting.value = null
   }
 }
 
@@ -518,6 +596,7 @@ onUnmounted(() => unsubscribe?.())
 .toolbar-actions { display: flex; gap: 8px; }
 .summary { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); letter-spacing: 0.5px; }
 .summary .upd { color: var(--accent); }
+.summary .missing { color: var(--red); }
 .note { margin: 0; font-size: 12px; color: var(--text-muted); }
 .note.error { color: var(--red); }
 

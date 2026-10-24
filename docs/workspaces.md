@@ -95,10 +95,14 @@ All three install methods run at container boot via LinuxServer init scripts and
 are best-effort (they never fail the boot):
 
 - **Install packages** — adds the `universal-package-install` Docker Mod and installs your distro packages.
-- **proot-apps** — installs the named [proot-apps](https://github.com/linuxserver/proot-apps). Installs run **in the background** so the desktop comes up promptly; apps appear in the menu as each finishes (progress in the navbar's tasks menu, and appended to `/config/.cove-proot-apps.log`). Already-installed apps are skipped — booting never updates them; see below.
-- **AppImages** — downloads each URL and, because the containers are hardened (no FUSE), **extracts** it rather than FUSE-mounting, then writes a desktop launcher. Electron apps launch with `--no-sandbox`. Background install, logged to `/config/.cove-appimages.log`. Already-installed ones are skipped; manage them later from the Apps dialog (below).
+- **proot-apps** — installs the named [proot-apps](https://github.com/linuxserver/proot-apps). Once the desktop is up, Cove queues whatever is missing as one **background task** (marked *saved apps* in the navbar's tasks menu, with progress and a log; also appended to `/config/.cove-proot-apps.log`). Apps appear in the menu as each finishes. Already-installed apps are skipped — booting never updates them; see below.
+- **AppImages** — downloads each URL and, because the containers are hardened (no FUSE), **extracts** it rather than FUSE-mounting, then writes a desktop launcher. Electron apps launch with `--no-sandbox`. Queued the same way once the desktop is up, logged to `/config/.cove-appimages.log`. Already-installed ones are skipped; manage them later from the Apps dialog (below).
 
-When packages or proot-apps are requested, the workspace shows a **Provisioning**
+This is also what brings apps back after a **migration**, which doesn't copy app
+files, on any zone. Cove sends the install through the workspace's own shell,
+so it doesn't depend on the zone host having a current copy of Cove's scripts.
+
+When packages are requested, the workspace shows a **Provisioning**
 screen ("this can take a few minutes") until the desktop is ready.
 
 ### Managing apps in a running workspace
@@ -118,7 +122,9 @@ downloading anything. Results are cached for about half an hour; only apps from
 the LinuxServer catalog are checked.
 
 From there you can **Update** one app or **Update all**, **Install** more, or
-**Remove** one. Installing or removing also updates the workspace's saved
+**Remove** one. Apps in the saved list that aren't installed show as **not
+installed**. **Install all** queues every one of them, proot-apps and AppImages
+alike, in one go. Installing or removing also updates the workspace's saved
 proot-apps list, so what you see survives a restart and a migration (migration
 reinstalls from that list rather than copying the app files).
 
@@ -137,7 +143,8 @@ retries it too).
 #### AppImages
 
 The **AppImages** section lists what's installed, with each app's size and the
-URL it came from. From there you can:
+URL it came from, plus saved ones that aren't installed (each with its own
+**Install**). From there you can:
 
 - **Add** — paste one or more AppImage URLs; each is downloaded in the workspace,
   extracted, and given a desktop launcher.

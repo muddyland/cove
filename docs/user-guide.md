@@ -147,8 +147,10 @@ your workspaces and keeps each task's log. Installing or removing also updates t
 workspace's saved app lists, so a reboot or a migration reinstalls what you
 actually have.
 
-Booting a workspace installs anything missing from those saved lists but never
-updates what's already there — updates are always your call. For the details see
+Booting a workspace installs anything missing from those saved lists (it shows
+in the tasks menu as a *saved apps* task) but never updates what's already
+there — updates are always your call. If something is still missing, **Install
+all** in the Apps dialog queues every saved app that isn't installed. For the details see
 [Workspaces → Managing apps](workspaces.md#managing-apps-in-a-running-workspace).
 
 ## The file browser

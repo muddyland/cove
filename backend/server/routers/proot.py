@@ -301,12 +301,23 @@ def workspace_appimages(ws_id: int, user: CurrentUser, db: DbSession):
     from (null for one installed before Cove recorded that)."""
     ws = _get_workspace_or_404(ws_id, user, db)
     _require_desktop(ws)
+    configured = [u for u in split_apps(ws.appimages) if len(u) <= MAX_URL_LEN and APPIMAGE_URL_RE.match(u)]
     target = _target(ws, db)
     with _driver_slot(target.id, user.id):
         code, out = _run(target, ["appimages"])
     if code != 0 or out is None:
         raise HTTPException(status_code=502, detail="The workspace returned an unreadable AppImage list")
-    return AppImagesOut(apps=[AppImageOut(**a) for a in parse_appimages(out)])
+    apps = [AppImageOut(**a) for a in parse_appimages(out)]
+    # Saved but not on disk, so the dialog can offer to install them again.
+    have = {a.slug for a in apps}
+    for url in dict.fromkeys(configured):
+        slug = appimage_slug(url)
+        if slug not in have:
+            have.add(slug)
+            apps.append(
+                AppImageOut(slug=slug, name=slug, url=url, size_kb=0, installed_at=None, installed=False)
+            )
+    return AppImagesOut(apps=apps)
 
 
 @router.post("/workspaces/{ws_id}/appimages/tasks", response_model=ProotTaskOut, status_code=202)
