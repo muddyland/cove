@@ -40,7 +40,10 @@ def _agent_user_base(username: str) -> Path:
 
 @router.get("/health")
 def agent_health():
-    return {"status": "ok", "role": "agent"}
+    # ``dind``: this host's operator allowed the privileged Docker-in-Docker
+    # sidecar (COVE_AGENT_ALLOW_DIND). The control plane reads it to tell the
+    # admin whether a zone's DinD setting can take effect.
+    return {"status": "ok", "role": "agent", "dind": get_settings().agent_allow_dind}
 
 
 @router.get("/host-disk")

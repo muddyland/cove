@@ -27,16 +27,16 @@ from server.settings_store import (
     get_gluetun_image,
     get_tailscale_image,
     get_workspace_cpu_limit,
-    get_workspace_docker,
-    get_workspace_gpu_accel,
-    get_workspace_gpu_render_gid,
-    get_workspace_gpu_render_node,
     get_workspace_lan_access,
     get_workspace_lan_subnets,
     get_workspace_max_runtime_hours,
     get_workspace_memory_limit_mb,
     get_workspace_no_new_privileges,
     get_workspace_pids_limit,
+    get_zone_docker,
+    get_zone_gpu_accel,
+    get_zone_gpu_render_gid,
+    get_zone_gpu_render_node,
 )
 from server.vpn_profiles import get_tailscale_profile, get_vpn_profile, vpn_profile_ready
 
@@ -1741,8 +1741,10 @@ class DockerManager:
                 env["LAUNCH_URL"] = ws.target_url
             env["PIXELFLUX_WAYLAND"] = _pixelflux_wayland_env(ws)
 
-            # GPU (VAAPI) hardware acceleration: only when the admin master toggle
-            # is on AND this workspace opted in. Bind-mount the host's DRI render
+            # GPU (VAAPI) hardware acceleration: only when GPU is on for this
+            # zone (the admin master toggle, or the zone's own override) AND this
+            # workspace opted in. Render node and fallback GID are per zone too:
+            # each zone host has its own GPU. Bind-mount the host's DRI render
             # node and point DRINODE (EGL render) + DRI_NODE (VAAPI encode) at the
             # same node so Selkies does zero-copy hardware encode instead of CPU
             # x264. The abc user needs the render group's gid to open the device
@@ -1750,7 +1752,7 @@ class DockerManager:
             # encode also needs the Wayland stream (the default); DRI3 rendering
             # works in either mode.
             gpu_kwargs: dict = {}
-            if ws.gpu_accel and get_workspace_gpu_accel(db):
+            if ws.gpu_accel and get_zone_gpu_accel(db, self.zone_id):
                 # Hardware VAAPI encode requires the Wayland stream. Refuse the
                 # degraded combo loudly instead of shipping a stuttering,
                 # software-encoded stream that looks like a GPU failure.
@@ -1760,7 +1762,7 @@ class DockerManager:
                         "requires it). Enable Wayland streaming, or turn off GPU "
                         "acceleration for this workspace."
                     )
-                render_node = get_workspace_gpu_render_node(db)
+                render_node = get_zone_gpu_render_node(db, self.zone_id)
                 # Detect the render node's real group on the host. A wrong GID is
                 # the #1 silent GPU failure (VAAPI can't open the device), so we
                 # probe and use the actual group instead of a fixed default.
@@ -1770,11 +1772,15 @@ class DockerManager:
                         f"GPU acceleration is on, but no render node exists at "
                         f"{render_node} on this host's GPU. Turn off GPU acceleration "
                         f"for this workspace, or set the correct render node in "
-                        f"Admin → Settings."
+                        + (
+                            "Admin → Settings."
+                            if self.zone_id == 0
+                            else "this zone's settings (Admin → Zones → Settings)."
+                        )
                     )
                 if isinstance(detected, int):
                     gid = detected
-                    configured = get_workspace_gpu_render_gid(db)
+                    configured = get_zone_gpu_render_gid(db, self.zone_id)
                     if configured != detected:
                         logger.info(
                             "Workspace %s: render node %s is group %d on the host; "
@@ -1782,7 +1788,7 @@ class DockerManager:
                             ws.id, render_node, detected, configured,
                         )
                 else:
-                    gid = get_workspace_gpu_render_gid(db)  # probe couldn't run
+                    gid = get_zone_gpu_render_gid(db, self.zone_id)  # probe couldn't run
                 env["DRINODE"] = render_node
                 env["DRI_NODE"] = render_node
                 gpu_kwargs = {
@@ -1790,11 +1796,12 @@ class DockerManager:
                     "group_add": [str(gid)],
                 }
 
-            # Docker-in-Docker: only when the admin master toggle is on AND this
-            # workspace opted in. Point the workspace at its (about-to-be-launched)
+            # Docker-in-Docker: only when DinD is available on this zone (the
+            # admin master toggle, plus the zone's own opt-in on a remote zone)
+            # AND this workspace opted in. Point the workspace at its (about-to-be-launched)
             # DinD sidecar and install the docker client; the sidecar itself is
             # started after the container is up (it needs to join its netns).
-            docker_enabled = ws.use_docker and get_workspace_docker(db)
+            docker_enabled = ws.use_docker and get_zone_docker(db, self.zone_id)
             if docker_enabled and not mount_source:
                 # Ephemeral: /config is the container's own writable layer, which
                 # no other container can be given. The nested daemon therefore

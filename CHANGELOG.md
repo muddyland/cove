@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **GPU and Docker-in-Docker settings per zone.** Each zone host has its own
+  GPU, but GPU used the control plane's global toggle, render node and group
+  for every zone, so a zone whose GPU sits at a different node (or a zone that
+  shouldn't use GPU at all) couldn't be set up. Docker-in-Docker was local-only,
+  and a DinD workspace migrated to a zone could no longer be edited: every save
+  failed with *"Docker-in-Docker is only available on the local zone"*, and the
+  edit form hid the Docker toggle there, so it couldn't be turned off either.
+  Now **Admin → Zones → Settings** sets a zone's GPU (inherit/on/off, render
+  node, fallback GID) and **Allow Docker-in-Docker on this zone**. Because the
+  DinD sidecar is privileged (root on the zone host), the agent also needs its
+  host's own opt-in (`COVE_AGENT_ALLOW_DIND`, which re-running the installer
+  sets from the zone setting); with it, the agent accepts exactly one privileged
+  shape, the `cove-dind-<id>` sidecar in a workspace's netns. The launch and
+  edit forms ask for the policies of the workspace's own zone. A workspace that
+  already has DinD stays editable on a zone without it, and migrating a DinD
+  workspace to such a zone is refused with a clear message. **Operator action:**
+  deploy, then **Update** each zone's agent. To use DinD on a zone, turn it on
+  in the zone's settings, click **Enroll** and re-run the installer on that host.
+
 ## 1.3.1 — Pillow security fixes and remote-zone repairs
 
 - **GPU workspaces on remote zones use the render node's real group.** Before a

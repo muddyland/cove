@@ -226,6 +226,15 @@ isolation, run the daemon rootless (`docker:dind-rootless`) or use the
 
 It composes with Tailscale/Gluetun routing and needs no host changes.
 
+**On a remote zone** it needs two more opt-ins, because there the privileged
+sidecar is root on the *zone's* host: turn on **Allow Docker-in-Docker on this
+zone** in **Admin → Zones → Settings**, then click **Enroll** and re-run the
+installer on the zone host. The installer writes `ALLOW_DIND=1` to the agent's
+`.env`, which sets `COVE_AGENT_ALLOW_DIND`. Until the host has opted in, the
+agent refuses every privileged create, so the control plane alone can never
+enable it. The settings dialog shows whether the agent allows it. See
+[Zones → GPU and Docker-in-Docker](zones.md#gpu-and-docker-in-docker-per-zone).
+
 ### With a VPN or Tailscale
 
 When a workspace routes through Gluetun or Tailscale, the **routing sidecar owns

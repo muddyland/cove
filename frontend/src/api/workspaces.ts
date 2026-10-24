@@ -10,8 +10,9 @@ export const workspacesApi = {
   list: () => api.get<Workspace[]>('/workspaces'),
   stats: () => api.get<Record<number, WorkspaceStats>>('/workspaces/stats'),
   lanPolicy: () => api.get<LanPolicy>('/workspaces/lan-policy'),
-  gpuPolicy: () => api.get<GpuPolicy>('/workspaces/gpu-policy'),
-  dockerPolicy: () => api.get<DockerPolicy>('/workspaces/docker-policy'),
+  // GPU and Docker-in-Docker depend on the zone the workspace runs on.
+  gpuPolicy: (zoneId = 0) => api.get<GpuPolicy>(`/workspaces/gpu-policy?zone_id=${zoneId}`),
+  dockerPolicy: (zoneId = 0) => api.get<DockerPolicy>(`/workspaces/docker-policy?zone_id=${zoneId}`),
   runtimePolicy: () => api.get<RuntimePolicy>('/workspaces/runtime-policy'),
   extend: (id: number) => api.post<Workspace>(`/workspaces/${id}/extend`),
   get: (id: number) => api.get<Workspace>(`/workspaces/${id}`),

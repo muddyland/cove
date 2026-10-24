@@ -123,6 +123,23 @@ class Zone(Base):
     enrolled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    # Per-zone GPU settings. Each zone host has its own GPU, so its render node
+    # and that node's group differ from the control plane's. NULL inherits the
+    # global value from Administration → Settings. The local zone (id 0) always
+    # uses the global settings.
+    gpu_accel: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    gpu_render_node: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    gpu_render_gid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Docker-in-Docker on this zone (admin opt-in; also needs the global master
+    # toggle). The agent enforces its own opt-in on top (COVE_AGENT_ALLOW_DIND on
+    # the zone host): the sidecar is privileged, so turning this on only takes
+    # effect where the host's operator agreed to it.
+    docker_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    # What the agent last reported about its own DinD opt-in (NULL = not asked
+    # yet / agent too old to say).
+    agent_allows_docker: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
 
 class Workspace(Base):

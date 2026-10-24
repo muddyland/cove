@@ -205,3 +205,47 @@ describe('auto_remove ("discard when stopped")', () => {
     expect(vm.form.auto_remove).toBe(false)
   })
 })
+
+describe('Docker-in-Docker on a remote zone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+    vi.mocked(prootApi.list).mockResolvedValue({ apps: [] })
+    vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
+    vi.mocked(workspacesApi.gpuPolicy).mockResolvedValue({ enabled: false })
+    vi.mocked(workspacesApi.dockerPolicy).mockResolvedValue({ enabled: false })
+    updateMock.mockResolvedValue({ ...desktopWs })
+  })
+
+  it('asks for the policies of the workspace\'s own zone', async () => {
+    mount(EditWorkspaceModal, { props: { modelValue: true, ws: { ...desktopWs, zone_id: 3 } } })
+    await flushPromises()
+    expect(workspacesApi.gpuPolicy).toHaveBeenCalledWith(3)
+    expect(workspacesApi.dockerPolicy).toHaveBeenCalledWith(3)
+  })
+
+  it('shows the Docker toggle on a DinD workspace whose zone lacks DinD, so it can be turned off', async () => {
+    // A workspace migrated with DinD on used to hide the toggle (zone != 0) yet
+    // still send use_docker: true, so every save failed.
+    const ws = { ...desktopWs, zone_id: 3, zone_name: 'Z', use_docker: true }
+    const wrapper = mount(EditWorkspaceModal, { props: { modelValue: true, ws } })
+    await flushPromises()
+    expect(wrapper.text()).toContain("isn't enabled on this workspace's zone")
+
+    const vm = wrapper.vm as unknown as { form: { use_docker: boolean } }
+    vm.form.use_docker = false
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateMock.mock.calls[0][1].use_docker).toBe(false)
+  })
+
+  it('offers Docker on a remote zone that allows it', async () => {
+    vi.mocked(workspacesApi.dockerPolicy).mockResolvedValue({ enabled: true })
+    const wrapper = mount(EditWorkspaceModal, {
+      props: { modelValue: true, ws: { ...desktopWs, zone_id: 3 } },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('nested daemon')
+    expect(wrapper.text()).not.toContain("isn't enabled on this workspace's zone")
+  })
+})

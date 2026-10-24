@@ -239,6 +239,28 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0048_workspace_tailscale_profile_id",
         "ALTER TABLE workspace ADD COLUMN tailscale_profile_id INTEGER",
     ),
+    # Per-zone GPU and Docker-in-Docker settings (NULL GPU fields inherit the
+    # global settings).
+    (
+        "0050_zone_gpu_accel",
+        "ALTER TABLE zone ADD COLUMN gpu_accel BOOLEAN",
+    ),
+    (
+        "0051_zone_gpu_render_node",
+        "ALTER TABLE zone ADD COLUMN gpu_render_node VARCHAR(64)",
+    ),
+    (
+        "0052_zone_gpu_render_gid",
+        "ALTER TABLE zone ADD COLUMN gpu_render_gid INTEGER",
+    ),
+    (
+        "0053_zone_docker_enabled",
+        "ALTER TABLE zone ADD COLUMN docker_enabled BOOLEAN NOT NULL DEFAULT 0",
+    ),
+    (
+        "0054_zone_agent_allows_docker",
+        "ALTER TABLE zone ADD COLUMN agent_allows_docker BOOLEAN",
+    ),
 ]
 
 

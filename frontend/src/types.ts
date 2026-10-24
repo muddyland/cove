@@ -384,6 +384,9 @@ export interface ZoneHealth {
   docker_version: string | null
   containers_running: number | null
   error: string | null
+  // Whether the zone's agent allows the Docker-in-Docker sidecar (null for the
+  // local zone or an agent too old to say).
+  agent_dind?: boolean | null
 }
 
 export interface Zone {
@@ -397,6 +400,14 @@ export interface Zone {
   last_seen_at: string | null
   created_at: string
   workspace_count: number
+  // Per-zone GPU overrides (null = inherit Administration → Settings).
+  gpu_accel: boolean | null
+  gpu_render_node: string | null
+  gpu_render_gid: number | null
+  // Docker-in-Docker on this zone, and the agent host's own opt-in as last
+  // reported (null = unknown).
+  docker_enabled: boolean
+  agent_allows_docker: boolean | null
 }
 
 export interface ZoneEnrollToken {

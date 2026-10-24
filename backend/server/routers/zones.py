@@ -40,6 +40,42 @@ def _audit(db, action, *, detail=None, user=None, request=None):
     record_audit(db, action, detail=detail, user=user, ip=ip)
 
 
+def refresh_agent_dind(db, zone: Zone) -> "bool | None":
+    """Ask a remote zone's agent whether its host allows the DinD sidecar and
+    remember the answer on the zone row. Returns it (None when the agent can't
+    be asked, or is too old to say). Best-effort, short timeout."""
+    from server.docker_manager import _zone_has_mtls, zone_agent_client
+
+    if not zone.id or not _zone_has_mtls(zone):
+        return None
+    try:
+        with zone_agent_client(zone, timeout=5) as c:
+            r = c.get("/agent/health")
+            if r.status_code != 200:
+                return zone.agent_allows_docker
+            value = r.json().get("dind")
+    except Exception:
+        return zone.agent_allows_docker
+    value = bool(value) if value is not None else None
+    if zone.agent_allows_docker != value:
+        zone.agent_allows_docker = value
+        db.commit()
+    return value
+
+
+def _clean_zone_render_node(raw: "str | None") -> "str | None":
+    """Empty clears the override; anything else must be a /dev/dri node path (it
+    is interpolated into a probe command and a device mapping)."""
+    import re
+
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if not re.fullmatch(r"/dev/dri/[A-Za-z0-9_-]+", value):
+        raise HTTPException(status_code=400, detail="Render node must look like /dev/dri/renderD128")
+    return value
+
+
 def _zone_out(db, zone: Zone) -> ZoneOut:
     count = db.scalar(
         select(func.count()).select_from(Workspace).where(Workspace.zone_id == zone.id)
@@ -80,7 +116,11 @@ def zone_health(zone_id: int, admin: AdminUser, db: DbSession):
         except Exception:
             pass
         return ZoneHealthOut(
-            ok=True, latency_ms=latency, docker_version=version.get("Version"), containers_running=running
+            ok=True,
+            latency_ms=latency,
+            docker_version=version.get("Version"),
+            containers_running=running,
+            agent_dind=refresh_agent_dind(db, zone) if zone_id != 0 else None,
         )
     except Exception as exc:  # unreachable daemon, TLS failure, proxy 403 …
         return ZoneHealthOut(ok=False, error=str(exc)[:300] or exc.__class__.__name__)
@@ -234,8 +274,20 @@ def update_zone(zone_id: int, body: ZoneUpdate, admin: AdminUser, db: DbSession,
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
     if zone_id == 0:
-        raise HTTPException(status_code=400, detail="The local zone cannot be edited")
-    data = body.model_dump(exclude_none=True)
+        raise HTTPException(
+            status_code=400,
+            detail="The local zone cannot be edited; its GPU and Docker-in-Docker "
+            "settings are in Administration → Settings.",
+        )
+    # Connection fields ignore null (as before); the GPU overrides take an
+    # explicit null to go back to inheriting the global setting.
+    sent = body.model_dump(exclude_unset=True)
+    data = {k: v for k, v in sent.items() if v is not None}
+    for key in ("gpu_accel", "gpu_render_node", "gpu_render_gid"):
+        if key in sent:
+            data[key] = sent[key]
+    if "gpu_render_node" in data:
+        data["gpu_render_node"] = _clean_zone_render_node(data["gpu_render_node"])
     if "name" in data:
         data["name"] = data["name"].strip()
     if "endpoint_host" in data:
@@ -244,6 +296,9 @@ def update_zone(zone_id: int, body: ZoneUpdate, admin: AdminUser, db: DbSession,
         setattr(zone, field, value)
     db.commit()
     db.refresh(zone)
+    if data.get("docker_enabled"):
+        # Show the admin straight away whether the host side is in place too.
+        refresh_agent_dind(db, zone)
     # The endpoint or certs may have changed — drop the cached client so the next
     # operation rebuilds it against the new target.
     from server.docker_manager import reset_docker_manager

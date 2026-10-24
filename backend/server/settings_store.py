@@ -205,6 +205,54 @@ def get_workspace_gpu_render_gid(db: Session) -> int:
         return DEFAULT_WORKSPACE_GPU_RENDER_GID
 
 
+# --- Per-zone resolution ----------------------------------------------------
+# GPU and Docker-in-Docker depend on the host a workspace runs on. The local
+# zone (id 0) uses the global settings above; a remote zone may override them
+# (GPU) or must opt in (DinD). Launch, validation and the workspace modals all
+# resolve through these, so they agree on what a zone offers.
+
+
+def _remote_zone(db: Session, zone_id: int):
+    if not zone_id:
+        return None
+    from server.models import Zone
+
+    return db.get(Zone, zone_id)
+
+
+def get_zone_gpu_accel(db: Session, zone_id: int) -> bool:
+    zone = _remote_zone(db, zone_id)
+    if zone is not None and zone.gpu_accel is not None:
+        return bool(zone.gpu_accel)
+    return get_workspace_gpu_accel(db)
+
+
+def get_zone_gpu_render_node(db: Session, zone_id: int) -> str:
+    zone = _remote_zone(db, zone_id)
+    if zone is not None and zone.gpu_render_node:
+        return zone.gpu_render_node
+    return get_workspace_gpu_render_node(db)
+
+
+def get_zone_gpu_render_gid(db: Session, zone_id: int) -> int:
+    zone = _remote_zone(db, zone_id)
+    if zone is not None and zone.gpu_render_gid is not None:
+        return max(0, int(zone.gpu_render_gid))
+    return get_workspace_gpu_render_gid(db)
+
+
+def get_zone_docker(db: Session, zone_id: int) -> bool:
+    """Docker-in-Docker is available on this zone: the global master toggle is
+    on, and a remote zone has also been opted in by the admin. (The agent's
+    own opt-in is checked separately; see ``Zone.agent_allows_docker``.)"""
+    if not get_workspace_docker(db):
+        return False
+    if not zone_id:
+        return True
+    zone = _remote_zone(db, zone_id)
+    return bool(zone is not None and zone.docker_enabled)
+
+
 def get_trash_retention_days(db: Session) -> int:
     raw = get_setting(db, KEY_TRASH_RETENTION_DAYS)
     if raw is None:

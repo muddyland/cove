@@ -264,14 +264,15 @@ def _validate_auto_remove(auto_remove: bool, ephemeral: bool) -> None:
 
 def _validate_docker(db, use_docker: bool, zone_id: int, user=None) -> None:
     """Reject Docker-in-Docker unless the admin master toggle is on, the user has
-    been granted it, and the workspace runs on the local zone.
+    been granted it, and the workspace's zone offers it.
 
     DinD runs a PRIVILEGED nested daemon that shares the workspace's netns —
     whoever holds it is root on the host. So it is gated twice: at the
     deployment level (the admin master toggle) AND per account (``docker_allowed``,
-    admins implicitly). It is also restricted to the local control-plane zone:
-    remote zone agents refuse privileged container creates
-    (server.docker_policy) to keep their host-escape boundary intact.
+    admins implicitly). A remote zone must also be opted in, both by the admin
+    (``Zone.docker_enabled``) and on the zone host itself (the agent refuses
+    privileged creates unless COVE_AGENT_ALLOW_DIND is set there, which keeps
+    its host-escape boundary intact by default).
     """
     from server import settings_store
 
@@ -288,10 +289,34 @@ def _validate_docker(db, use_docker: bool, zone_id: int, user=None) -> None:
             detail="Docker-in-Docker has not been granted to your account (it runs a "
             "privileged daemon — ask an administrator).",
         )
-    if zone_id != 0:
+    _validate_zone_docker(db, zone_id)
+
+
+def _validate_zone_docker(db, zone_id: int) -> None:
+    """The zone-level part of the DinD gate (master toggle already checked)."""
+    from server import settings_store
+
+    if not zone_id:
+        return
+    zone = db.get(Zone, zone_id)
+    name = zone.name if zone else str(zone_id)
+    if not settings_store.get_zone_docker(db, zone_id):
         raise HTTPException(
             status_code=400,
-            detail="Docker-in-Docker is only available on the local zone",
+            detail=f"Docker-in-Docker is not enabled on zone '{name}'. An administrator "
+            "can enable it in Administration → Zones → Settings.",
+        )
+    from server.routers.zones import refresh_agent_dind
+
+    allowed = zone.agent_allows_docker
+    if allowed is not True:
+        allowed = refresh_agent_dind(db, zone)
+    if allowed is False:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Zone '{name}' has Docker-in-Docker enabled, but its agent does not "
+            "allow it yet. Re-run the zone's installer (Administration → Zones → "
+            "Enroll) so the host opts in.",
         )
 
 
@@ -649,6 +674,17 @@ def migrate_workspace(
             status_code=409, detail="Stop the workspace before migrating so its files are at rest"
         )
     _validate_zone(db, target)
+    if ws.use_docker:
+        # A DinD workspace would arrive somewhere its nested daemon can't start,
+        # and with the Docker toggle hidden from its edit form.
+        try:
+            _validate_zone_docker(db, target)
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=f"{exc.detail} Or turn off Docker-in-Docker for this workspace "
+                "before migrating it.",
+            ) from exc
 
     src = ws.zone_id
     ws.status = "migrating"
@@ -684,16 +720,17 @@ def lan_policy(user: CurrentUser, db: DbSession):
 
 
 @router.get("/gpu-policy", response_model=GpuPolicyOut)
-def gpu_policy(user: CurrentUser, db: DbSession):
-    """GPU acceleration policy for the workspace modals.
+def gpu_policy(user: CurrentUser, db: DbSession, zone_id: int = 0):
+    """GPU acceleration policy for the workspace modals, for one zone.
 
     Lets the SPA show/hide the per-workspace "GPU acceleration" checkbox.
-    ``enabled`` is the admin master toggle; when off, opting a workspace in has
-    no effect (and a non-GPU host never gets a failing device mount).
+    ``enabled`` is the admin master toggle, or a remote zone's own override;
+    when off, opting a workspace in has no effect (and a non-GPU host never gets
+    a failing device mount).
     """
     from server import settings_store
 
-    return GpuPolicyOut(enabled=settings_store.get_workspace_gpu_accel(db))
+    return GpuPolicyOut(enabled=settings_store.get_zone_gpu_accel(db, zone_id))
 
 
 @router.get("/runtime-policy", response_model=RuntimePolicyOut)
@@ -721,16 +758,17 @@ def extend_workspace(ws_id: int, user: CurrentUser, db: DbSession, request: Requ
 
 
 @router.get("/docker-policy", response_model=DockerPolicyOut)
-def docker_policy(user: CurrentUser, db: DbSession):
-    """Docker-in-Docker policy for the workspace modals.
+def docker_policy(user: CurrentUser, db: DbSession, zone_id: int = 0):
+    """Docker-in-Docker policy for the workspace modals, for one zone.
 
     Lets the SPA show/hide the per-workspace "Docker (dev)" checkbox. ``enabled``
-    is the admin master toggle; when off, opting a workspace in is rejected (the
-    feature runs a privileged nested daemon, so it is deployment-gated).
+    is the admin master toggle, and on a remote zone also that zone's opt-in;
+    when off, opting a workspace in is rejected (the feature runs a privileged
+    nested daemon, so it is deployment-gated).
     """
     from server import settings_store
 
-    return DockerPolicyOut(enabled=settings_store.get_workspace_docker(db))
+    return DockerPolicyOut(enabled=settings_store.get_zone_docker(db, zone_id))
 
 
 # In-memory cache of fetched project logos (url -> (bytes, content_type)). Logos
@@ -1241,7 +1279,11 @@ def update_workspace(
     _validate_auto_remove(
         data.get("auto_remove", ws.auto_remove), data.get("ephemeral", ws.ephemeral)
     )
-    _validate_docker(db, data.get("use_docker", ws.use_docker), ws.zone_id, user)
+    # Gate DinD only when this edit switches it on. A workspace that already has
+    # it (e.g. one migrated to a zone without DinD before migration checked)
+    # must stay editable — including to turn it off.
+    if data.get("use_docker") and not ws.use_docker:
+        _validate_docker(db, True, ws.zone_id, user)
     _validate_gpu(
         data.get("gpu_accel", ws.gpu_accel),
         data.get("pixelflux_wayland", ws.pixelflux_wayland),

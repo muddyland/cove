@@ -38,8 +38,8 @@ cookies.
 | POST | `/api/workspaces` | auth | Create and launch a workspace. |
 | GET | `/api/workspaces/stats` | auth | Live CPU/memory of your running workspaces. |
 | GET | `/api/workspaces/lan-policy` | auth | LAN egress policy (toggle + subnets) for the launch modal. |
-| GET | `/api/workspaces/gpu-policy` | auth | GPU acceleration master toggle for the launch modal. |
-| GET | `/api/workspaces/docker-policy` | auth | Docker-in-Docker master toggle for the launch modal. |
+| GET | `/api/workspaces/gpu-policy?zone_id=` | auth | Whether GPU acceleration is on for that zone (default `0`): the master toggle, or a remote zone's override. |
+| GET | `/api/workspaces/docker-policy?zone_id=` | auth | Whether Docker-in-Docker is available on that zone (default `0`): the master toggle, plus the zone's own opt-in on a remote zone. |
 | GET | `/api/workspaces/runtime-policy` | auth | Admin max runtime (`{"max_hours": n}`, 0 = unlimited), so cards can count down to the auto-stop. |
 | GET | `/api/workspaces/{id}` | owner/admin | Get one workspace. |
 | PATCH | `/api/workspaces/{id}` | owner/admin | Update workspace settings. |
@@ -129,8 +129,8 @@ See [Zones](zones.md) for the enrollment flow and the agent stack these drive.
 | GET | `/api/admin/zones` | admin | List all zones (each with its workspace count). |
 | POST | `/api/admin/zones` | admin | Register a zone. With an endpoint host it is immediately `enrolled`; without one it waits as `pending`. |
 | GET | `/api/admin/zones/{id}` | admin | Get one zone. |
-| GET | `/api/admin/zones/{id}/health` | admin | Live check of the zone's Docker daemon: `ok`, round-trip ms, engine version, running containers. |
-| PATCH | `/api/admin/zones/{id}` | admin | Update name / endpoint host / port (`400` for the local zone `0`). |
+| GET | `/api/admin/zones/{id}/health` | admin | Live check of the zone's Docker daemon: `ok`, round-trip ms, engine version, running containers, and `agent_dind` (whether the agent's host allows Docker-in-Docker). |
+| PATCH | `/api/admin/zones/{id}` | admin | Update name / endpoint host / port, and the zone's settings: `gpu_accel`, `gpu_render_node`, `gpu_render_gid` (`null` = inherit the global setting) and `docker_enabled` (`400` for the local zone `0`, whose settings are the global ones). |
 | DELETE | `/api/admin/zones/{id}` | admin | Delete a zone (`409` while workspaces are still pinned to it; `400` for zone `0`). |
 | POST | `/api/admin/zones/{id}/enroll-token` | admin | Mint a single-use enrollment token + install one-liner. The plaintext token is shown once; only its sha256 is stored. Requires the endpoint host to be set. |
 | POST | `/api/admin/zones/{id}/rotate-client-cert` | admin | Re-issue the control plane's mTLS **client** cert for the zone (`409` if it has no mTLS material). The agent's server cert is rotated by re-enrolling instead. |
