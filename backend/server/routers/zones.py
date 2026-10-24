@@ -63,6 +63,12 @@ def refresh_agent_dind(db, zone: Zone) -> "bool | None":
     return value
 
 
+def _agent_current(zone_id: int) -> "bool | None":
+    from server import agent_update
+
+    return agent_update.agent_current(zone_id)
+
+
 def _clean_zone_render_node(raw: "str | None") -> "str | None":
     """Empty clears the override; anything else must be a /dev/dri node path (it
     is interpolated into a probe command and a device mapping)."""
@@ -121,6 +127,7 @@ def zone_health(zone_id: int, admin: AdminUser, db: DbSession):
             docker_version=version.get("Version"),
             containers_running=running,
             agent_dind=refresh_agent_dind(db, zone) if zone_id != 0 else None,
+            agent_current=_agent_current(zone_id) if zone_id != 0 else None,
         )
     except Exception as exc:  # unreachable daemon, TLS failure, proxy 403 …
         return ZoneHealthOut(ok=False, error=str(exc)[:300] or exc.__class__.__name__)
@@ -254,6 +261,10 @@ def update_agent(
             detail="This agent predates in-place updates. Re-enroll or redeploy it once "
             "to install the updater sidecar.",
         )
+    try:
+        agent_update.agent_image()
+    except agent_update.AgentImageUnavailable as exc:
+        raise HTTPException(status_code=409, detail=f"Can't update the agent: {exc}")
 
     background.add_task(agent_update.run_agent_update, zone_id)
     _audit(db, "admin.zone.update_agent", detail=zone.public_id, user=admin, request=request)

@@ -33,6 +33,11 @@
               <span v-else-if="health[z.id]?.ok" class="health ok" :title="`Docker ${health[z.id]?.docker_version ?? ''}`">
                 <CheckCircle2 :size="13" /> {{ health[z.id]?.latency_ms }} ms
                 <span class="muted">· {{ health[z.id]?.containers_running ?? '?' }} containers</span>
+                <span
+                  v-if="health[z.id]?.agent_current === false"
+                  class="outdated"
+                  title="This zone's agent runs an older image than the control plane. Click Update."
+                >· agent outdated</span>
               </span>
               <span v-else class="health bad" :title="health[z.id]?.error || ''"><XCircle :size="13" /> {{ health[z.id]?.error === 'Not enrolled' ? 'not enrolled' : 'unreachable' }}</span>
             </td>
@@ -270,6 +275,8 @@ async function handleUpdate() {
   try {
     const res = await zonesApi.updateAgent(z.id)
     ui.toast(res.detail || `Updating ${z.name}…`, 'info')
+    // The agent restarts out of band; check again once it should be back.
+    setTimeout(loadHealth, 20000)
   } catch (e: any) {
     ui.toast(e.message, 'error')
   } finally {
@@ -365,6 +372,7 @@ async function handleDelete() {
 .health { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
 .health.ok { color: var(--green); }
 .health.bad { color: var(--red); }
+.health .outdated { color: var(--amber); }
 .muted { color: var(--text-muted); }
 .badge {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;

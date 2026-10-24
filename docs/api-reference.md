@@ -129,12 +129,12 @@ See [Zones](zones.md) for the enrollment flow and the agent stack these drive.
 | GET | `/api/admin/zones` | admin | List all zones (each with its workspace count). |
 | POST | `/api/admin/zones` | admin | Register a zone. With an endpoint host it is immediately `enrolled`; without one it waits as `pending`. |
 | GET | `/api/admin/zones/{id}` | admin | Get one zone. |
-| GET | `/api/admin/zones/{id}/health` | admin | Live check of the zone's Docker daemon: `ok`, round-trip ms, engine version, running containers, and `agent_dind` (whether the agent's host allows Docker-in-Docker). |
+| GET | `/api/admin/zones/{id}/health` | admin | Live check of the zone's Docker daemon: `ok`, round-trip ms, engine version, running containers, `agent_dind` (whether the agent's host allows Docker-in-Docker) and `agent_current` (whether the agent runs the control plane's own build). |
 | PATCH | `/api/admin/zones/{id}` | admin | Update name / endpoint host / port, and the zone's settings: `gpu_accel`, `gpu_render_node`, `gpu_render_gid` (`null` = inherit the global setting) and `docker_enabled` (`400` for the local zone `0`, whose settings are the global ones). |
 | DELETE | `/api/admin/zones/{id}` | admin | Delete a zone (`409` while workspaces are still pinned to it; `400` for zone `0`). |
 | POST | `/api/admin/zones/{id}/enroll-token` | admin | Mint a single-use enrollment token + install one-liner. The plaintext token is shown once; only its sha256 is stored. Requires the endpoint host to be set. |
 | POST | `/api/admin/zones/{id}/rotate-client-cert` | admin | Re-issue the control plane's mTLS **client** cert for the zone (`409` if it has no mTLS material). The agent's server cert is rotated by re-enrolling instead. |
-| POST | `/api/admin/zones/{id}/update-agent` | admin | Update the zone's agent in place to the control plane's current agent image (`202`, runs in the background; `502` if the agent is unreachable, `409` if it predates the updater sidecar). |
+| POST | `/api/admin/zones/{id}/update-agent` | admin | Update the zone's agent in place to the control plane's current agent image (`202`, runs in the background; `502` if the agent is unreachable, `409` if it predates the updater sidecar or the control plane can't find its own image). |
 | GET | `/api/zones` | auth | Minimal `{id, name}` list of enrolled zones for the launch and migrate pickers — never endpoints or cert material. |
 | GET | `/api/zones/agent-image?token=` | enrollment token | Stream the agent image as a `docker save` tar so a fresh host can `docker load` it with no registry. Validates the token without consuming it. |
 | POST | `/api/zones/enroll?token=` | enrollment token (single-use) | Sign the agent's CSR; returns the CA cert, signed server cert, stream signing key, workspace domain, and expected client CN. `409` on replay. |

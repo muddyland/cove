@@ -387,6 +387,9 @@ export interface ZoneHealth {
   // Whether the zone's agent allows the Docker-in-Docker sidecar (null for the
   // local zone or an agent too old to say).
   agent_dind?: boolean | null
+  // Whether the agent runs the control plane's own agent image (false = it
+  // needs an Update; null for the local zone or when it can't be told).
+  agent_current?: boolean | null
 }
 
 export interface Zone {

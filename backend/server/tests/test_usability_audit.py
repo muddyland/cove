@@ -243,7 +243,8 @@ def test_zone_health_local(client, fake_docker_manager):
     fake_docker_manager._client.version.side_effect = RuntimeError("boom")
     body = client.get("/api/admin/zones/0/health").json()
     assert body == {"ok": False, "latency_ms": None, "docker_version": None,
-                    "containers_running": None, "error": "boom", "agent_dind": None}
+                    "containers_running": None, "error": "boom", "agent_dind": None,
+                    "agent_current": None}
     assert client.get("/api/admin/zones/42/health").status_code == 404
 
 

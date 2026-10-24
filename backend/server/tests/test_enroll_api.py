@@ -131,8 +131,13 @@ def test_enrolled_zone_accepts_workspaces(client):
     assert resp.json()["zone_id"] == zid
 
 
-def test_agent_image_streams_with_valid_token(client, fake_docker_manager):
+def test_agent_image_streams_with_valid_token(client, fake_docker_manager, monkeypatch):
+    from server import agent_update
+
     fake_docker_manager.save_image_stream.return_value = [b"TAR", b"DATA"]
+    monkeypatch.setattr(
+        agent_update, "agent_image", lambda src=None: (object(), "registry.example/cove:main")
+    )
     setup_admin(client)
     zid = _pending_zone_with_endpoint(client)
     token = client.post(f"/api/admin/zones/{zid}/enroll-token").json()["token"]
@@ -141,8 +146,11 @@ def test_agent_image_streams_with_valid_token(client, fake_docker_manager):
     assert resp.status_code == 200, resp.text
     assert resp.headers["content-type"] == "application/x-tar"
     assert resp.content == b"TARDATA"
-    # The configured agent image (default cove:local) is what gets exported.
-    fake_docker_manager.save_image_stream.assert_called_once_with("cove:local")
+    # The control plane's own image (here: a test container running cove:main)
+    # is what gets exported, by the ref the installer's compose file runs.
+    fake_docker_manager.save_image_stream.assert_called_once_with(
+        "registry.example/cove:main"
+    )
 
 
 def test_agent_image_rejects_bad_token(client):

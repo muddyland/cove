@@ -1001,3 +1001,6 @@ class ZoneHealthOut(BaseModel):
     # Whether the agent allows the Docker-in-Docker sidecar (null for the local
     # zone, or an agent too old to say).
     agent_dind: Optional[bool] = None
+    # Whether the agent runs the control plane's own agent image, i.e. needs no
+    # Update (null for the local zone, or when it can't be told).
+    agent_current: Optional[bool] = None

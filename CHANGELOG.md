@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Agent updates ship the control plane's own image.** Updating a zone's agent
+  pushed whatever image was tagged `cove:local` on the control plane host (the
+  `COVE_ZONE_AGENT_IMAGE` default), not the image the control plane runs. A
+  control plane deployed from a registry image doesn't run `cove:local`, so
+  Update and re-enrolling kept shipping an old agent, and GPU workspaces on zones
+  kept failing with *"blocked by Cove agent policy: device /dev/dri/renderD129 is
+  not allowed"* even though the policy allowing render nodes had shipped. Unless
+  `COVE_ZONE_AGENT_IMAGE` is set, the agent image is now the exact image the
+  control plane container runs. Update tags it on the zone as the ref the zone's
+  compose file runs, so existing zones need no reinstall. Zone health shows
+  **agent outdated** while an agent runs a different build. A launch refused by
+  a zone's agent policy now says to update the agent, and Update fails up front
+  when the control plane can't find an image to ship. **Operator action:** deploy,
+  then **Update** each zone's agent.
 - **GPU and Docker-in-Docker settings per zone.** Each zone host has its own
   GPU, but GPU used the control plane's global toggle, render node and group
   for every zone, so a zone whose GPU sits at a different node (or a zone that
