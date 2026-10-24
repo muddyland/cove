@@ -5,6 +5,9 @@
         <img class="logo-icon" src="/favicon.svg" alt="" />
         <span class="logo-text">COVE</span>
       </RouterLink>
+      <span v-if="thinClient.info" class="device-chip" :title="`This screen is the thin client '${thinClient.info.name}'`">
+        <MonitorSmartphone :size="12" /> {{ thinClient.info.name }}
+      </span>
 
       <button
         class="menu-toggle"
@@ -106,6 +109,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThinClientStore } from '@/stores/thinClient'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import DocsModal from '@/components/DocsModal.vue'
 import TasksMenu from '@/components/TasksMenu.vue'
@@ -115,12 +119,14 @@ import type { ExtensionInfo } from '@/types'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
   ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle, HardDrive,
-  SlidersHorizontal, Puzzle,
+  SlidersHorizontal, Puzzle, MonitorSmartphone,
 } from 'lucide-vue-next'
 
 withDefaults(defineProps<{ wide?: boolean }>(), { wide: false })
 
 const auth = useAuthStore()
+const thinClient = useThinClientStore()
+thinClient.load()
 const router = useRouter()
 const route = useRoute()
 
@@ -129,6 +135,7 @@ const adminItems = [
   { to: '/app/admin/users', label: 'Users', icon: Users },
   { to: '/app/admin/images', label: 'Images', icon: Boxes },
   { to: '/app/admin/zones', label: 'Zones', icon: Network },
+  { to: '/app/admin/thin-clients', label: 'Thin clients', icon: MonitorSmartphone },
   { to: '/app/admin/storage', label: 'Storage', icon: HardDrive },
   { to: '/app/admin/audit', label: 'Audit', icon: ScrollText },
   { to: '/app/admin/settings', label: 'Settings', icon: Settings },
@@ -226,6 +233,15 @@ async function handleLogout() {
   letter-spacing: 4px;
   color: var(--accent);
   text-shadow: var(--glow-sm);
+}
+/* Shown only on a thin client: which device this screen is. */
+.device-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-left: 14px; padding: 2px 8px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--accent-2); border: 1px solid var(--accent-2); border-radius: var(--radius-sm);
+  box-shadow: 0 0 6px rgba(255, 0, 170, 0.25);
+  white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* On desktop the drawer is transparent — its children join the topnav flow. */

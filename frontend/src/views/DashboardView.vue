@@ -81,10 +81,14 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import { Plus, MonitorOff, Activity, PowerOff, AlertTriangle, Cpu, MemoryStick, Loader } from 'lucide-vue-next'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useZonesStore } from '@/stores/zones'
+import { useThinClientStore } from '@/stores/thinClient'
+import { useRouter } from 'vue-router'
 import { fmtBytes, parseTs } from '@/utils/workspaceStatus'
 
 const store = useWorkspacesStore()
 const zonesStore = useZonesStore()
+const thinClient = useThinClientStore()
+const router = useRouter()
 const showLaunch = ref(false)
 
 // Live/transitioning workspaces float to the top (with stats); errors get their
@@ -118,7 +122,11 @@ const totals = computed(() => {
 
 onMounted(() => {
   store.startPolling()
-  store.fetch()
+  // On a thin client the device policy may open a workspace straight away.
+  store
+    .fetch()
+    .then(() => thinClient.maybeAutoOpen(store.items, router, id => store.start(id)))
+    .catch(() => {})
   zonesStore.fetch()
 })
 onUnmounted(() => store.stopPolling())

@@ -116,7 +116,24 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int, is_admin: bool) -> str:
+def _device_claims(payload: dict, tc: Optional[str], sst: Optional[float], cap: Optional[datetime]) -> None:
+    """Tokens minted in a thin client's browser name the device (``tc``) and when
+    that sign-in started (``sst``), and never outlive the device's session cap."""
+    if tc:
+        payload["tc"] = tc
+        payload["sst"] = sst
+        if cap is not None and cap < payload["exp"]:
+            payload["exp"] = cap
+
+
+def create_access_token(
+    user_id: int,
+    is_admin: bool,
+    *,
+    tc: Optional[str] = None,
+    sst: Optional[float] = None,
+    cap: Optional[datetime] = None,
+) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.access_token_minutes)
@@ -127,10 +144,17 @@ def create_access_token(user_id: int, is_admin: bool) -> str:
         "iat": now.timestamp(),
         "exp": expire,
     }
+    _device_claims(payload, tc, sst, cap)
     return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(user_id: int) -> str:
+def create_refresh_token(
+    user_id: int,
+    *,
+    tc: Optional[str] = None,
+    sst: Optional[float] = None,
+    cap: Optional[datetime] = None,
+) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
     expire = now + timedelta(days=settings.refresh_token_days)
@@ -140,6 +164,7 @@ def create_refresh_token(user_id: int) -> str:
         "iat": now.timestamp(),
         "exp": expire,
     }
+    _device_claims(payload, tc, sst, cap)
     return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
 
 

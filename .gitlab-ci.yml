@@ -26,6 +26,9 @@ variables:
   PYTHON_IMAGE: python:3.14-slim
   # This project is still on node 20.
   NODE_IMAGE: node:20-alpine
+  # The thin client agent runs on the device's own Python: Debian 12's 3.11 is
+  # the oldest it must support.
+  THINCLIENT_PYTHON_IMAGE: python:3.11-slim
   DOCKER_IMAGE: docker:29.8.2
   # Prefix for the Dockerfile's FROM lines. Empty means Docker Hub.
   BASE_REGISTRY: ""
@@ -73,6 +76,15 @@ lint:frontend:
     # No dedicated lint script; vue-tsc is the type-level lint.
     - npx vue-tsc --noEmit
 
+lint:thinclient:
+  image: $THINCLIENT_PYTHON_IMAGE
+  tags: [saas-linux-small-amd64]
+  stage: lint
+  before_script:
+    - pip install --quiet ruff
+  script:
+    - cd thinclient && ruff check .
+
 # ── Test ──────────────────────────────────────────────────────────────────
 
 test:backend:
@@ -85,6 +97,15 @@ test:backend:
     # Import smoke test — fails fast on broken imports / wiring.
     - python -c "import server.main; print('app import OK')"
     - pytest -q --tb=short
+
+test:thinclient:
+  image: $THINCLIENT_PYTHON_IMAGE
+  tags: [saas-linux-small-amd64]
+  stage: test
+  before_script:
+    - pip install --quiet pytest
+  script:
+    - cd thinclient && python -m pytest -q --tb=short
 
 test:frontend:
   extends: .node_base

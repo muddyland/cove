@@ -3,7 +3,7 @@ from typing import Annotated, Generator, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from server.config import get_settings
 from server.db import SessionLocal
@@ -34,6 +34,14 @@ def _check_revocation(user: User, payload: dict) -> bool:
             return False
         issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
         if issued_at < user.tokens_valid_from.replace(tzinfo=timezone.utc):
+            return False
+    # A token minted in a thin client's browser is also bound to that device: it
+    # dies when the device is signed out, revoked, or past its session cap.
+    if payload.get("tc") is not None:
+        from server.thin_clients import session_valid
+
+        db = object_session(user)
+        if db is None or not session_valid(db, payload["tc"], payload):
             return False
     return True
 

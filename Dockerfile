@@ -63,6 +63,9 @@ COPY docs/ ./docs/
 # The browser extension offered for download (/api/extension), vendored from its
 # own repo by scripts/vendor-extension.sh.
 COPY extension/ ./extension/
+# The thin client agent, handed to devices at enrolment and on every update
+# (/api/thin-client/agent).
+COPY thinclient/agent/ ./thinclient/agent/
 
 # Cove runs as root, on both bases. It stages helper scripts into the
 # workspace storage tree and extracts migrated workspace homes with their

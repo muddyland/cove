@@ -86,7 +86,9 @@ PyJWT for JWTs. Key modules:
 | `proot.py` | proot-apps: the catalog (GitHub contents API), strict parsers for the in-workspace driver's output, and update checks (installed layer digest vs. ghcr.io, cached). |
 | `preview.py` | Workspace screen captures: pulls a frame off the workspace's own Selkies stream (via `docker exec`), reassembles the JPEG stripes with Pillow. Also the launch readiness signal. |
 | `favicons.py` | Site favicons for browser workspaces pinned to one URL: discovers icons from the page's `<link rel=icon>` tags (else `/favicon.ico`), fetches and normalizes them to PNG. Refuses loopback/link-local targets. |
-| `deps.py` | FastAPI dependencies: `CurrentUser`, `AdminUser`, `DbSession`. |
+| `deps.py` | FastAPI dependencies: `CurrentUser`, `AdminUser`, `DbSession`. Token revocation, including the per-device check for thin-client sessions. |
+| `thin_clients.py` | Thin clients: enrolment codes and device tokens, policy, long-poll wake-ups, the command queue, the browser-binding ticket and cookie, and device-scoped session checks. |
+| `thin_client_install.py` | The `/thin-client/install.sh` bootstrap script (enrol, fetch + verify the agent, hand over to `agent.py install`). |
 
 **Routers** (all under `/api`):
 
@@ -99,6 +101,7 @@ PyJWT for JWTs. Key modules:
 | `/api/users` | Per-user Tailscale config. |
 | `/api/files` | Per-user file browser (list/upload/download/delete) confined to the user's storage. |
 | `/api` (proot) | proot-apps catalog; per-workspace installed apps, update status and background tasks; `/proot-tasks` for the navbar. |
+| `/api/admin/thin-clients`, `/api/thin-client`, `/thin-client/*` | Thin clients: admin management; the device protocol (long-poll check-in, command results, screenshots, binding tickets, agent download) on a bearer device token; and the public bootstrap (install script, enrolment, browser binding, `/self`). |
 | `/api/extension` | The "Open in Cove" browser extension as a zip, built in memory from `extension/` (vendored by `scripts/vendor-extension.sh`) and cached until those files change. |
 
 ### Frontend (`frontend/src/`)
@@ -231,6 +234,22 @@ status with actual container state and enforces the max-runtime limit (auto-stop
 
 ---
 
+### Thin clients
+
+A thin client is a Debian kiosk (sway + Chromium) running the stdlib-only agent
+in `thinclient/agent/`. The agent **dials out**: it long-polls
+`/api/thin-client/checkin` with a bearer device token. The request returns at
+once when commands are queued or the policy changed, and otherwise is held for
+up to 25 s, woken by an in-process event. Chromium never sees the device token.
+The agent fetches a one-time ticket and opens `/thin-client/bind`, which sets
+the `cove_tc` cookie. Tokens minted while that cookie is present carry `tc`
+(device) and `sst` (session start) claims, so `_check_revocation` also checks
+the device. A device sign-out bumps `thin_client.session_valid_from` alone,
+never the user's `tokens_valid_from`. The agent self-updates when the sha256 of
+the agent file Cove serves changes. See [docs/thin-clients.md](docs/thin-clients.md).
+
+---
+
 ## 5. Data model (SQLite)
 
 | Table | Notable columns |
@@ -241,6 +260,8 @@ status with actual container state and enforces the max-runtime limit (auto-stop
 | `user_tailscale` | Per-user `auth_key` (encrypted at rest), `login_server`, enabled. |
 | `app_setting` | Key/value runtime settings (see `settings_store`). |
 | `audit_log` | `ts`, `user_id`/`username`, `action`, `detail`, `ip`. |
+| `thin_client` | `public_id`, `name`, `status`, enrolment-code + device-token sha256s, `policy_json` + `policy_version`, reported `state_json`, `session_valid_from` (device-scoped revocation), current session user, one-time ticket hash, `bound_at`, `keep_awake_until`, latest screenshot. |
+| `thin_client_command` | `client_id`, `kind`, `args_json`, `status` (queued → sent → done/failed), `result`, `created_by`. |
 
 Schema is created and evolved by ordered migrations at startup (no Alembic). With
 `COVE_DB_ENCRYPTION_KEY` set, the DB is encrypted with SQLCipher.

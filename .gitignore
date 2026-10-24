@@ -14,3 +14,4 @@ frontend/dev-dist/
 backend/static/
 .localrun-data/
 .localrun-stack/
+.ruff_cache/

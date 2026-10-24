@@ -21,7 +21,7 @@
         <form @submit.prevent="handleLogin" class="form">
           <div class="form-group">
             <label>Username</label>
-            <input v-model="username" required autocomplete="username" />
+            <input v-model="username" required autocomplete="username" autofocus />
           </div>
           <div class="form-group">
             <label>Password</label>

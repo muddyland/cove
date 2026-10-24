@@ -1,0 +1,19 @@
+[Unit]
+Description=Cove thin client enrolment (first boot)
+After=network-online.target
+Wants=network-online.target
+Before=getty@tty1.service
+ConditionPathExists=!/etc/cove-thin-client/device.token
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cove-firstboot
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -46,6 +46,22 @@
   workspace to such a zone is refused with a clear message. **Operator action:**
   deploy, then **Update** each zone's agent. To use DinD on a zone, turn it on
   in the zone's settings, click **Enroll** and re-run the installer on that host.
+- **Thin clients.** Turn a spare mini PC into a kiosk that boots straight into
+  Cove, and manage it from **Admin → Thin clients**. The device runs Debian,
+  sway with no key bindings, and Chromium in kiosk mode, locked to Cove's own
+  hosts. A small agent dials out to Cove (a long-poll over HTTPS), so the device
+  needs no open port. Set one up with a one-liner on a fresh Debian 12/13
+  install, or with an install USB built by `thinclient/iso/build-iso.sh`. Per
+  device you get screen-off after idle and on-hours, an idle sign-out that ends
+  **only that screen's** session (the user stays signed in elsewhere), a hard
+  session cap, auto-opening the running or a pinned workspace after sign-in,
+  rotation, scale, brightness (backlight or DDC/CI) and volume, and nightly
+  updates with optional reboots. Admins can also wake it, put it to sleep, sign
+  it out, take a screenshot, show an identify banner, see logs, reboot it, or
+  keep it awake. The agent updates itself whenever Cove ships a new one, without
+  dropping the session on screen. See [Thin clients](docs/thin-clients.md).
+- **The login page focuses the username field**, so you can start typing
+  straight away (handy on a kiosk).
 
 ## 1.3.1 — Pillow security fixes and remote-zone repairs
 

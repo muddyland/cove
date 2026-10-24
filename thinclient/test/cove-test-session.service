@@ -1,0 +1,16 @@
+# Test-only stand-in for the tty1 autologin: runs the kiosk's sway session on a
+# headless (virtual) output, with the same config the agent wrote.
+[Unit]
+Description=Cove thin client test session (headless sway)
+After=cove-thin-client.service
+
+[Service]
+User=kiosk
+PermissionsStartOnly=true
+ExecStartPre=/bin/sh -c 'install -d -m 0700 -o kiosk -g kiosk /run/user/$$(id -u kiosk)'
+Environment=WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
+ExecStart=/bin/sh -c 'export XDG_RUNTIME_DIR=/run/user/$$(id -u); exec sway --config /etc/cove-thin-client/sway.conf'
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
