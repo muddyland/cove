@@ -224,54 +224,6 @@ def test_apply_package_env_noop_when_empty():
     assert env == {}
 
 
-# ── _apply_proot_apps ──────────────────────────────────────────────────────────
-
-def test_apply_proot_apps_sets_env_and_mount():
-    env: dict = {}
-    volumes: dict = {}
-    DockerManager._apply_proot_apps(env, volumes, "firefox, libreoffice")
-    assert env["PROOT_APPS"] == "firefox libreoffice"
-    # The bind source is the staged (host-resolvable) copy under the storage tree.
-    key = _helper_script_path("cove-apps.sh")
-    assert key.endswith("/.cove-scripts/cove-apps.sh")
-    assert volumes[key] == {
-        "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
-        "mode": "ro",
-    }
-
-
-def test_apply_proot_apps_noop_when_empty():
-    env: dict = {}
-    volumes: dict = {}
-    DockerManager._apply_proot_apps(env, volumes, None)
-    assert env == {}
-    assert volumes == {}
-
-# ── _apply_appimages ───────────────────────────────────────────────────────────
-
-def test_apply_appimages_sets_env_and_mount():
-    env: dict = {}
-    volumes: dict = {}
-    DockerManager._apply_appimages(
-        env, volumes, "https://x.io/A.AppImage\nhttps://y.io/B.AppImage"
-    )
-    assert env["COVE_APPIMAGES"] == "https://x.io/A.AppImage https://y.io/B.AppImage"
-    # One driver serves both lists; it picks which by the name it's mounted as.
-    key = _helper_script_path("cove-apps.sh")
-    assert key.endswith("/.cove-scripts/cove-apps.sh")
-    assert volumes[key] == {
-        "bind": "/custom-cont-init.d/97-install-appimages.sh",
-        "mode": "ro",
-    }
-
-
-def test_apply_appimages_noop_when_empty():
-    env: dict = {}
-    volumes: dict = {}
-    DockerManager._apply_appimages(env, volumes, None)
-    assert env == {}
-    assert volumes == {}
-
 # ── _apply_username (alias the desktop user to the Cove username) ───────────────
 
 def test_apply_username_sets_env_and_mount():

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { workspacesApi } from '@/api/workspaces'
+import { useTasksStore } from '@/stores/tasks'
 import type { Workspace, WorkspaceStats } from '@/types'
 
 const TRANSIENT = new Set(['creating', 'stopping', 'migrating'])
@@ -58,9 +59,26 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     stats.value = next
   }
 
+  // A desktop with saved apps queues their first-boot install as it comes up.
+  // Check the tasks menu then rather than at its idle cadence, so the install
+  // shows up while it runs.
+  function noticeBootInstalls(next: Workspace[]) {
+    const before = new Map(items.value.map(w => [w.id, w.status]))
+    const booted = next.some(
+      w =>
+        w.status === 'running' &&
+        before.has(w.id) &&
+        before.get(w.id) !== 'running' &&
+        !!(w.proot_apps || w.appimages),
+    )
+    if (booted) setTimeout(() => useTasksStore().kick(), 2000)
+  }
+
   async function refreshList(): Promise<boolean> {
     try {
-      items.value = await workspacesApi.list()
+      const next = await workspacesApi.list()
+      noticeBootInstalls(next)
+      items.value = next
       failures = 0
       pruneStats()
       return true

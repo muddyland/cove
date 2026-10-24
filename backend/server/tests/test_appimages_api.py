@@ -84,6 +84,7 @@ def test_lists_installed_appimages(client, fake_docker_manager):
     body = client.get(f"/api/workspaces/{ws_id}/appimages").json()
     assert body["apps"][0] == {
         "slug": "Foo-1.2_x86_64", "name": "Foo", "url": URL, "size_kb": 120, "installed_at": 1789500000,
+        "installed": True,
     }
     # Installed before Cove recorded provenance: no URL, so updating needs one.
     assert body["apps"][1]["url"] is None

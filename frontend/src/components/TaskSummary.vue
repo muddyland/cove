@@ -6,6 +6,7 @@
     </div>
     <div class="meta">
       <span class="state" :class="task.state">{{ stateLabel }}</span>
+      <span v-if="task.boot" class="boot" title="Started when the workspace came up: the saved apps it was missing">saved apps</span>
       <span v-if="progress">{{ progress }}</span>
       <span v-if="task.failed_apps.length" class="failed">failed: {{ task.failed_apps.join(', ') }}</span>
       <span v-if="when">{{ when }}</span>
@@ -65,6 +66,7 @@ const when = computed(() => {
 .icon.failed, .state.failed, .failed { color: var(--red); }
 .icon.interrupted, .state.interrupted { color: var(--amber); }
 .state { text-transform: uppercase; letter-spacing: 1px; }
+.boot { color: var(--accent); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

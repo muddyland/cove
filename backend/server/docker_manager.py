@@ -1828,11 +1828,9 @@ class DockerManager:
             # Per-workspace package installation (applies to both launch paths).
             self._apply_username(env, volumes, ws)
             self._apply_package_env(env, ws.install_packages)
-            # Launchers only exist on a desktop; rows from before that rule (or a
-            # workspace whose image was retyped) may still carry them.
-            if ws.kind == "desktop":
-                self._apply_proot_apps(env, volumes, ws.proot_apps)
-                self._apply_appimages(env, volumes, ws.appimages)
+            # Saved proot-apps and AppImages are installed once the desktop is up
+            # (see queue_boot_apps), not by an init script mounted from this
+            # host's copy of the scripts.
             self._apply_ssh_key(ws, volumes)
             self._apply_core_dump_cleanup(volumes)
             self._apply_cove_theme(volumes)
@@ -2078,6 +2076,7 @@ class DockerManager:
                             ws.preview_jpg = frame
                             ws.preview_at = ws.started_at
                         db.commit()
+                        self.queue_boot_apps(ws)
 
             except EgressGuardError as exc:
                 logger.error("Launch of workspace %s aborted: %s", ws_id, exc)
@@ -2739,6 +2738,7 @@ class DockerManager:
                     # connect before the fallback window (see is_connectable).
                     ws.preview_at = now if frame else None
                     db.commit()
+                    self.queue_boot_apps(ws)
                     continue
                 # Still starting: only fail a "creating" one past the (generous)
                 # deadline. An "error" one stays error until its GUI answers.
@@ -3141,8 +3141,7 @@ class DockerManager:
 
         Sets DOCKER_HOST to the sidecar's loopback daemon (shared netns) and mounts
         an init script that fetches the static ``docker`` CLI if the image lacks
-        one. Mutates both dicts in place. Mirrors ``_apply_proot_apps`` /
-        ``_apply_appimages``."""
+        one. Mutates both dicts in place."""
         env["DOCKER_HOST"] = "tcp://127.0.0.1:2375"
         volumes[_helper_script_path("install-docker-cli.sh")] = {
             "bind": "/custom-cont-init.d/96-install-docker-cli.sh",
@@ -3340,39 +3339,35 @@ class DockerManager:
         env["DOCKER_MODS"] = f"{existing}|{mod}" if existing else mod
         env["INSTALL_PACKAGES"] = "|".join(pkgs)
 
-    @staticmethod
-    def _apply_proot_apps(env: dict, volumes: dict, proot_apps: str | None) -> None:
-        """Wire proot-apps into ``env``/``volumes``.
+    def queue_boot_apps(self, ws) -> None:
+        """Install the workspace's saved apps that are missing, in the background.
 
-        Sets PROOT_APPS (space-separated) and mounts the install init script.
-        Mutates both dicts in place. No-op when there are no apps.
+        Runs when a desktop comes up (launch, or the reconciler promoting it).
+        A migration doesn't copy app trees and a fresh home has none, so this is
+        what brings them back. It used to be an init script bind-mounted from
+        ``<storage>/.cove-scripts`` — but on a zone that path is the zone host's
+        copy, staged by its agent from the agent's own image, and an agent older
+        than the script (or a missing copy, which Docker turns into an empty
+        directory) meant nothing installed at all. Going through exec carries
+        the control plane's own script, the same way the Apps dialog does, and
+        the install shows in the tasks menu as a "boot" task. The driver skips
+        what's installed and returns at once if a boot install is already
+        queued or running, so asking again on a later promotion is harmless.
+        Best-effort: a failure here never touches the workspace's state.
         """
-        apps = _split_packages(proot_apps)
-        if not apps:
+        if getattr(ws, "kind", None) != "desktop" or not ws.container_id:
             return
-        env["PROOT_APPS"] = " ".join(apps)
-        # The driver picks its list from the name it's invoked as (see the script).
-        volumes[_helper_script_path("cove-apps.sh")] = {
-            "bind": "/custom-cont-init.d/98-install-proot-apps.sh",
-            "mode": "ro",
-        }
-
-    @staticmethod
-    def _apply_appimages(env: dict, volumes: dict, appimages: str | None) -> None:
-        """Wire AppImage app URLs into ``env``/``volumes``.
-
-        Sets COVE_APPIMAGES (space-separated URLs) and mounts the install init
-        script, which downloads + extracts each AppImage and writes a desktop
-        launcher. Mutates both dicts in place. No-op when there are no URLs.
-        """
-        urls = _split_packages(appimages)
-        if not urls:
-            return
-        env["COVE_APPIMAGES"] = " ".join(urls)
-        volumes[_helper_script_path("cove-apps.sh")] = {
-            "bind": "/custom-cont-init.d/97-install-appimages.sh",
-            "mode": "ro",
-        }
+        jobs = [
+            ("boot-appimage", _split_packages(ws.appimages)),
+            ("boot-proot", _split_packages(ws.proot_apps)),
+        ]
+        for cmd, items in jobs:
+            if not items:
+                continue
+            try:
+                self.apps_command(ws, [cmd, *items], detach=True)
+            except Exception as exc:  # noqa: BLE001 - best-effort
+                logger.warning("Could not queue %s for workspace %s: %s", cmd, ws.id, exc)
 
     @staticmethod
     def _apply_username(env: dict, volumes: dict, ws) -> None:

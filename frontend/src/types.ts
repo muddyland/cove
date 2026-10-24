@@ -105,6 +105,8 @@ export interface AppImageApp {
   url: string | null
   size_kb: number
   installed_at: number | null
+  // False for one in the saved list that isn't on disk (e.g. after a migration).
+  installed?: boolean
 }
 
 export interface ProotAppMeta {
@@ -131,6 +133,8 @@ export interface ProotTask {
   created_at: number | null
   started_at: number | null
   finished_at: number | null
+  // Queued by the workspace coming up (its missing saved apps), not by a user.
+  boot?: boolean
 }
 
 export interface WorkspaceProotTasks {

@@ -769,6 +769,9 @@ class ProotTaskOut(BaseModel):
     created_at: Optional[int]  # epoch seconds, from the workspace clock
     started_at: Optional[int]
     finished_at: Optional[int]
+    # Queued by the workspace coming up (the saved apps it was missing), not by
+    # a user action.
+    boot: bool = False
 
 
 class WorkspaceProotTasksOut(BaseModel):
@@ -800,6 +803,9 @@ class AppImageOut(BaseModel):
     url: Optional[str]
     size_kb: int
     installed_at: Optional[int]  # epoch seconds, from the workspace clock
+    # False for one in the saved list that isn't on disk (a migration doesn't
+    # copy app trees, or its first-boot install failed).
+    installed: bool = True
 
 
 class AppImagesOut(BaseModel):
