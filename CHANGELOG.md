@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 — Pillow security fixes and remote-zone repairs
 
 - **GPU workspaces on remote zones use the render node's real group.** Before a
   GPU launch Cove checks which group owns the render node, so the workspace
@@ -33,6 +33,22 @@
   the same key) and every leaf carries Subject and Authority Key Identifiers.
   **Re-enroll each existing zone once** after upgrading: its agent server cert
   and stored CA copy were issued without them.
+
+### Security and maintenance
+
+- **Pillow 13.0.0** (from 12.3.0) fixes 41 advisories, six of them critical:
+  heap overflows in the JPEG, FlashPix and TIFF code (GHSA-8g5g-8vmr-9782,
+  GHSA-5x8w-8jj5-q52h, GHSA-332p-7hrc-92wf), stale image storage reused by
+  multi-frame loaders (GHSA-v9pv-5gc8-w2m6) and argument injection into
+  Ghostscript (GHSA-w889-685w-c8fh). The rest are denial-of-service and memory
+  disclosure bugs in Pillow's decoders. Cove decodes favicons it downloads from
+  the sites that browser workspaces point at, so a hostile site could reach these
+  decoders. Upgrading the image is the whole fix.
+- **Frontend build tooling:** Vite 6.4.5, Vitest 4.1.12, serialize-javascript
+  7.1.4 and fast-uri 3.1.9 (launch-editor command injection on Windows, Vite dev
+  server file access, Vitest mock injection, a serialize-javascript XSS and
+  fast-uri parsing issues). All dev-only; none ship in the image. They also turn
+  the dependency audit green again, and while it was red no image was built.
 
 ## 1.3.0 — VPN profiles, in-stream files and a usability pass
 
