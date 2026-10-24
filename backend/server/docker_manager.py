@@ -1087,8 +1087,9 @@ class DockerManager:
     def load_image(self, data) -> None:
         """``docker load`` a ``docker save`` byte stream into this zone's daemon —
         the receiving side of ``save_image_stream``, used to push an updated agent
-        image to a zone over the per-zone Docker channel (no registry involved)."""
-        self._client.images.load(data)
+        image to a zone over the per-zone Docker channel (no registry involved).
+        Returns the loaded images."""
+        return self._client.images.load(data)
 
     def container_exists(self, name: str) -> bool:
         try:
@@ -2092,6 +2093,14 @@ class DockerManager:
                 ws = db.get(Workspace, ws_id)
                 ws.status = "error"
                 ws.error_message = str(exc)
+                if self.zone_id != 0 and "blocked by Cove agent policy" in str(exc):
+                    # The agent enforces its own copy of the policy, so a refusal
+                    # of something this control plane normally sends usually
+                    # means the agent is older than the control plane.
+                    ws.error_message += (
+                        " (If the zone's agent is out of date, update it: "
+                        "Administration → Zones → Update.)"
+                    )
                 db.commit()
         except Exception as exc:
             # Anything not caught above — most importantly connection/timeout

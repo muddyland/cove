@@ -72,17 +72,20 @@ def install_script(token: str, request: Request, db: DbSession):
 
 @router.get("/api/zones/agent-image")
 def agent_image(token: str, db: DbSession):
-    """Stream the configured agent image as a ``docker save`` tar, so a fresh
-    agent can ``docker load`` a locally-built image with no registry. Token-gated
+    """Stream the agent image (see ``agent_update.agent_image``: the control
+    plane's own image unless COVE_ZONE_AGENT_IMAGE is set) as a ``docker save``
+    tar, so a fresh agent can ``docker load`` it with no registry. Saved by ref,
+    so the tar carries the tag the installer's compose file runs. Token-gated
     (validated, not consumed) — the install script fetches this before enrolling.
     """
     zone = _find_zone_by_token(db, token)
     if not _token_valid(zone):
         raise HTTPException(status_code=403, detail="Invalid or expired enrollment token")
 
+    from server.agent_update import agent_image_ref
     from server.docker_manager import get_docker_manager
 
-    ref = get_settings().zone_agent_image
+    ref = agent_image_ref()
     try:
         stream = get_docker_manager(0).save_image_stream(ref)
     except Exception as exc:
@@ -397,6 +400,8 @@ echo "Zone agent ready on ${ZONE_HOST}:${PORT} (single mTLS port — streams, ag
 
 
 def _render_install_sh(*, cp_url: str, token: str, zone: Zone) -> str:
+    from server.agent_update import agent_image_ref
+
     settings = get_settings()
     storage_path = str(settings.storage_path) if settings.storage_path else "/var/lib/cove/workspaces"
     replacements = {
@@ -405,7 +410,7 @@ def _render_install_sh(*, cp_url: str, token: str, zone: Zone) -> str:
         "__ZONE_NAME__": zone.name,
         "__ZONE_HOST__": zone.endpoint_host or "",
         "__PORT__": str(zone.endpoint_port),
-        "__AGENT_IMAGE__": settings.zone_agent_image,
+        "__AGENT_IMAGE__": agent_image_ref(),
         "__LOAD_IMAGE__": "1" if settings.zone_agent_image_from_control_plane else "",
         "__STORAGE_PATH__": storage_path,
         "__ALLOW_DIND__": "1" if zone.docker_enabled else "0",

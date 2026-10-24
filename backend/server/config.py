@@ -30,8 +30,11 @@ class Settings(BaseSettings):
     # client certs are mounted (used by the HTTP dynamic-config serversTransports).
     zone_certs_mount: str = "/zone-certs"
     # Container image a zone agent runs (same Cove image, started with
-    # COVE_AGENT_MODE=1). Baked into the generated install script.
-    zone_agent_image: str = "cove:local"
+    # COVE_AGENT_MODE=1). Unset (the default) means the image this control
+    # plane container is itself running, so installs and agent updates always
+    # ship the control plane's own version. Set it only to pin something else.
+    # (empty -> None)
+    zone_agent_image: Optional[str] = None
     # When true (default), the installer fetches this image from the control
     # plane (a `docker save` stream) and `docker load`s it — so a locally-built
     # image with no registry still reaches the agent. Set false when
@@ -128,6 +131,7 @@ class Settings(BaseSettings):
         "stream_signing_key",
         "agent_expected_client_cn",
         "agent_edge_client_cn",
+        "zone_agent_image",
         "oidc_discovery_url",
         "oidc_admin_group",
         mode="before",

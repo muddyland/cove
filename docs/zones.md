@@ -146,12 +146,12 @@ Run the one-liner as root on the new node. It is idempotent and does the followi
 5. Writes the agent stack to `/var/lib/cove-agent` (`.env`, `docker-compose.yml`,
    `traefik-dynamic.yml`) and runs `docker compose up -d`.
 
-> **Image options.** Set `COVE_ZONE_AGENT_IMAGE` to the image the agent should run
-> (default `cove:local`, matching the control plane's own image). By default the
-> installer pulls those bytes **from the control plane** — no registry needed. If
-> you publish Cove to a registry instead, set `COVE_ZONE_AGENT_IMAGE` to that ref
-> and `COVE_ZONE_AGENT_IMAGE_FROM_CONTROL_PLANE=false` so the agent pulls it
-> directly.
+> **Image options.** By default the agent runs **the exact image the control
+> plane container runs**, whether that's a local build or a registry image, and
+> the installer pulls those bytes **from the control plane**, so no registry is
+> needed. Set `COVE_ZONE_AGENT_IMAGE` only to ship a different image. To have the
+> agent pull from a registry instead, also set
+> `COVE_ZONE_AGENT_IMAGE_FROM_CONTROL_PLANE=false`.
 
 When it finishes the zone flips to **enrolled** and can run workspaces.
 
@@ -277,6 +277,11 @@ off.
   **offline** (its workspaces are left as-is, not errored) and returns to
   **enrolled** when it answers again. `last_seen_at` tracks the last successful
   ping.
+- **Update an agent:** **Update** on the zone row (`POST /api/admin/zones/{id}/update-agent`)
+  pushes the control plane's own image to the zone over the mTLS channel, tags it
+  as the image the zone's compose file runs, and recreates `cove-agent`. The
+  Health column shows **agent outdated** while the agent runs a different build
+  than the control plane.
 - **Rotate the control-plane client cert:** `POST /api/admin/zones/{id}/rotate-client-cert`.
   The control plane re-issues its own client cert (same CN, same CA) — no agent
   change needed.
@@ -294,7 +299,7 @@ Control-plane settings (env prefix `COVE_`):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COVE_ZONE_AGENT_IMAGE` | `cove:local` | The Cove image the agent runs. |
+| `COVE_ZONE_AGENT_IMAGE` | _(unset)_ | The Cove image the agent runs. Unset: the image the control plane container itself runs (`cove:local` if it doesn't run in a container). |
 | `COVE_ZONE_AGENT_IMAGE_FROM_CONTROL_PLANE` | `true` | Installer fetches the image from the control plane (`docker save`/`load`) so a locally-built image needs no registry. Set `false` to have the agent pull a registry ref. |
 | `COVE_ZONE_ENROLL_TOKEN_MINUTES` | `60` | Enrollment-token lifetime. |
 | `COVE_ZONE_CERTS_MOUNT` | `/zone-certs` | Path **inside the Traefik container** where per-zone client certs are mounted. |
@@ -344,7 +349,7 @@ After enrollment, exercise the full path:
 | Files/migration **409 "not enrolled for mTLS"** | The zone was manually registered (plain endpoint) but never enrolled — run the installer. |
 | **403 "client certificate not authorized for this zone"** | The presented client-cert CN doesn't match the agent's `COVE_AGENT_EXPECTED_CLIENT_CN` (e.g. after a control-plane re-issue with a different CN, or wrong zone). Re-enroll to re-provision. |
 | Bind mounts empty / wrong | `COVE_STORAGE_PATH` differs between control plane and agent (see [Storage parity](#5-storage-parity-important)). |
-| GPU workspace errors with *"device /dev/dri/renderD128 is not allowed"* | The agent predates 1.3.1. **Update** it from Admin → Zones. |
+| GPU workspace errors with *"device /dev/dri/renderD128 is not allowed"* | The agent predates 1.3.1. **Update** it from Admin → Zones. Older control planes shipped the host's `cove:local` image on Update, not the image they run, so a registry-deployed control plane left the agent old. The Health column shows **agent outdated** until the Update lands. |
 | GPU workspace errors with *"no render node exists at …"* | The zone host has no GPU at that path. Set the zone's render node in its Settings (`ls /dev/dri` on the host), or turn GPU off for the zone. |
 | *"Docker-in-Docker … its agent does not allow it yet"* | The zone setting is on but the host hasn't opted in. Click **Enroll** and re-run the installer on the host. |
 
