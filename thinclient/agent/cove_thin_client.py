@@ -850,7 +850,9 @@ class Agent:
         self.upgradable_at = 0.0
         self.last_update_at = (read_json(MAINT_FILE, {}) or {}).get("last_update_at")
         self.agent_sha = sha256_file(os.path.abspath(__file__))
-        self.update_failed_at = 0.0
+        # None, not 0.0: monotonic time is seconds since boot, so a 0.0 here made
+        # a freshly booted device sit out its first ten minutes of updates.
+        self.update_failed_at = None
 
     # Activity / display
 
@@ -1321,7 +1323,7 @@ class Agent:
         want = resp.get("agent_sha256")
         if not want or want == self.agent_sha or not self.cfg.get("allow_agent_update", True):
             return
-        if time.monotonic() - self.update_failed_at < 600:
+        if self.update_failed_at is not None and time.monotonic() - self.update_failed_at < 600:
             return
         try:
             data, headers = self.api.request("GET", "/api/thin-client/agent", timeout=60)

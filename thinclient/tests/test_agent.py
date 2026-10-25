@@ -122,3 +122,20 @@ def test_output_mode():
     assert agent.output_mode({"width": 1920, "height": 1080, "refresh": 59951}) == "1920x1080@60"
     assert agent.output_mode({"width": 1280, "height": 720, "refresh": 0}) == "1280x720"
     assert agent.output_mode({}) is None
+
+
+def test_self_update_runs_right_after_boot(monkeypatch):
+    """Monotonic time starts near zero at boot; that must not look like a
+    recent failed update."""
+    calls = []
+    fake = types.SimpleNamespace(
+        agent_sha="old", cfg={"allow_agent_update": True}, update_failed_at=None, last_error=None,
+        api=types.SimpleNamespace(request=lambda *a, **k: calls.append(a) or (_ for _ in ()).throw(RuntimeError("x"))),
+    )
+    monkeypatch.setattr(agent.time, "monotonic", lambda: 42.0)  # 42 s after boot
+    agent.Agent.maybe_self_update(fake, {"agent_sha256": "new"})
+    assert calls, "the update was not attempted"
+    assert fake.update_failed_at == 42.0  # and a failure now backs off
+    calls.clear()
+    agent.Agent.maybe_self_update(fake, {"agent_sha256": "new"})
+    assert not calls
