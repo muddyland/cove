@@ -274,6 +274,7 @@ variable, restart Cove, and run the new install command.
 
 | Symptom | Check |
 |---|---|
+| Install was interrupted (reboot, dropped SSH) | Once enrolled, the agent is enabled before the long package step: reboot and it finishes the setup by itself, or run `python3 /usr/local/lib/cove-thin-client/agent.py install` as root. No new code is needed. |
 | Card stays **pending** | The installer never reached `/api/thin-client/enroll`. Run it again with a fresh code and read its output. |
 | **offline** | `systemctl status cove-thin-client`, then `journalctl -u cove-thin-client -e`. Is Cove's URL reachable from the device? |
 | Kiosk shows **LINK DOWN** | The device can't reach Cove. It retries, and switches to Cove by itself once Cove is reachable. |

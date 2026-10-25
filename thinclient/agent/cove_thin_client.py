@@ -448,7 +448,14 @@ def install():
     if os.geteuid() != 0:
         sys.exit("install must run as root")
     env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    # Enable (not start) the agent first: if the package step below is cut short
+    # (a reboot, a dropped SSH session), the agent finishes the setup on its own
+    # at the next boot, and the already-used enrolment code isn't needed again.
+    converge()
+    run(["systemctl", "daemon-reload"])
+    run(["systemctl", "enable", "cove-thin-client.service"])
     print(">> apt: installing kiosk packages", flush=True)
+    run(["dpkg", "--configure", "-a"], timeout=1800, env=env)  # repair an interrupted earlier run
     run(["apt-get", "update", "-qq"], timeout=600, env=env)
     rc, out = run(["apt-get", "install", "-y", "-qq", "--no-install-recommends", *PACKAGES], timeout=3600, env=env)
     if rc != 0:
@@ -1360,11 +1367,23 @@ class Agent:
         with self.apt_lock:
             log.info("installing missing packages: %s", " ".join(missing))
             env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+            run(["dpkg", "--configure", "-a"], timeout=1800, env=env)
             run(["apt-get", "update", "-qq"], timeout=600, env=env)
             rc, out = run(["apt-get", "install", "-y", "-qq", "--no-install-recommends", *missing],
                           timeout=3600, env=env)
             if rc != 0:
                 self.last_error = f"packages: {out[-300:]}"
+                return
+        # Finish a setup that was cut short: write what needed the packages, and
+        # start the kiosk session if the console isn't running it yet.
+        try:
+            converge()
+            setup_boot_splash()
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"setup: {exc}"
+        if not self.sway.available():
+            log.info("packages in place: starting the kiosk session on tty1")
+            run(["systemctl", "restart", "getty@tty1.service"])
 
 
 def output_mode(mode):
