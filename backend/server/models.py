@@ -517,3 +517,81 @@ class TrashEntry(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     user: Mapped["User"] = relationship("User")
+
+
+class ThinClient(Base):
+    """A kiosk device (Debian + sway + locked-down Chromium) that shows the Cove
+    SPA. Its agent dials OUT to Cove (long-poll over HTTPS), so a thin client
+    never needs an inbound port. Cove holds the desired policy; the device
+    reports its state and runs the commands queued for it."""
+
+    __tablename__ = "thin_client"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_id: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False, default=lambda: uuid4().hex
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    location: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    # pending (never enrolled) -> enrolled. Online/offline is derived from last_seen_at.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    # Single-use enrolment code (sha256 of the normalised code) + its lifetime.
+    enroll_token_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    enroll_token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    enroll_consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # sha256 of the long-lived bearer token the agent authenticates with.
+    device_token_hash: Mapped[Optional[str]] = mapped_column(
+        String(128), unique=True, index=True, nullable=True
+    )
+    enrolled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # What the agent last reported (JSON object; untrusted, display-only).
+    state_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Desired policy (JSON, validated by schemas.ThinClientPolicy) and a counter
+    # bumped on every change so the agent knows when to re-apply it.
+    policy_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    policy_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    # Every token and browser binding minted for this device before this instant
+    # is revoked. Signing out a thin client bumps it — and only it, so a kiosk
+    # timing out never signs the same user out of their other browsers.
+    session_valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Who is signed in on it right now (best effort; cleared on sign-out).
+    session_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    session_username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    session_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # One-time browser binding ticket the agent opens Chromium with.
+    ticket_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    ticket_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # When a browser last bound to this device. The agent restarts Chromium if a
+    # launch never binds, so a kiosk can't quietly run unscoped sessions.
+    bound_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # "Keep awake" override: treat the device as active until this instant.
+    keep_awake_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    screenshot_png: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    screenshot_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    commands: Mapped[list["ThinClientCommand"]] = relationship(
+        "ThinClientCommand", cascade="all, delete-orphan", order_by="ThinClientCommand.id"
+    )
+
+
+class ThinClientCommand(Base):
+    """A command queued for a thin client: queued -> sent -> done | failed."""
+
+    __tablename__ = "thin_client_command"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("thin_client.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    args_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

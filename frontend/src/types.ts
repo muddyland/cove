@@ -549,3 +549,124 @@ export interface PublicIp {
 export interface WsFileEntry { name: string; type: 'dir' | 'file' | 'link'; size: number; modified: string }
 export interface WsListing { path: string; entries: WsFileEntry[] }
 export interface WsUpload { path: string; name: string; size: number }
+
+// ── Thin clients ────────────────────────────────────────────────────────────
+
+export type ThinClientRotation = 'normal' | '90' | '180' | '270'
+export type ThinClientAutoOpen = 'off' | 'running' | 'pinned'
+
+export interface ThinClientPolicy {
+  screen_off_minutes: number
+  brightness: number | null
+  rotation: ThinClientRotation
+  scale: number | null
+  on_hours_start: string | null
+  on_hours_end: string | null
+  media_keeps_awake: boolean
+  volume: number | null
+  signout_minutes: number
+  session_max_hours: number
+  auto_open: ThinClientAutoOpen
+  pinned_workspace_id: string | null
+  extra_allowed_hosts: string[]
+  auto_update: boolean
+  maintenance_hour: number
+  auto_reboot: boolean
+}
+
+export interface ThinClientOutput {
+  name: string | null
+  make: string | null
+  model: string | null
+  active: boolean | null
+  power: boolean | null
+  mode: string | null
+  transform: string | null
+  scale: number | null
+}
+
+/** What the device last reported. Untrusted, display-only, and any field may
+ *  be missing (older agents, a device that never checked in). */
+export interface ThinClientState {
+  hostname?: string
+  ips?: string[]
+  os?: string
+  kernel?: string
+  agent_version?: string
+  browser_version?: string | null
+  sway_version?: string | null
+  session_running?: boolean
+  uptime_s?: number | null
+  display_on?: boolean
+  idle_s?: number
+  media_playing?: boolean
+  browser_running?: boolean
+  browser_page?: string | null
+  outputs?: ThinClientOutput[]
+  upgradable?: number | null
+  reboot_required?: boolean
+  last_update_at?: string | null
+  last_error?: string | null
+}
+
+export interface ThinClient {
+  id: number
+  public_id: string
+  name: string
+  location: string | null
+  status: 'pending' | 'enrolled'
+  online: boolean
+  enrolled_at: string | null
+  last_seen_at: string | null
+  created_at: string
+  policy: ThinClientPolicy
+  policy_version: number
+  applied_policy_version: number | null
+  state: ThinClientState
+  session_username: string | null
+  session_started_at: string | null
+  keep_awake_until: string | null
+  bound_at: string | null
+  screenshot_at: string | null
+  pending_commands: number
+  latest_agent_version: string | null
+}
+
+export type ThinClientCommandKind =
+  | 'screen_on' | 'screen_off' | 'restart_browser' | 'identify' | 'screenshot'
+  | 'apt_upgrade' | 'reboot' | 'poweroff' | 'logs'
+
+export interface ThinClientCommand {
+  id: number
+  kind: ThinClientCommandKind
+  args: Record<string, unknown>
+  status: 'queued' | 'sent' | 'done' | 'failed' | 'lost'
+  result: string | null
+  created_by: string | null
+  created_at: string
+  sent_at: string | null
+  finished_at: string | null
+}
+
+export interface ThinClientEnrollToken {
+  code: string
+  expires_at: string
+  install_command: string
+}
+
+export interface ThinClientWorkspaceOption {
+  public_id: string
+  name: string
+  username: string
+  status: string
+}
+
+/** The thin client the current browser runs on (only on a kiosk). */
+export interface ThinClientSelf {
+  public_id: string
+  name: string
+  auto_open: ThinClientAutoOpen
+  pinned_workspace_id: string | null
+  signout_minutes: number
+  screen_off_minutes: number
+}

@@ -1,7 +1,8 @@
+import re as _re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Sentinel used to distinguish an omitted field from one explicitly set to clear.
 _UNSET = "\x00__unset__\x00"
@@ -1010,3 +1011,209 @@ class ZoneHealthOut(BaseModel):
     # Whether the agent runs the control plane's own agent image, i.e. needs no
     # Update (null for the local zone, or when it can't be told).
     agent_current: Optional[bool] = None
+
+
+# ── Thin clients ──────────────────────────────────────────────────────────────
+
+# A bare hostname (optionally a leading "*." wildcard). No scheme, port, path or
+# whitespace: these end up in the device's Chromium URL allowlist.
+_TC_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_TC_HOST_RE = _re.compile(rf"^(\*\.)?(?=.{{1,253}}$)({_TC_LABEL}\.)*{_TC_LABEL}$")
+_TC_HHMM_RE = _re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+class ThinClientPolicy(BaseModel):
+    """What a thin client should do. Every field has a safe default, so a policy
+    saved by an older Cove (missing newer fields) still validates."""
+
+    # Display
+    screen_off_minutes: int = Field(15, ge=0, le=1440)  # 0 = never
+    brightness: Optional[int] = Field(None, ge=0, le=100)  # None = leave alone
+    rotation: Literal["normal", "90", "180", "270"] = "normal"
+    scale: Optional[float] = Field(None, ge=0.5, le=3.0)
+    # Outside these local-time hours the screen goes dark after one idle minute.
+    # Both empty = always "on hours".
+    on_hours_start: Optional[str] = None
+    on_hours_end: Optional[str] = None
+    # Audio playing on the device (a film, music) counts as activity.
+    media_keeps_awake: bool = True
+    volume: Optional[int] = Field(None, ge=0, le=100)
+
+    # Session
+    signout_minutes: int = Field(30, ge=0, le=1440)  # idle sign-out, 0 = never
+    session_max_hours: int = Field(12, ge=0, le=720)  # absolute cap, 0 = Cove default
+    auto_open: Literal["off", "running", "pinned"] = "running"
+    pinned_workspace_id: Optional[str] = Field(None, max_length=64)
+
+    # Browser
+    extra_allowed_hosts: list[str] = Field(default_factory=list, max_length=32)
+
+    # Updates
+    auto_update: bool = True  # nightly apt full-upgrade in the maintenance hour
+    maintenance_hour: int = Field(4, ge=0, le=23)
+    auto_reboot: bool = False  # reboot in the maintenance hour if an update needs it
+
+    @field_validator("on_hours_start", "on_hours_end")
+    @classmethod
+    def _hhmm(cls, v):
+        if v in (None, ""):
+            return None
+        if not _TC_HHMM_RE.match(v):
+            raise ValueError("must be HH:MM (24-hour)")
+        return v
+
+    @field_validator("extra_allowed_hosts")
+    @classmethod
+    def _hosts(cls, v):
+        out: list[str] = []
+        for h in v:
+            h = (h or "").strip().lower().rstrip(".")
+            if not h:
+                continue
+            if not _TC_HOST_RE.match(h):
+                raise ValueError(f"'{h}' is not a hostname (no scheme, port or path)")
+            if h not in out:
+                out.append(h)
+        return out
+
+
+class ThinClientCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    location: Optional[str] = Field(None, max_length=256)
+
+
+class ThinClientUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=128)
+    location: Optional[str] = Field(None, max_length=256)
+    policy: Optional[ThinClientPolicy] = None
+
+
+class ThinClientCommandOut(BaseModel):
+    id: int
+    kind: str
+    args: dict[str, Any] = {}
+    status: str
+    result: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: datetime
+    sent_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+
+class ThinClientOut(BaseModel):
+    id: int
+    public_id: str
+    name: str
+    location: Optional[str]
+    status: str
+    online: bool
+    enrolled_at: Optional[datetime]
+    last_seen_at: Optional[datetime]
+    created_at: datetime
+    policy: ThinClientPolicy
+    policy_version: int
+    # The policy version the agent last confirmed it applied.
+    applied_policy_version: Optional[int] = None
+    state: dict[str, Any] = {}
+    session_username: Optional[str] = None
+    session_started_at: Optional[datetime] = None
+    keep_awake_until: Optional[datetime] = None
+    # When a browser on the device last bound to it (each fresh browser does).
+    bound_at: Optional[datetime] = None
+    screenshot_at: Optional[datetime] = None
+    pending_commands: int = 0
+    # Agent version Cove would hand out now; differs from state.agent_version
+    # while an update is rolling out.
+    latest_agent_version: Optional[str] = None
+
+
+class ThinClientEnrollTokenIn(BaseModel):
+    ttl_hours: int = Field(1, ge=1, le=168)
+
+
+class ThinClientEnrollTokenOut(BaseModel):
+    code: str
+    expires_at: datetime
+    install_command: str
+
+
+class ThinClientCommandIn(BaseModel):
+    kind: str = Field(..., max_length=32)
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+class ThinClientKeepAwakeIn(BaseModel):
+    minutes: int = Field(..., ge=0, le=24 * 60)  # 0 clears it
+
+
+class ThinClientWorkspaceOption(BaseModel):
+    public_id: str
+    name: str
+    username: str
+    status: str
+
+
+# Device-side protocol (agent <-> Cove).
+
+class ThinClientEnrollIn(BaseModel):
+    hostname: str = Field("", max_length=255)
+
+
+class ThinClientEnrollOut(BaseModel):
+    device_token: str
+    public_id: str
+    name: str
+    cp_url: str
+
+
+class ThinClientCheckinIn(BaseModel):
+    # Free-form device report, size-capped by the router. Display-only.
+    state: dict[str, Any] = Field(default_factory=dict)
+    applied_policy_version: Optional[int] = None
+    # Seconds to hold the request open waiting for work (long-poll). 0 = reply now.
+    wait: int = Field(0, ge=0, le=30)
+
+
+class ThinClientCommandForDevice(BaseModel):
+    id: int
+    kind: str
+    args: dict[str, Any] = {}
+
+
+class ThinClientCheckinOut(BaseModel):
+    name: str
+    policy: ThinClientPolicy
+    policy_version: int
+    commands: list[ThinClientCommandForDevice] = []
+    allowed_hosts: list[str] = []
+    keep_awake_until: Optional[datetime] = None
+    agent_version: Optional[str] = None
+    agent_sha256: Optional[str] = None
+    bound_at: Optional[datetime] = None
+    # Who is signed in on the device, as far as Cove knows (None = nobody). The
+    # agent only runs its idle sign-out while someone is.
+    session_username: Optional[str] = None
+    server_time: datetime
+
+
+class ThinClientResultIn(BaseModel):
+    ok: bool
+    output: str = Field("", max_length=200_000)
+
+
+class ThinClientTicketOut(BaseModel):
+    url: str
+    expires_in: int
+    # Server time; the agent compares the device's bound_at against it.
+    issued_at: datetime
+
+
+class ThinClientSelfOut(BaseModel):
+    """What the SPA running ON a thin client may know about it."""
+
+    public_id: str
+    name: str
+    auto_open: str
+    pinned_workspace_id: Optional[str]
+    signout_minutes: int
+    screen_off_minutes: int

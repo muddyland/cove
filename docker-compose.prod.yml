@@ -43,7 +43,9 @@ services:
       # Redirect all plain HTTP to HTTPS
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
-    ports:
+    # !override: replace the base file's loopback-only :80 instead of adding a
+    # second :80 binding next to it (which fails with "address already in use").
+    ports: !override
       # Public entrypoints (this override is for an internet-facing host).
       - "${COVE_HTTP_PORT:-80}:80"
       - "443:443"

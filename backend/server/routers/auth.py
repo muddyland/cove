@@ -1,6 +1,7 @@
 import re
 import time
 from datetime import datetime, timezone
+from typing import Optional
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -9,9 +10,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from server import oidc as oidc_module
+from server import thin_clients
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession, _check_revocation, resolve_user_from_token
-from server.models import User, Workspace
+from server.models import ThinClient, User, Workspace
 from server.net import client_ip
 from server.schemas import (
     AuthConfig,
@@ -60,10 +62,49 @@ def _record_audit(db: Session, action: str, *, detail=None, user=None, ip=None) 
     record_audit(db, action, detail=detail, user=user, ip=ip)
 
 
-def _set_auth_cookies(resp: Response, user: User) -> None:
+def _token_payload(request: Request) -> Optional[dict]:
+    """Claims of the access token this request authenticated with, if any."""
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else None
+    token = token or request.cookies.get(get_settings().cookie_session_name)
+    payload = decode_token(token) if token else None
+    return payload if payload and payload.get("type") == "access" else None
+
+
+def _device_ctx(request: Request, db: Session, user: User, payload: Optional[dict] = None) -> Optional[dict]:
+    """Thin-client context for tokens about to be minted, or None.
+
+    A session that already belongs to a device (``tc`` in ``payload``) keeps its
+    device and its original start, so refreshing never extends the session cap.
+    Otherwise a browser bound to a thin client (the ``cove_tc`` cookie) starts a
+    new device session now. Either way every token minted in a kiosk browser is
+    device-scoped, so none can outlive the device's sign-out.
+    """
+    if payload and payload.get("tc"):
+        client = db.scalar(select(ThinClient).where(ThinClient.public_id == str(payload["tc"])))
+        try:
+            sst = float(payload.get("sst") or payload.get("iat") or time.time())
+        except (TypeError, ValueError):
+            sst = time.time()
+    else:
+        client = thin_clients.client_from_bind_cookie(db, request.cookies.get(thin_clients.BIND_COOKIE))
+        sst = time.time()
+    if client is None or client.status != "enrolled":
+        return None
+    thin_clients.note_session(db, client.public_id, user)
+    return {"tc": client.public_id, "sst": sst, "cap": thin_clients.session_cap(client, sst)}
+
+
+def _issue_tokens(user: User, ctx: Optional[dict]) -> tuple[str, str]:
+    kw = ctx or {}
+    return create_access_token(user.id, user.is_admin, **kw), create_refresh_token(user.id, **kw)
+
+
+def _set_auth_cookies(
+    resp: Response, user: User, ctx: Optional[dict] = None, tokens: Optional[tuple[str, str]] = None
+) -> None:
     settings = get_settings()
-    access = create_access_token(user.id, user.is_admin)
-    refresh = create_refresh_token(user.id)
+    access, refresh = tokens or _issue_tokens(user, ctx)
     # Host-only (no Domain): the session/refresh cookies must NOT be sent to
     # workspace origins ({id}.{domain}). Workspace streams authenticate with a
     # separate, per-workspace ``cove_stream`` token instead (see forward_auth).
@@ -85,6 +126,14 @@ def _set_auth_cookies(resp: Response, user: User) -> None:
         path="/api/auth",
         max_age=settings.refresh_token_days * 86400,
     )
+
+
+def _session_response(user: User, ctx: Optional[dict], status_code: int = 200) -> JSONResponse:
+    """A TokenResponse body plus matching session/refresh cookies."""
+    tokens = _issue_tokens(user, ctx)
+    resp = JSONResponse(status_code=status_code, content=TokenResponse(access_token=tokens[0]).model_dump())
+    _set_auth_cookies(resp, user, tokens=tokens)
+    return resp
 
 
 def _clear_auth_cookies(resp: Response) -> None:
@@ -154,12 +203,7 @@ def setup(body: SetupRequest, request: Request, db: DbSession):
     db.commit()
     db.refresh(user)
     _record_audit(db, "setup", user=user, ip=client_ip(request))
-    resp = JSONResponse(
-        status_code=status.HTTP_201_CREATED,
-        content=TokenResponse(access_token=create_access_token(user.id, user.is_admin)).model_dump(),
-    )
-    _set_auth_cookies(resp, user)
-    return resp
+    return _session_response(user, _device_ctx(request, db, user), status.HTTP_201_CREATED)
 
 
 @router.post("/login")
@@ -186,11 +230,7 @@ def login(body: LoginRequest, request: Request, db: DbSession):
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     _record_audit(db, "login.success", user=user, ip=ip)
-    resp = JSONResponse(
-        content=TokenResponse(access_token=create_access_token(user.id, user.is_admin)).model_dump()
-    )
-    _set_auth_cookies(resp, user)
-    return resp
+    return _session_response(user, _device_ctx(request, db, user))
 
 
 @router.post("/refresh")
@@ -218,12 +258,8 @@ def refresh(request: Request, db: DbSession):
     if not _check_revocation(user, payload):
         raise HTTPException(status_code=401, detail="Refresh token revoked")
 
-    resp = JSONResponse(
-        content=TokenResponse(access_token=create_access_token(user.id, user.is_admin)).model_dump()
-    )
-    # Set fresh session cookie + rotate refresh cookie.
-    _set_auth_cookies(resp, user)
-    return resp
+    # Set fresh session cookie + rotate refresh cookie (same device session, if any).
+    return _session_response(user, _device_ctx(request, db, user, payload))
 
 
 @router.get("/me", response_model=UserOut)
@@ -233,9 +269,19 @@ def me(user: CurrentUser):
 
 @router.post("/logout")
 def logout(user: CurrentUser, request: Request, db: DbSession):
-    user.tokens_valid_from = datetime.now(timezone.utc)
-    db.commit()
-    _record_audit(db, "logout", user=user, ip=client_ip(request))
+    payload = _token_payload(request) or {}
+    client = None
+    if payload.get("tc"):
+        client = db.scalar(select(ThinClient).where(ThinClient.public_id == str(payload["tc"])))
+    if client is not None:
+        # Signing out of a thin client ends only that device's session (and resets
+        # its browser) — the user stays signed in everywhere else.
+        thin_clients.revoke_sessions(db, client, by=user.username)
+        _record_audit(db, "logout.thin_client", detail=client.name, user=user, ip=client_ip(request))
+    else:
+        user.tokens_valid_from = datetime.now(timezone.utc)
+        db.commit()
+        _record_audit(db, "logout", user=user, ip=client_ip(request))
     resp = JSONResponse(content={"ok": True})
     _clear_auth_cookies(resp)
     return resp
@@ -257,11 +303,7 @@ def change_password(
     user.password_hash = hash_password(body.new_password)
     user.tokens_valid_from = datetime.now(timezone.utc)
     db.commit()
-    resp = JSONResponse(
-        content=TokenResponse(access_token=create_access_token(user.id, user.is_admin)).model_dump()
-    )
-    _set_auth_cookies(resp, user)
-    return resp
+    return _session_response(user, _device_ctx(request, db, user, _token_payload(request)))
 
 
 @router.get("/oidc/login")
@@ -395,7 +437,7 @@ async def oidc_callback(
     resp.delete_cookie("oidc_state", path="/")
     resp.delete_cookie("oidc_nonce", path="/")
     resp.delete_cookie("oidc_verifier", path="/")
-    _set_auth_cookies(resp, user)
+    _set_auth_cookies(resp, user, _device_ctx(request, db, user))
     return resp
 
 

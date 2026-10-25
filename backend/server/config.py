@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     # a fresh node may need to install Docker before it can enroll; single-use, so
     # the window only bounds how long a leaked token is replayable.
     zone_enroll_token_minutes: int = 60
+    # PEM file (one or more certificates) thin clients must trust to reach Cove:
+    # a self-signed server certificate or a private CA, plus the server's own
+    # certificate if a CA alone is given. The install script adds it to the
+    # device's trust store, and the install one-liner pins its public keys so the
+    # very first download is verified too. Unset when Cove's certificate is
+    # publicly trusted (Let's Encrypt).
+    thin_client_ca_file: Optional[Path] = None
     # Lifetime of the one-time bootstrap token carried in the ``?__cove_t`` URL.
     # Kept short because it rides in a URL (logs/Referer/history): it is consumed
     # exactly once to set the stream cookie, then useless. Distinct from the

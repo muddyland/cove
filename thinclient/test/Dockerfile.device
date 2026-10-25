@@ -1,0 +1,13 @@
+# A stand-in thin client for the end-to-end test: plain Debian 13 booting
+# systemd, with nothing of Cove's preinstalled. The test runs the real install
+# one-liner in it. wtype is the test's "keyboard" (typing into the kiosk).
+FROM debian:trixie
+ENV container=docker DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends systemd systemd-sysv dbus curl ca-certificates \
+      python3 iproute2 procps wtype \
+ && rm -rf /var/lib/apt/lists/*
+# No consoles in a container; the test starts the kiosk session itself.
+RUN systemctl mask getty@tty1.service console-getty.service systemd-firstboot.service
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

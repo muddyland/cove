@@ -14,7 +14,7 @@ from server.tests.helpers import (
 
 ADMIN_SLUGS = [
     "installation", "configuration", "deployment", "administration",
-    "authentication", "security", "zones", "api-reference",
+    "authentication", "security", "zones", "thin-clients", "api-reference",
 ]
 USER_SLUGS = ["README", "user-guide", "workspaces", "networking", "troubleshooting"]
 

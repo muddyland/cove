@@ -140,6 +140,34 @@ See [Zones](zones.md) for the enrollment flow and the agent stack these drive.
 | POST | `/api/zones/enroll?token=` | enrollment token (single-use) | Sign the agent's CSR; returns the CA cert, signed server cert, stream signing key, workspace domain, and expected client CN. `409` on replay. |
 | GET | `/install.sh?token=` | enrollment token | The generated installer script (served at the root, not under `/api`). |
 
+## Thin clients — `/api/admin/thin-clients`, `/api/thin-client`
+
+See [Thin clients](thin-clients.md) for the device side and the session model.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/admin/thin-clients` | admin | List devices with their policy, last reported state, session and online status. |
+| POST | `/api/admin/thin-clients` | admin | Register a device (`{"name", "location"}`); it stays `pending` until enrolled. |
+| GET | `/api/admin/thin-clients/{id}` | admin | Get one device. |
+| PATCH | `/api/admin/thin-clients/{id}` | admin | Update name, location and/or `policy` (validated; bumps `policy_version`). |
+| DELETE | `/api/admin/thin-clients/{id}` | admin | Delete a device: its token stops working and its sessions end. |
+| POST | `/api/admin/thin-clients/{id}/enroll-token` | admin | Mint a single-use enrolment code (`{"ttl_hours": 1..168}`) and install one-liner. Only its sha256 is stored. Using it on an enrolled device replaces that device's token. |
+| GET/POST | `/api/admin/thin-clients/{id}/commands` | admin | List the last 50 commands, or queue one (`screen_on`, `screen_off`, `restart_browser`, `identify`, `screenshot`, `apt_upgrade`, `reboot`, `poweroff`, `logs`). `409` if not enrolled, `400` for an unknown kind. |
+| POST | `/api/admin/thin-clients/{id}/signout` | admin | Revoke the device's sessions and reset its browser. |
+| POST | `/api/admin/thin-clients/{id}/keep-awake` | admin | Treat the device as active for `{"minutes"}` (0 clears it). |
+| GET | `/api/admin/thin-clients/{id}/screenshot.png` | admin | The latest screenshot (`404` if none). |
+| GET | `/api/admin/thin-clients/workspace-options` | admin | Every workspace with its owner, for the pinned-workspace picker. |
+| GET | `/thin-client/install.sh?code=` | enrolment code | The install script. Validates the code without consuming it. Rate-limited. |
+| POST | `/api/thin-client/enroll?code=` | enrolment code (single-use) | Returns the device token. `409` on replay. Rate-limited. |
+| POST | `/api/thin-client/checkin` | device token | Report state, receive policy, allowed hosts, commands and the current agent's version and sha256. With `wait` (≤ 25 s) and nothing to do, it is held open as a long-poll. |
+| POST | `/api/thin-client/commands/{id}/result` | device token | Report a command's outcome (`404` for another device's command). |
+| POST | `/api/thin-client/screenshot` | device token | Upload a PNG (≤ 8 MiB). |
+| POST | `/api/thin-client/ticket` | device token | A one-time (120 s) browser-binding URL. |
+| POST | `/api/thin-client/signed-out` | device token | The device signed itself out (idle): revoke its sessions. |
+| GET | `/api/thin-client/agent` | device token | The agent file, with `X-Agent-Sha256` and `X-Agent-Version`. |
+| GET | `/thin-client/bind?ticket=` | one-time ticket | Sets the httpOnly `cove_tc` cookie that binds this browser to the device, then redirects to `/app`. `403` page (fails closed) for a bad or reused ticket. |
+| GET | `/api/thin-client/self` | `cove_tc` cookie | Which device this browser is bound to, and its auto-open settings (`404` on a normal browser). |
+
 ## Files — `/api/files` (all auth)
 
 | Method | Path | Purpose |
@@ -195,6 +223,7 @@ route of its own — it opens as a modal from the **?** in the top bar, so
 | `/app/admin/sessions` | Sessions | admin |
 | `/app/admin/images` | Images | admin |
 | `/app/admin/zones` | Zones | admin |
+| `/app/admin/thin-clients` | Thin clients | admin |
 | `/app/admin/storage` | Storage | admin |
 | `/app/admin/audit` | Audit | admin |
 | `/app/admin/settings` | Settings | admin |
