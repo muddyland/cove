@@ -167,3 +167,18 @@ def test_volume_parsing(monkeypatch):
     for out, want in [("Volume: 0.40\n", (40, False)), ("Volume: 1.25 [MUTED]\n", (125, True)), ("", (None, None))]:
         fake._wpctl = lambda *a, out=out: (0 if out else 1, out)
         assert agent.Agent.get_volume(fake) == want
+
+
+def test_sway_reloads_only_when_its_loaded_config_is_stale(tmp_path, monkeypatch):
+    conf = tmp_path / "sway.conf"
+    conf.write_text("new config\n")
+    monkeypatch.setattr(agent, "SWAY_CONF", str(conf))
+    sway = agent.Sway()
+    sent = []
+    monkeypatch.setattr(sway, "available", lambda: True)
+    monkeypatch.setattr(sway, "command", sent.append)
+    for loaded, reloads in [("old config\n", True), ("new config\n", False), (None, False)]:
+        sent.clear()
+        monkeypatch.setattr(sway, "loaded_config", lambda loaded=loaded: loaded)
+        assert sway.reload_if_stale() is reloads
+        assert sent == (["reload"] if reloads else [])

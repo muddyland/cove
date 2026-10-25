@@ -377,7 +377,8 @@ def chromium_policy(allowed_hosts, cp_url):
 
 def converge(cached=None):
     """Bring every managed file to its desired content. Idempotent and cheap:
-    files are only rewritten (and services only reloaded) when they differ."""
+    files are only rewritten (and services only reloaded) when they differ.
+    Returns True when the sway config changed (a running sway must reload)."""
     cfg = read_json(CONFIG, {}) or {}
     cached = cached if cached is not None else read_json(CACHE_FILE, {}) or {}
     ensure_kiosk_user()
@@ -394,7 +395,7 @@ def converge(cached=None):
     write_if_changed("/etc/systemd/logind.conf.d/cove-thin-client.conf", LOGIND_CONF)
     write_if_changed("/etc/systemd/journald.conf.d/cove-thin-client.conf", JOURNALD_CONF)
     write_if_changed(f"{home}/.bash_profile", BASH_PROFILE, 0o644)
-    write_if_changed(SWAY_CONF, sway_config())
+    sway_changed = write_if_changed(SWAY_CONF, sway_config())
     if not os.path.exists(SWAY_OUTPUTS):
         write_if_changed(SWAY_OUTPUTS, "# Written by cove-thin-client from the device policy.\n")
     write_if_changed("/etc/apt/apt.conf.d/52cove-thin-client", APT_CONF)
@@ -411,6 +412,7 @@ def converge(cached=None):
     if changed_units:
         run(["systemctl", "daemon-reload"])
     import_local_cas(uid, gid, home)
+    return sway_changed
 
 
 def ensure_kiosk_user():
@@ -524,7 +526,7 @@ def setup_boot_splash():
 class Sway:
     """Minimal i3/sway IPC client over the kiosk session's socket."""
 
-    RUN_COMMAND, GET_OUTPUTS, GET_VERSION = 0, 3, 7
+    RUN_COMMAND, GET_OUTPUTS, GET_VERSION, GET_CONFIG = 0, 3, 7, 9
 
     def socket_path(self):
         try:
@@ -589,6 +591,29 @@ class Sway:
             return self._call(self.GET_VERSION).get("human_readable")
         except Exception:  # noqa: BLE001
             return None
+
+    def loaded_config(self):
+        """The main config text the running sway loaded (None if unknown)."""
+        try:
+            return self._call(self.GET_CONFIG).get("config")
+        except Exception:  # noqa: BLE001
+            return None
+
+    def reload_if_stale(self):
+        """Reload when the running sway loaded an older config than the file on
+        disk (an agent update rewrote it). Returns True if it reloaded."""
+        if not self.available():
+            return False
+        try:
+            with open(SWAY_CONF) as f:
+                wanted = f.read()
+        except OSError:
+            return False
+        loaded = self.loaded_config()
+        if loaded is None or loaded == wanted:
+            return False
+        self.command("reload")
+        return True
 
     def set_power(self, on):
         word = "on" if on else "off"
@@ -1035,7 +1060,8 @@ class Agent:
                         self._relaunch()
                     elif (
                         self.browser.page == "cove" and self.connected and not self.session_user
-                        and self.browser.color_scheme not in (None, self.color_scheme())
+                        # None: started by an older agent that didn't record it.
+                        and self.browser.color_scheme != self.color_scheme()
                     ):
                         # Chromium takes the colour scheme at launch. Restart for
                         # a new one now if nobody is using the screen; otherwise
@@ -1094,7 +1120,8 @@ class Agent:
 
     def _wpctl(self, *args):
         uid = kiosk_ids()[0]
-        env = dict(os.environ, XDG_RUNTIME_DIR=f"/run/user/{uid}")
+        rt = f"/run/user/{uid}"
+        env = dict(os.environ, XDG_RUNTIME_DIR=rt, DBUS_SESSION_BUS_ADDRESS=f"unix:path={rt}/bus")
         return run(["runuser", "-u", KIOSK_USER, "--", "wpctl", *args], env=env, timeout=10)
 
     def set_volume(self, level):
@@ -1428,6 +1455,10 @@ class Agent:
         log.info("cove-thin-client %s starting (Cove at %s)", AGENT_VERSION, self.api.cp)
         try:
             converge()
+            # A running sway reads its config only at start: reload it when an
+            # updated agent changed it, so new bindings work without a reboot.
+            if self.sway.reload_if_stale():
+                log.info("sway config changed: reloaded it")
         except Exception as exc:  # noqa: BLE001
             log.warning("converge failed: %s", exc)
         threading.Thread(target=self.ensure_packages, daemon=True, name="packages").start()
