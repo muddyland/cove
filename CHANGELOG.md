@@ -60,6 +60,15 @@
   it out, take a screenshot, show an identify banner, see logs, reboot it, or
   keep it awake. The agent updates itself whenever Cove ships a new one, without
   dropping the session on screen. See [Thin clients](docs/thin-clients.md).
+- **Thin clients work with a self-signed Cove.** Set `COVE_THIN_CLIENT_CA_FILE`
+  (the `lan-tls` override does) and the install one-liner pins the server's key,
+  while the installer trusts the certificate before it enrols. The install USB
+  takes the same file with `--ca-file`. Without it, enrolment failed with
+  `CERTIFICATE_VERIFY_FAILED`.
+- **The TLS overrides start again on current Docker Compose.** The base file
+  publishes `:80` on loopback and the `lan-tls`/`prod` overrides publish it on
+  all interfaces. Compose appended the two, so Traefik failed with "address
+  already in use". The overrides now replace the base port list.
 - **The login page focuses the username field**, so you can start typing
   straight away (handy on a kiosk).
 

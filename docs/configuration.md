@@ -22,6 +22,7 @@ file is [`.env.example`](../.env.example).
 | `COVE_HTTP_PORT` | `80` | Host port Traefik's HTTP entrypoint binds to. |
 | `COVE_HTTP_BIND` | `127.0.0.1` | Interface the plain-HTTP port is published on. The base compose file serves cleartext with Secure cookies off, so it binds loopback; set `0.0.0.0` only on a trusted private network. The TLS overrides publish `:443` on all interfaces. |
 | `COVE_HTTPS_PORT` | `443` | Published HTTPS port for the `lan-tls` override (its HTTP→HTTPS redirect targets this port). |
+| `COVE_THIN_CLIENT_CA_FILE` | *(unset)* | PEM file with Cove's certificate (or private CA plus server certificate) when it isn't publicly trusted. Thin client installs trust it, and the install one-liner pins its key. The `lan-tls` override sets it to `certs/cove.crt`. See [Thin clients → Private certificates](thin-clients.md#9-private-certificates). |
 | `COVE_ALLOW_INSECURE_ZONES` | `false` | Let the control plane dial a zone that has no mTLS material over plain, unauthenticated TCP. Launch payloads carry user secrets; leave off and enroll the zone instead. |
 | `TZ` | `UTC` | Timezone; passed through to workspace containers as `COVE_WORKSPACE_TZ`. |
 | `COVE_COOKIE_SECURE` | `true` (code) / `false` (starter `.env`) | Mark auth cookies `Secure` (HTTPS-only). Keep `false` only on `http://localhost`; **set `true` for any networked deployment**, or browsers drop the cookies. |

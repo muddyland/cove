@@ -13,4 +13,10 @@ if [ -s /cdrom/cove/authorized_keys ]; then
   printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
     > /target/etc/ssh/sshd_config.d/50-cove.conf
 fi
+if [ -s /cdrom/cove/ca.crt ]; then
+  # Cove's private certificate: trusted before first boot contacts Cove.
+  install -d /target/usr/local/share/ca-certificates
+  install -m 0644 /cdrom/cove/ca.crt /target/usr/local/share/ca-certificates/cove-thin-client.crt
+  in-target update-ca-certificates
+fi
 in-target systemctl enable cove-firstboot.service

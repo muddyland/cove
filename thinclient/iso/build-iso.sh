@@ -26,6 +26,9 @@
 #                         (default: generated and printed at the end)
 #   --ssh-key FILE        authorized_keys for coveadmin; also installs SSH,
 #                         keys only
+#   --ca-file FILE        Cove's certificate (or private CA) if it isn't
+#                         publicly trusted, e.g. certs/cove.crt from the LAN
+#                         TLS setup; trusted by the installed system
 #
 # Write the image to a USB stick with, for example:
 #   sudo dd if=cove-thin-client.iso of=/dev/sdX bs=4M conv=fsync status=progress
@@ -36,7 +39,7 @@ MIRROR="${COVE_DEBIAN_MIRROR:-https://cdimage.debian.org/debian-cd/current/amd64
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/cove-thin-client"
 
 COVE_URL="" CODE="" OUT="cove-thin-client.iso" SRC_ISO="" HOST="cove-tc" KEYMAP="us"
-LOCALE="en_US.UTF-8" TIMEZONE="Etc/UTC" PASSWORD="" SSH_KEY=""
+LOCALE="en_US.UTF-8" TIMEZONE="Etc/UTC" PASSWORD="" SSH_KEY="" CA_FILE=""
 ORIG_ARGS=("$@")
 
 die() { echo "build-iso: $*" >&2; exit 1; }
@@ -52,7 +55,8 @@ while [ $# -gt 0 ]; do
     --timezone) TIMEZONE="$2"; shift 2 ;;
     --password) PASSWORD="$2"; shift 2 ;;
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
-    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
+    --ca-file) CA_FILE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,34p' "$0"; exit 0 ;;
     *) die "unknown option $1 (see --help)" ;;
   esac
 done
@@ -62,6 +66,7 @@ case "$COVE_URL" in http://*|https://*) ;; *) die "--cove-url must start with ht
 [[ "$KEYMAP" =~ ^[a-z0-9_()-]+$ ]] || die "--keymap looks wrong"
 [[ "$TIMEZONE" =~ ^[A-Za-z0-9_/+-]+$ ]] || die "--timezone looks wrong"
 [ -z "$SSH_KEY" ] || [ -r "$SSH_KEY" ] || die "cannot read --ssh-key $SSH_KEY"
+[ -z "$CA_FILE" ] || grep -q "BEGIN CERTIFICATE" "$CA_FILE" 2>/dev/null || die "--ca-file must be a PEM certificate"
 
 # ── Run in Docker when the tools are missing ────────────────────────────────
 need=(xorriso curl openssl sha256sum)
@@ -76,7 +81,7 @@ if [ "$missing" = 1 ] && [ -z "${COVE_ISO_IN_DOCKER:-}" ]; then
   skip=0
   for a in "${ORIG_ARGS[@]}"; do
     if [ "$skip" = 1 ]; then skip=0; continue; fi
-    case "$a" in --out|--iso|--ssh-key) skip=1; continue ;; esac
+    case "$a" in --out|--iso|--ssh-key|--ca-file) skip=1; continue ;; esac
     args+=("$a")
   done
   args+=(--out "/out/$(basename "$out_abs")")
@@ -87,6 +92,10 @@ if [ "$missing" = 1 ] && [ -z "${COVE_ISO_IN_DOCKER:-}" ]; then
   if [ -n "$SSH_KEY" ]; then
     key_abs="$(cd "$(dirname "$SSH_KEY")" && pwd)/$(basename "$SSH_KEY")"
     mounts+=(-v "$key_abs:/ssh.pub:ro"); args+=(--ssh-key /ssh.pub)
+  fi
+  if [ -n "$CA_FILE" ]; then
+    ca_abs="$(cd "$(dirname "$CA_FILE")" && pwd)/$(basename "$CA_FILE")"
+    mounts+=(-v "$ca_abs:/ca.crt:ro"); args+=(--ca-file /ca.crt)
   fi
   echo ">> tools missing here; building inside debian:trixie"
   exec docker run --rm "${mounts[@]}" -e COVE_ISO_IN_DOCKER=1 -e XDG_CACHE_HOME=/ -e HOME=/ \
@@ -145,6 +154,7 @@ for f in early.sh late.sh firstboot.sh cove-firstboot.service; do cp "$HERE/$f" 
   printf 'COVE_CODE=%q\n' "$CODE"
 } > "$WORK/cove/firstboot.env"
 if [ -n "$SSH_KEY" ]; then cp "$SSH_KEY" "$WORK/cove/authorized_keys"; else : > "$WORK/cove/authorized_keys"; fi
+if [ -n "$CA_FILE" ]; then cp "$CA_FILE" "$WORK/cove/ca.crt"; else : > "$WORK/cove/ca.crt"; fi
 
 # ── Boot menus: our entry first, Debian's untouched below ───────────────────
 xorriso -osirrox on -indev "$SRC_ISO" \
@@ -203,4 +213,5 @@ echo "   Cove:       $COVE_URL"
 echo "   enrolment:  ${CODE:+baked in (asked again if it has expired)}${CODE:-asked on first boot}"
 echo "   admin user: coveadmin${GENERATED_PW:+  password: $PASSWORD  (generated; keep it somewhere safe)}"
 [ -n "$SSH_KEY" ] && echo "   ssh:        key-only logins for coveadmin"
+[ -n "$CA_FILE" ] && echo "   tls:        trusts $(basename "$CA_FILE") for Cove"
 echo "   Boot it and pick \"Install Cove thin client\". It erases the first disk that isn't the USB stick."

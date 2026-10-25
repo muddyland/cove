@@ -36,8 +36,8 @@ reaching Cove.
 - **Debian 12 (bookworm) or 13 (trixie)**, freshly installed. The netinst image
   with only *standard system utilities* selected is enough: no desktop. Or let
   the [install USB](#3-the-install-usb) do the Debian install for you.
-- The machine must reach Cove's URL over HTTPS, with a certificate it trusts
-  (see [Private certificates](#9-private-certificates)).
+- The machine must reach Cove's URL over HTTPS. A self-signed or private-CA
+  certificate works too (see [Private certificates](#9-private-certificates)).
 
 ## 2. Set one up (Debian already installed)
 
@@ -97,6 +97,7 @@ they touch a disk.
 | `--ssh-key` | Installs SSH with key-only logins for the `coveadmin` account. |
 | `--password` | Password for `coveadmin` (sudo). Generated and printed if omitted. |
 | `--keymap`, `--timezone`, `--locale`, `--hostname` | Install settings. The keymap also becomes the kiosk's keyboard layout. |
+| `--ca-file` | Cove's certificate, if it isn't publicly trusted (see [Private certificates](#9-private-certificates)). |
 | `--iso` | Use a netinst image you already have. |
 
 The script needs `xorriso`, `curl` and `openssl`. Without them it runs itself
@@ -249,16 +250,25 @@ add its host under **Extra allowed hosts**. It is then reachable without Cove.
 
 ## 9. Private certificates
 
-If Cove uses a certificate from your own CA (for example
-`docker-compose.lan-tls.yml`), install the CA on the device **before** running
-the installer:
+If Cove's certificate isn't publicly trusted (self-signed, or from your own CA),
+point `COVE_THIN_CLIENT_CA_FILE` at a PEM file holding it. The
+[LAN TLS setup](deployment.md) (`docker-compose.lan-tls.yml`) already does this
+with `certs/cove.crt`. For a private CA, put the CA and the server certificate
+in the file. Cove then:
 
-```bash
-sudo cp my-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
-```
+- **Pins the key in the one-liner.** The install command becomes
+  `curl -fsSLk --pinnedpubkey "sha256//…" "…/install.sh?code=…" | sudo bash`.
+  `-k` only skips the CA check; curl still refuses any server whose key doesn't
+  match the pin, so even the first download is verified.
+- **Ships the certificate in the install script.** The script adds it to the
+  device's trust store before enrolling. The agent also copies it into the kiosk
+  browser's own trust store, because Chromium on Linux doesn't read `/etc/ssl`.
 
-The agent also imports every CA there into the kiosk browser's own trust store,
-because Chromium on Linux doesn't read `/etc/ssl`.
+For the install USB, pass the same file with `--ca-file certs/cove.crt`.
+
+Without the setting, the installer fails at *Enrolling* with
+`CERTIFICATE_VERIFY_FAILED`. The code isn't used up by that failure, so set the
+variable, restart Cove, and run the new install command.
 
 ## 10. Troubleshooting
 

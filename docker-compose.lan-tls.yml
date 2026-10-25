@@ -45,7 +45,9 @@ services:
       # routers, which declare entrypoints web,websecure) need no per-router tls.
       - --entrypoints.websecure.http.tls=true
       - --log.level=WARN
-    ports:
+    # !override: replace the base file's loopback-only :80 instead of adding a
+    # second :80 binding next to it (which fails with "address already in use").
+    ports: !override
       # LAN-facing on purpose (TLS is on); the HTTP port only redirects.
       - "${COVE_HTTP_BIND:-0.0.0.0}:${COVE_HTTP_PORT:-80}:80"
       - "${COVE_HTTPS_PORT:-443}:443"
@@ -59,6 +61,11 @@ services:
       # The origin you browse to (used for the workspace-iframe CSP and, if you
       # enable OIDC, the redirect URI). Set this in .env to match the cert.
       - COVE_APP_ORIGIN=${COVE_APP_ORIGIN}
+      # Thin clients get this self-signed certificate at install (and the
+      # install one-liner pins its key). Only the certificate, never the key.
+      - COVE_THIN_CLIENT_CA_FILE=/app/tls/cove.crt
+    volumes:
+      - ./certs/cove.crt:/app/tls/cove.crt:ro
     labels:
       # Move the app + login routers onto the HTTPS entrypoint (base binds them
       # to :80). Compose merges labels by key, so these override the base values.

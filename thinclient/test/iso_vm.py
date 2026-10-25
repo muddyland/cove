@@ -29,8 +29,6 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 NET = "cove-tc-iso"
-SUBNET = "172.30.99.0/24"
-COVE_IP = "172.30.99.10"
 COVE = "cove-tc-iso-cove"
 VM = "cove-tc-iso-vm"
 PORT = int(os.environ.get("COVE_TC_ISO_PORT", "18432"))
@@ -54,13 +52,13 @@ def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-def api(method, path, body=None, token=None, raw=False):
+def api(method, path, body=None, token=None, raw=False, timeout=30):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         payload = r.read()
     return payload if raw else (json.loads(payload) if payload else None)
 
@@ -113,22 +111,28 @@ def main():
     os.makedirs(work, exist_ok=True)
 
     teardown()
-    sh("docker", "network", "create", "--subnet", SUBNET, NET)
-    sh("docker", "run", "-d", "--name", COVE, "--network", NET, "--ip", COVE_IP, "-p", f"{PORT}:8080",
-       "-e", "COVE_COOKIE_SECURE=false", "-e", f"COVE_APP_ORIGIN=http://{COVE_IP}:8080", args.image)
-    for _ in range(60):
+    sh("docker", "network", "create", NET)
+    # The VM reaches Cove by its IP on the test network, through QEMU's NAT.
+    # No COVE_APP_ORIGIN: Cove then builds install URLs from the address the
+    # VM used, which is that IP.
+    sh("docker", "run", "-d", "--name", COVE, "--network", NET, "-p", f"{PORT}:8080",
+       "-e", "COVE_COOKIE_SECURE=false", args.image)
+    cove_ip = sh("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", COVE).strip()
+    for _ in range(90):
         try:
-            if api("GET", "/api/health")["status"] == "ok":
+            if api("GET", "/api/health", timeout=5)["status"] == "ok":
                 break
         except Exception:  # noqa: BLE001
             time.sleep(2)
+    else:
+        raise SystemExit(f"FAILED: Cove never answered on {BASE}")
     token = api("POST", "/api/auth/setup", {"username": "admin", "password": "password123"})["access_token"]
     dev = api("POST", "/api/admin/thin-clients", {"name": "Rack", "location": "server rack"}, token)
     code = api("POST", f"/api/admin/thin-clients/{dev['id']}/enroll-token", {"ttl_hours": 168}, token)["code"]
-    log(f"Cove up at {COVE_IP}; device 'Rack' with code {code}")
+    log(f"Cove up at {cove_ip}; device 'Rack' with code {code}")
 
     log("building the install image")
-    out = sh(os.path.join(REPO, "thinclient", "iso", "build-iso.sh"), "--cove-url", f"http://{COVE_IP}:8080",
+    out = sh(os.path.join(REPO, "thinclient", "iso", "build-iso.sh"), "--cove-url", f"http://{cove_ip}:8080",
              "--code", code, "--out", os.path.join(work, "cove-tc-vm.iso"), "--password", "testpass123",
              timeout=3600)
     log(out.strip().splitlines()[-5] if out.strip() else "built")
@@ -171,6 +175,8 @@ def main():
             shot(work, f"vm-02-firstboot-{pressed}.png")
             monitor("sendkey ret")
             pressed += 1
+        # The admin's access token (30 min) outlives neither stage: sign in again.
+        token = api("POST", "/api/auth/login", {"username": "admin", "password": "password123"})["access_token"]
         row = api("GET", f"/api/admin/thin-clients/{dev['id']}", token=token)
         if row["online"] and row["state"].get("browser_running") and row["bound_at"]:
             online = row

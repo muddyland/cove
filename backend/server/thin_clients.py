@@ -189,6 +189,56 @@ def cp_url_for(request_base_url: str) -> str:
     return (get_settings().app_origin or request_base_url).rstrip("/")
 
 
+# ── Private certificates ─────────────────────────────────────────────────────
+
+_PEM_RE = re.compile(rb"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.S)
+
+
+def trust_bundle() -> Optional[tuple[str, list[str]]]:
+    """``(pem, pins)`` for a Cove with a private certificate, else None.
+
+    ``pem`` is every certificate in ``COVE_THIN_CLIENT_CA_FILE``; ``pins`` are
+    their public keys in curl's ``--pinnedpubkey`` form (``sha256//<base64>``),
+    so the install one-liner can verify the server before anything is trusted.
+    """
+    import base64
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    path = get_settings().thin_client_ca_file
+    if not path:
+        return None
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        logger.warning("COVE_THIN_CLIENT_CA_FILE %s is unreadable; thin clients get no certificate", path)
+        return None
+    pems, pins = [], []
+    for block in _PEM_RE.findall(raw):
+        try:
+            cert = x509.load_pem_x509_certificate(block)
+        except ValueError:
+            continue
+        spki = cert.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+        pins.append("sha256//" + base64.b64encode(hashlib.sha256(spki).digest()).decode())
+        pems.append(block.decode())
+    if not pems:
+        logger.warning("COVE_THIN_CLIENT_CA_FILE %s holds no certificates", path)
+        return None
+    return "\n".join(pems) + "\n", pins
+
+
+def install_command(cp: str, code: str) -> str:
+    url = f"{cp}/thin-client/install.sh?code={code}"
+    bundle = trust_bundle()
+    if bundle is None:
+        return f'curl -fsSL "{url}" | sudo bash'
+    # -k only skips the CA check; the pinned key is still enforced, so this is
+    # stricter than ordinary verification, not looser.
+    return f'curl -fsSLk --pinnedpubkey "{";".join(bundle[1])}" "{url}" | sudo bash'
+
+
 # ── Agent file ───────────────────────────────────────────────────────────────
 
 _AGENT_PATHS = (

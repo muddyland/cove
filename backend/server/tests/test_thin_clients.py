@@ -527,3 +527,54 @@ def test_stored_state_is_size_capped(client):
     with SessionLocal() as db:
         assert json.loads(db.get(ThinClient, dev["id"]).state_json)["hostname"] == "small"
         assert db.query(ThinClientCommand).count() == 0
+
+
+def _self_signed(tmp_path):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "cove.lan")])
+    now = datetime.now(timezone.utc)
+    cert = (
+        x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+        .serial_number(1).not_valid_before(now).not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    path = tmp_path / "cove.crt"
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    spki = key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    import base64
+
+    return path, "sha256//" + base64.b64encode(hashlib.sha256(spki).digest()).decode()
+
+
+def test_private_certificate_is_pinned_and_shipped(client, monkeypatch, tmp_path):
+    import subprocess
+
+    admin, _ = setup_admin(client)
+    dev = _create(client, admin)
+
+    # Publicly trusted Cove: a plain one-liner and no certificate in the script.
+    out = client.post(f"/api/admin/thin-clients/{dev['id']}/enroll-token", json={},
+                      headers=auth_header(admin)).json()
+    assert out["install_command"].startswith('curl -fsSL "') and "pinnedpubkey" not in out["install_command"]
+    script = client.get("/thin-client/install.sh", params={"code": out["code"]}).text
+    assert "CA_PEM=''" in script
+
+    # Self-signed Cove: the one-liner pins the key and the script trusts the cert.
+    path, pin = _self_signed(tmp_path)
+    monkeypatch.setattr(get_settings(), "thin_client_ca_file", path)
+    out = client.post(f"/api/admin/thin-clients/{dev['id']}/enroll-token", json={},
+                      headers=auth_header(admin)).json()
+    assert f'--pinnedpubkey "{pin}"' in out["install_command"]
+    script = client.get("/thin-client/install.sh", params={"code": out["code"]}).text
+    assert "-----BEGIN CERTIFICATE-----" in script and "update-ca-certificates" in script
+    assert subprocess.run(["bash", "-n"], input=script, text=True).returncode == 0
+
+    # A missing or empty file degrades to "publicly trusted", never a crash.
+    monkeypatch.setattr(get_settings(), "thin_client_ca_file", tmp_path / "nope.crt")
+    assert tc.trust_bundle() is None

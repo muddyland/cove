@@ -201,7 +201,7 @@ def mint_enroll_token(
     return ThinClientEnrollTokenOut(
         code=code,
         expires_at=client.enroll_token_expires_at,
-        install_command=f'curl -fsSL "{cp}/thin-client/install.sh?code={code}" | sudo bash',
+        install_command=tc.install_command(cp, code),
     )
 
 
@@ -437,7 +437,12 @@ def install_script(code: str, request: Request, db: DbSession):
     if not tc.enroll_code_valid(client):
         raise HTTPException(status_code=404, detail="Invalid or expired enrolment code")
     cp = tc.cp_url_for(str(request.base_url))
-    return PlainTextResponse(render_install_script(cp_url=cp, code=tc.normalize_code(code), name=client.name))
+    bundle = tc.trust_bundle()
+    return PlainTextResponse(
+        render_install_script(
+            cp_url=cp, code=tc.normalize_code(code), name=client.name, ca_pem=bundle[0] if bundle else ""
+        )
+    )
 
 
 @public_router.post("/api/thin-client/enroll", response_model=ThinClientEnrollOut)

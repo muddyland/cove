@@ -38,6 +38,16 @@ apt-get install -y -qq --no-install-recommends python3 ca-certificates >/dev/nul
 install -d -m 0755 "$ETC"
 install -d -m 0755 "$LIB"
 
+# Cove's own certificate, when it isn't publicly trusted (self-signed or a
+# private CA): trusted system-wide from here on, and by the kiosk browser too.
+CA_PEM=__CA_PEM__
+if [ -n "$CA_PEM" ]; then
+  echo ">> Trusting Cove's certificate"
+  install -d -m 0755 /usr/local/share/ca-certificates
+  printf '%s\n' "$CA_PEM" > /usr/local/share/ca-certificates/cove-thin-client.crt
+  update-ca-certificates >/dev/null
+fi
+
 echo ">> Enrolling with $CP_URL"
 CP_URL="$CP_URL" CODE="$CODE" ETC="$ETC" LIB="$LIB" python3 - <<'PY'
 import hashlib, json, os, socket, urllib.request
@@ -84,11 +94,12 @@ echo ">> Done. This machine now boots straight into Cove."
 """
 
 
-def render_install_script(*, cp_url: str, code: str, name: str) -> str:
+def render_install_script(*, cp_url: str, code: str, name: str, ca_pem: str = "") -> str:
     # The name is shown in a comment only; strip newlines so it can't break out.
     safe_name = name.replace("\n", " ").replace("\r", " ")
     return (
         _TEMPLATE.replace("__CP_URL__", shlex.quote(cp_url))
         .replace("__CODE__", shlex.quote(code))
         .replace("__NAME__", safe_name)
+        .replace("__CA_PEM__", shlex.quote(ca_pem.strip()))
     )
