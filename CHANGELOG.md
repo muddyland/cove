@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Thin client fixes from the first real device.**
+  - **Screenshots show in Admin → Thin clients.** They were drawn from `blob:`
+    URLs, which Cove's Content Security Policy blocks behind Traefik. They are
+    now `data:` URLs, like workspace previews.
+  - **The volume keys work, and the volume starts at 100%.** The kiosk bound no
+    keys at all. It now binds volume up, down and mute (and nothing else), up to
+    150%. New outputs start at 100% instead of Debian's near-silent 40%, and
+    devices already installed are lifted to 100% once. The card shows the
+    current volume, and the volume setting goes up to 150%.
+  - **Sign-in pages can render dark.** A new **Colour scheme for web pages**
+    setting (default dark) tells pages such as an OIDC sign-in page the user's
+    preferred scheme. Before, Chromium on a kiosk always said light.
 - **Saved apps install on first boot on every zone, and the dialog can install
   them all.** A migration doesn't copy app files, so a workspace's first boot on
   the new zone reinstalls them from its saved lists. That install was an init

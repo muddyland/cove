@@ -231,6 +231,25 @@ def main():
     assert row["state"]["agent_version"] == row["latest_agent_version"]
     screenshot(dev_id, args.shots, "01-login.png")
     ok("screenshot of the login page")
+    assert "--force-dark-mode" in dexec("systemctl", "show", "-p", "ExecStart", "cove-browser")
+    ok("browser tells pages the user prefers dark (the default colour scheme)")
+
+    step("colour scheme: switching to light restarts the idle browser")
+    pol = row["policy"]
+    pol["color_scheme"] = "light"
+    api.call("PATCH", f"/api/admin/thin-clients/{dev_id}", {"policy": pol})
+    wait_for("a light browser", lambda: "preferredColorScheme=1" in dexec(
+        "systemctl", "show", "-p", "ExecStart", "cove-browser", check=False), timeout=90)
+    row = wait_for("the new browser to bind", lambda: (r := device_row(dev_id))["bound_at"] != row["bound_at"]
+                   and r["state"].get("browser_running") and r, timeout=120)
+    ok("light scheme applied by restarting the browser, which bound again")
+    pol["color_scheme"] = "dark"
+    api.call("PATCH", f"/api/admin/thin-clients/{dev_id}", {"policy": pol})
+    row = wait_for("dark again", lambda: "--force-dark-mode" in dexec(
+        "systemctl", "show", "-p", "ExecStart", "cove-browser", check=False)
+        and (r := device_row(dev_id))["bound_at"] != row["bound_at"] and r["state"].get("browser_running") and r,
+        timeout=180)
+    time.sleep(3)
 
     step("signing in on the kiosk")
     first_bind = row["bound_at"]

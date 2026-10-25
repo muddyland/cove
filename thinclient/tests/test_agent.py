@@ -35,10 +35,17 @@ def test_chromium_policy_blocks_everything_but_cove():
     json.dumps(p)
 
 
-def test_sway_config_has_no_bindings_and_no_vt_switching(monkeypatch):
+def test_sway_config_binds_only_media_keys_and_no_vt_switching(monkeypatch):
     monkeypatch.setattr(agent, "keyboard_layout", lambda: ("de", "nodeadkeys"))
     conf = agent.sway_config()
-    assert "bindsym" not in conf and "bindcode" not in conf
+    assert "bindcode" not in conf and "bindswitch" not in conf
+    bindings = [line for line in conf.splitlines() if line.startswith("bindsym")]
+    assert {b.split()[2] for b in bindings} == {"XF86AudioRaiseVolume", "XF86AudioLowerVolume", "XF86AudioMute"}
+    for b in bindings:
+        # Nothing but wpctl: no way to start anything else from the keyboard.
+        command = b.split(" exec ", 1)[1]
+        assert command.startswith(("wpctl ", "sh -c 'wpctl ")), b
+        assert command.replace("sh -c '", "").count("wpctl") == command.count("wpctl")
     assert "xkb_options srvrkeys:none" in conf
     assert "xkb_layout de" in conf and "xkb_variant nodeadkeys" in conf
     assert f"include {agent.SWAY_OUTPUTS}" in conf
@@ -139,3 +146,24 @@ def test_self_update_runs_right_after_boot(monkeypatch):
     calls.clear()
     agent.Agent.maybe_self_update(fake, {"agent_sha256": "new"})
     assert not calls
+
+
+@pytest.mark.parametrize("scheme,present,absent", [
+    ("dark", ["--force-dark-mode", "--blink-settings=preferredColorScheme=0"], []),
+    ("light", ["--blink-settings=preferredColorScheme=1"], ["--force-dark-mode"]),
+    ("system", [], ["--force-dark-mode", "--blink-settings=preferredColorScheme=0",
+                    "--blink-settings=preferredColorScheme=1"]),
+])
+def test_browser_colour_scheme_flags(scheme, present, absent):
+    flags = agent.Browser.flags(scheme)
+    for f in present:
+        assert f in flags
+    for f in absent:
+        assert f not in flags
+
+
+def test_volume_parsing(monkeypatch):
+    fake = types.SimpleNamespace()
+    for out, want in [("Volume: 0.40\n", (40, False)), ("Volume: 1.25 [MUTED]\n", (125, True)), ("", (None, None))]:
+        fake._wpctl = lambda *a, out=out: (0 if out else 1, out)
+        assert agent.Agent.get_volume(fake) == want

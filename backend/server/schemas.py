@@ -1037,7 +1037,8 @@ class ThinClientPolicy(BaseModel):
     on_hours_end: Optional[str] = None
     # Audio playing on the device (a film, music) counts as activity.
     media_keeps_awake: bool = True
-    volume: Optional[int] = Field(None, ge=0, le=100)
+    # Percent; above 100 PipeWire amplifies (small monitor speakers need it).
+    volume: Optional[int] = Field(None, ge=0, le=150)
 
     # Session
     signout_minutes: int = Field(30, ge=0, le=1440)  # idle sign-out, 0 = never
@@ -1047,6 +1048,10 @@ class ThinClientPolicy(BaseModel):
 
     # Browser
     extra_allowed_hosts: list[str] = Field(default_factory=list, max_length=32)
+    # The colour scheme pages are told the user prefers (prefers-color-scheme),
+    # e.g. so an OIDC sign-in page matches Cove. "system" leaves Chromium's own
+    # default, which is light on a kiosk with no desktop settings.
+    color_scheme: Literal["dark", "light", "system"] = "dark"
 
     # Updates
     auto_update: bool = True  # nightly apt full-upgrade in the maintenance hour

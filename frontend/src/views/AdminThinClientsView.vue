@@ -65,6 +65,13 @@
             <dt>Display</dt>
             <dd>{{ displaySummary(c) }}</dd>
           </div>
+          <div v-if="c.state.volume !== undefined && c.state.volume !== null">
+            <dt>Audio</dt>
+            <dd>
+              <span :class="c.state.muted ? 'muted' : ''">{{ c.state.volume }}%</span>
+              <span v-if="c.state.muted" class="warn">&nbsp;· muted</span>
+            </dd>
+          </div>
           <div>
             <dt>System</dt>
             <dd>
@@ -236,8 +243,9 @@
               <small>Laptop backlight, or the monitor over DDC/CI. Far left leaves it alone.</small>
             </label>
             <label>
-              Volume <span class="val">{{ draft.volume ?? 'unchanged' }}</span>
-              <input v-model.number="volume" type="range" min="-1" max="100" step="5" />
+              Volume <span class="val">{{ draft.volume === null ? 'unchanged' : `${draft.volume}%` }}</span>
+              <input v-model.number="volume" type="range" min="-1" max="150" step="5" />
+              <small>Set when you save; the keyboard's volume keys still work. Above 100% amplifies.</small>
             </label>
           </div>
         </section>
@@ -296,6 +304,18 @@
             Extra allowed hosts
             <textarea v-model="hostsText" rows="4" placeholder="kvm.lan&#10;*.docs.example.org" />
             <small>One per line. A bare host, or *.domain for its subdomains. No scheme, port or path.</small>
+          </label>
+          <label>
+            Colour scheme for web pages
+            <select v-model="draft.color_scheme">
+              <option value="dark">Dark (matches Cove)</option>
+              <option value="light">Light</option>
+              <option value="system">Browser default (light on a kiosk)</option>
+            </select>
+            <small>
+              What pages such as your sign-in provider see as the preferred scheme. Takes effect when the browser next
+              starts: straight away if nobody is signed in, otherwise at the next sign-out.
+            </small>
           </label>
         </section>
 
@@ -386,6 +406,7 @@ import {
   UserRound, Globe,
 } from 'lucide-vue-next'
 import { thinClientsApi } from '@/api/thinClients'
+import { toDataUrl } from '@/utils/dataUrl'
 import { useUiStore } from '@/stores/ui'
 import { absoluteTime, relativeTime } from '@/utils/workspaceStatus'
 import type {
@@ -423,7 +444,6 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   if (timer) clearTimeout(timer)
-  for (const url of Object.values(shots.value)) URL.revokeObjectURL(url)
 })
 
 async function loadShot(c: ThinClient) {
@@ -432,8 +452,8 @@ async function loadShot(c: ThinClient) {
   try {
     const blob = await thinClientsApi.screenshot(c.id)
     if (!blob) return
-    if (shots.value[c.id]) URL.revokeObjectURL(shots.value[c.id])
-    shots.value = { ...shots.value, [c.id]: URL.createObjectURL(blob) }
+    // A data: URL, not an object URL: Cove's CSP has no blob: in img-src.
+    shots.value = { ...shots.value, [c.id]: await toDataUrl(blob) }
   } catch {
     delete shotStamp[c.id]
   }

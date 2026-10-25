@@ -73,6 +73,7 @@ def test_admin_crud_and_policy(client):
     dev = _create(client, token)
     assert dev["status"] == "pending" and dev["online"] is False
     assert dev["policy"]["screen_off_minutes"] == 15
+    assert dev["policy"]["color_scheme"] == "dark"  # matches Cove, incl. the OIDC page
 
     r = client.patch(
         f"/api/admin/thin-clients/{dev['id']}",
@@ -100,6 +101,8 @@ def test_admin_crud_and_policy(client):
     {"on_hours_start": "25:00"},
     {"rotation": "45"},
     {"screen_off_minutes": -1},
+    {"volume": 151},
+    {"color_scheme": "neon"},
 ])
 def test_policy_validation(client, policy):
     token, _ = setup_admin(client)
