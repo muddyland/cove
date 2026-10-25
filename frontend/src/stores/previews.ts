@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { workspacesApi } from '@/api/workspaces'
 import type { Workspace } from '@/types'
+import { toDataUrl } from '@/utils/dataUrl'
 
 /**
  * Screen previews for the workspace grid.
@@ -14,26 +15,6 @@ import type { Workspace } from '@/types'
  * The frame is the server-side capture taken at launch, fetched on demand
  * (`load`).
  */
-/**
- * Frames are held as `data:` URLs, NOT `blob:` object URLs.
- *
- * Cove's CSP is `img-src 'self' data: https:` (the cove-headers middleware in
- * docker-compose.yml). It does not list `blob:`, so an <img> pointing at an
- * object URL is blocked outright — the fetch succeeds, the URL is created, and
- * the browser silently refuses to paint it. Encoding inline keeps previews
- * working on every existing deployment without loosening the policy or
- * requiring a Traefik redeploy. Base64 costs ~33% over the raw bytes, which on
- * a ~3KB thumbnail is nothing.
- */
-function toDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-}
-
 export const usePreviewsStore = defineStore('previews', () => {
   // workspace id -> data URL of the frame currently displayed
   const urls = ref<Record<number, string>>({})

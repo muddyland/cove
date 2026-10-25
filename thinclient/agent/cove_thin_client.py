@@ -69,6 +69,10 @@ PACKAGES = [
 ]
 
 UA = f"cove-thin-client/{AGENT_VERSION}"
+# Highest volume the keys and the policy can set (PipeWire amplifies above 1.0,
+# which small monitor speakers often need).
+VOLUME_MAX = 1.5
+WIREPLUMBER_CONF = "/etc/wireplumber/wireplumber.conf.d/50-cove-thin-client.conf"
 LONG_POLL = 25
 
 log = logging.getLogger("cove-thin-client")
@@ -273,6 +277,21 @@ def keyboard_layout():
     return layout, variant
 
 
+# Raising the volume also unmutes, as on any desktop.
+VOLUME_UP = (
+    "sh -c 'wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; "
+    f"wpctl set-volume -l {VOLUME_MAX} @DEFAULT_AUDIO_SINK@ 5%+'"
+)
+
+# WirePlumber (0.5) starts a newly seen output at 0.4^3 linear, which reads as
+# 40% and sounds near-silent on a monitor's speakers. Start at 100% instead.
+WIREPLUMBER_SETTINGS = """# Managed by cove-thin-client.
+wireplumber.settings = {
+  device.routes.default-sink-volume = 1.0
+}
+"""
+
+
 def sway_config():
     layout, variant = keyboard_layout()
     kb = [f"    xkb_layout {layout}"]
@@ -282,7 +301,8 @@ def sway_config():
     kb.append("    xkb_options srvrkeys:none")
     kb_block = "\n".join(kb)
     return f"""# Managed by cove-thin-client — local edits are overwritten.
-# No key bindings at all: the only thing this session can do is show Cove.
+# The only key bindings are the media keys below: nothing that could leave the
+# kiosk, start a program or switch away from Cove.
 xwayland disable
 default_border none
 default_floating_border none
@@ -299,6 +319,9 @@ output * bg #06060f solid_color
 client.focused   #00f5ff #06060f #c8d8ff #ff00aa #00f5ff
 client.unfocused #1c1c42 #06060f #7d8bb5 #1c1c42 #1c1c42
 for_window [app_id=".*"] fullscreen enable
+bindsym --locked XF86AudioRaiseVolume exec {VOLUME_UP}
+bindsym --locked XF86AudioLowerVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+bindsym --locked XF86AudioMute exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
 include {SWAY_OUTPUTS}
 """
 
@@ -354,7 +377,8 @@ def chromium_policy(allowed_hosts, cp_url):
 
 def converge(cached=None):
     """Bring every managed file to its desired content. Idempotent and cheap:
-    files are only rewritten (and services only reloaded) when they differ."""
+    files are only rewritten (and services only reloaded) when they differ.
+    Returns True when the sway config changed (a running sway must reload)."""
     cfg = read_json(CONFIG, {}) or {}
     cached = cached if cached is not None else read_json(CACHE_FILE, {}) or {}
     ensure_kiosk_user()
@@ -371,10 +395,11 @@ def converge(cached=None):
     write_if_changed("/etc/systemd/logind.conf.d/cove-thin-client.conf", LOGIND_CONF)
     write_if_changed("/etc/systemd/journald.conf.d/cove-thin-client.conf", JOURNALD_CONF)
     write_if_changed(f"{home}/.bash_profile", BASH_PROFILE, 0o644)
-    write_if_changed(SWAY_CONF, sway_config())
+    sway_changed = write_if_changed(SWAY_CONF, sway_config())
     if not os.path.exists(SWAY_OUTPUTS):
         write_if_changed(SWAY_OUTPUTS, "# Written by cove-thin-client from the device policy.\n")
     write_if_changed("/etc/apt/apt.conf.d/52cove-thin-client", APT_CONF)
+    write_if_changed(WIREPLUMBER_CONF, WIREPLUMBER_SETTINGS)
     write_if_changed("/usr/share/plymouth/themes/cove/cove.plymouth", PLYMOUTH_THEME)
     write_if_changed("/usr/share/plymouth/themes/cove/cove.script", PLYMOUTH_SCRIPT)
     hosts = cached.get("allowed_hosts") or []
@@ -387,6 +412,7 @@ def converge(cached=None):
     if changed_units:
         run(["systemctl", "daemon-reload"])
     import_local_cas(uid, gid, home)
+    return sway_changed
 
 
 def ensure_kiosk_user():
@@ -500,7 +526,7 @@ def setup_boot_splash():
 class Sway:
     """Minimal i3/sway IPC client over the kiosk session's socket."""
 
-    RUN_COMMAND, GET_OUTPUTS, GET_VERSION = 0, 3, 7
+    RUN_COMMAND, GET_OUTPUTS, GET_VERSION, GET_CONFIG = 0, 3, 7, 9
 
     def socket_path(self):
         try:
@@ -565,6 +591,29 @@ class Sway:
             return self._call(self.GET_VERSION).get("human_readable")
         except Exception:  # noqa: BLE001
             return None
+
+    def loaded_config(self):
+        """The main config text the running sway loaded (None if unknown)."""
+        try:
+            return self._call(self.GET_CONFIG).get("config")
+        except Exception:  # noqa: BLE001
+            return None
+
+    def reload_if_stale(self):
+        """Reload when the running sway loaded an older config than the file on
+        disk (an agent update rewrote it). Returns True if it reloaded."""
+        if not self.available():
+            return False
+        try:
+            with open(SWAY_CONF) as f:
+                wanted = f.read()
+        except OSError:
+            return False
+        loaded = self.loaded_config()
+        if loaded is None or loaded == wanted:
+            return False
+        self.command("reload")
+        return True
 
     def set_power(self, on):
         word = "on" if on else "off"
@@ -708,6 +757,7 @@ class Browser:
     def __init__(self, sway):
         self.sway = sway
         self.page = None  # "cove" | "offline"
+        self.color_scheme = None  # what the running browser was started with
         # Server time the launch ticket was issued at; the launch counts as bound
         # once Cove reports a binding at or after it (server clock on both sides,
         # so device clock skew can't matter).
@@ -719,6 +769,7 @@ class Browser:
         """Pick up a browser a previous agent process started."""
         saved = read_json(BROWSER_STATE, {}) or {}
         self.page = saved.get("page") or "cove"
+        self.color_scheme = saved.get("color_scheme")
         self.ticket_issued_at = None  # already bound (or it would have been restarted)
         self.launched_mono = time.monotonic()
 
@@ -736,7 +787,7 @@ class Browser:
         os.makedirs(PROFILE_DIR, mode=0o700)
         os.chown(PROFILE_DIR, uid, gid)
 
-    def launch(self, url, page, ticket_issued_at=None):
+    def launch(self, url, page, ticket_issued_at=None, color_scheme="dark"):
         uid, gid, home = kiosk_ids()
         display = self.sway.wayland_display()
         if not display:
@@ -752,21 +803,28 @@ class Browser:
             "-E", f"XDG_RUNTIME_DIR={rt}", "-E", f"WAYLAND_DISPLAY={display}",
             "-E", f"DBUS_SESSION_BUS_ADDRESS=unix:path={rt}/bus",
             "-E", "XDG_SESSION_TYPE=wayland",
-            "--", "/usr/bin/chromium", *self.flags(), url,
+            "--", "/usr/bin/chromium", *self.flags(color_scheme), url,
         ]
         run(["systemctl", "reset-failed", BROWSER_UNIT], timeout=10)
         rc, out = run(cmd, timeout=30)
         if rc != 0:
             raise RuntimeError(f"browser launch failed: {out.strip()[-500:]}")
         self.page = page
+        self.color_scheme = color_scheme
         self.ticket_issued_at = ticket_issued_at
         self.launched_mono = time.monotonic()
         os.makedirs(RUN_DIR, mode=0o700, exist_ok=True)
-        write_if_changed(BROWSER_STATE, json.dumps({"page": page}), 0o600)
+        write_if_changed(BROWSER_STATE, json.dumps({"page": page, "color_scheme": color_scheme}), 0o600)
 
     @staticmethod
-    def flags():
+    def flags(color_scheme="dark"):
         extra = os.environ.get("COVE_TC_CHROMIUM_FLAGS", "").split()
+        # What pages see as prefers-color-scheme (an OIDC sign-in page, say).
+        # A kiosk has no desktop setting to follow, so Chromium would say light.
+        scheme = {
+            "dark": ["--force-dark-mode", "--blink-settings=preferredColorScheme=0"],
+            "light": ["--blink-settings=preferredColorScheme=1"],
+        }.get(color_scheme, [])
         return [
             "--kiosk", "--no-first-run", "--noerrdialogs", "--disable-infobars",
             "--disable-session-crashed-bubble", "--disable-pinch",
@@ -777,6 +835,7 @@ class Browser:
             "--enable-features=AcceleratedVideoDecodeLinuxGL",
             "--disable-features=Translate,MediaRouter",
             "--check-for-update-interval=31536000",
+            *scheme,
             *extra,
         ]
 
@@ -940,7 +999,7 @@ class Agent:
             return
         try:
             ticket = self.api.json("POST", "/api/thin-client/ticket", {}, timeout=15)
-            self.browser.launch(ticket["url"], "cove", parse_ts(ticket.get("issued_at")))
+            self.browser.launch(ticket["url"], "cove", parse_ts(ticket.get("issued_at")), self.color_scheme())
             log.info("browser launched on Cove")
         except Revoked:
             self.revoked = True
@@ -960,9 +1019,12 @@ class Agent:
             page = page.replace(k, html_escape(v))
         write_if_changed(OFFLINE_PAGE, page)
         try:
-            self.browser.launch(f"file://{OFFLINE_PAGE}", "offline")
+            self.browser.launch(f"file://{OFFLINE_PAGE}", "offline", color_scheme=self.color_scheme())
         except Exception as exc:  # noqa: BLE001
             self.last_error = f"browser: {exc}"
+
+    def color_scheme(self):
+        return self.policy.get("color_scheme") or "dark"
 
     def unbound(self):
         """True while a ticket launch hasn't been confirmed bound by Cove."""
@@ -995,6 +1057,16 @@ class Agent:
                     backoff = 2
                     if self.browser.page == "offline" and self.connected and not self.revoked:
                         log.info("Cove is reachable again: leaving the offline page")
+                        self._relaunch()
+                    elif (
+                        self.browser.page == "cove" and self.connected and not self.session_user
+                        # None: started by an older agent that didn't record it.
+                        and self.browser.color_scheme != self.color_scheme()
+                    ):
+                        # Chromium takes the colour scheme at launch. Restart for
+                        # a new one now if nobody is using the screen; otherwise
+                        # it applies at the next sign-out.
+                        log.info("colour scheme changed to %s: restarting the browser", self.color_scheme())
                         self._relaunch()
                     elif (
                         self.unbound() and self.connected
@@ -1046,11 +1118,37 @@ class Agent:
             except Exception as exc:  # noqa: BLE001
                 self.last_error = f"outputs: {exc}"
 
-    def set_volume(self, level):
+    def _wpctl(self, *args):
         uid = kiosk_ids()[0]
-        env = dict(os.environ, XDG_RUNTIME_DIR=f"/run/user/{uid}")
-        return run(["runuser", "-u", KIOSK_USER, "--", "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@",
-                    f"{level / 100:.2f}"], env=env, timeout=10)
+        rt = f"/run/user/{uid}"
+        env = dict(os.environ, XDG_RUNTIME_DIR=rt, DBUS_SESSION_BUS_ADDRESS=f"unix:path={rt}/bus")
+        return run(["runuser", "-u", KIOSK_USER, "--", "wpctl", *args], env=env, timeout=10)
+
+    def set_volume(self, level):
+        level = max(0.0, min(level / 100, VOLUME_MAX))
+        self._wpctl("set-mute", "@DEFAULT_AUDIO_SINK@", "0")
+        return self._wpctl("set-volume", "@DEFAULT_AUDIO_SINK@", f"{level:.2f}")
+
+    def get_volume(self):
+        """``(percent, muted)`` of the default output, or ``(None, None)``."""
+        rc, out = self._wpctl("get-volume", "@DEFAULT_AUDIO_SINK@")
+        m = re.search(r"Volume:\s*([0-9.]+)(\s*\[MUTED\])?", out) if rc == 0 else None
+        if not m:
+            return None, None
+        return round(float(m.group(1)) * 100), bool(m.group(2))
+
+    def ensure_initial_volume(self):
+        """Once per device: lift an output still at WirePlumber's quiet default
+        to 100%, unless the policy sets a volume of its own."""
+        marker = f"{STATE_DIR}/volume-initialised"
+        if os.path.exists(marker) or self.policy.get("volume") is not None:
+            return
+        level, _ = self.get_volume()
+        if level is None:
+            return  # audio isn't up yet; try again on the next tick
+        if level < 100:
+            self.set_volume(100)
+        open(marker, "w").close()
 
     # State
 
@@ -1080,6 +1178,7 @@ class Agent:
         except (OSError, ValueError):
             uptime = None
         self.refresh_upgradable()
+        volume, muted = self.get_volume() if self.sway.available() else (None, None)
         return {
             "hostname": socket.gethostname(),
             "ips": local_ips(),
@@ -1093,6 +1192,8 @@ class Agent:
             "display_on": self.display_on,
             "idle_s": int(self.activity.idle_seconds()),
             "media_playing": audio_playing(),
+            "volume": volume,
+            "muted": muted,
             "browser_running": self.browser.running(),
             "browser_page": self.browser.page,
             "outputs": outs,
@@ -1118,6 +1219,11 @@ class Agent:
     # Check-in
 
     def checkin(self, wait):
+        if self.sway.available():
+            try:
+                self.ensure_initial_volume()
+            except Exception as exc:  # noqa: BLE001
+                self.last_error = f"volume: {exc}"
         body = {"state": self.state(), "applied_policy_version": self.policy_version, "wait": wait}
         resp = self.api.json("POST", "/api/thin-client/checkin", body, timeout=wait + 20)
         self.connected = True
@@ -1349,6 +1455,10 @@ class Agent:
         log.info("cove-thin-client %s starting (Cove at %s)", AGENT_VERSION, self.api.cp)
         try:
             converge()
+            # A running sway reads its config only at start: reload it when an
+            # updated agent changed it, so new bindings work without a reboot.
+            if self.sway.reload_if_stale():
+                log.info("sway config changed: reloaded it")
         except Exception as exc:  # noqa: BLE001
             log.warning("converge failed: %s", exc)
         threading.Thread(target=self.ensure_packages, daemon=True, name="packages").start()

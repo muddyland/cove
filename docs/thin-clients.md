@@ -6,8 +6,8 @@ manage it from **Admin → Thin clients**. Sit down, sign in, and carry on in th
 workspace you started somewhere else. Walk away, and it darkens its screen and
 signs you out of *that screen* on its own.
 
-Each thin client runs Debian, sway (a Wayland compositor with no key bindings,
-so there's nothing to escape to) and Chromium in kiosk mode, plus the small Cove
+Each thin client runs Debian, sway (a Wayland compositor whose only key bindings
+are the volume keys, so there's nothing to escape to) and Chromium in kiosk mode, plus the small Cove
 thin client agent. The agent **dials out** to Cove over HTTPS, the same way a
 browser does, so a thin client needs no open port and no network setup beyond
 reaching Cove.
@@ -63,7 +63,7 @@ What the installer does:
 | Agent | Downloads the agent from Cove and checks its sha256, into `/usr/local/lib/cove-thin-client/agent.py`. |
 | Packages | sway, swaybg, chromium, grim, PipeWire, ddcutil, unattended-upgrades, plymouth, VA-API drivers, fonts. |
 | Kiosk user | `kiosk`: a locked password, auto-logged-in on tty1 only, which runs sway and nothing else. |
-| Lockdown | sway without key bindings or XWayland, with `Ctrl+Alt+F<n>` console switching disabled. No spare consoles (`NAutoVTs=0`). A managed Chromium policy blocks every URL except Cove's own. |
+| Lockdown | sway without XWayland and with no key bindings except volume up, down and mute, with `Ctrl+Alt+F<n>` console switching disabled. No spare consoles (`NAutoVTs=0`). A managed Chromium policy blocks every URL except Cove's own. |
 | Boot | A Cove boot splash, a 1-second GRUB menu, and a capped journal. |
 | Service | `cove-thin-client.service` (the agent). Chromium runs in its own transient unit, `cove-browser`. |
 
@@ -141,8 +141,13 @@ otherwise.
   the screen goes dark after a single idle minute.
 - **Playing audio keeps it awake**: films and music count as activity.
 - **Rotation**, **scale**, **brightness** (a laptop backlight, or the monitor
-  itself over DDC/CI) and **volume**. Rotation and scale persist across
+  itself over DDC/CI) and **volume** (up to 150%; above 100% amplifies, which
+  small monitor speakers often need). Rotation and scale persist across
   reboots. Brightness and volume are set when you change them.
+
+The keyboard's **volume keys** (up, down, mute) work on the device, up to 150%.
+A device's speakers start at 100%; Debian's default of 40% is far too quiet.
+The card shows the current volume, and whether it's muted.
 
 **Session**
 
@@ -164,6 +169,11 @@ otherwise.
   one per line (`kvm.lan`, `*.docs.example.org`). Prefer reaching such things
   *through* a Cove workspace (see [Recipes](#8-recipes)): that keeps Cove's
   sign-in, timeouts and audit log in front of them.
+- **Colour scheme for web pages** (default **dark**): what pages such as your
+  OIDC provider's sign-in page see as the user's preferred scheme. A kiosk has
+  no desktop setting to follow, so without this Chromium tells pages "light".
+  It takes effect when the browser next starts: at once if nobody is signed
+  in, otherwise at the next sign-out.
 
 **Updates**
 
@@ -223,7 +233,7 @@ out on a kiosk appears as `logout.thin_client`.
   you already give Cove over its zones. To pin a device's agent, set
   `"allow_agent_update": false` in `/etc/cove-thin-client/config.json`. Cove can
   then still manage it, but not replace its code.
-- **The kiosk is for honest users.** No key bindings, no consoles, URL
+- **The kiosk is for honest users.** No key bindings beyond volume, no consoles, URL
   allowlisting and no DevTools stop casual escapes. Someone with physical access
   and time can still boot other media or enter GRUB's recovery mode. Set a BIOS
   password and boot order if that matters where the device sits.

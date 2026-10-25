@@ -569,6 +569,7 @@ export interface ThinClientPolicy {
   auto_open: ThinClientAutoOpen
   pinned_workspace_id: string | null
   extra_allowed_hosts: string[]
+  color_scheme: 'dark' | 'light' | 'system'
   auto_update: boolean
   maintenance_hour: number
   auto_reboot: boolean
@@ -600,6 +601,8 @@ export interface ThinClientState {
   display_on?: boolean
   idle_s?: number
   media_playing?: boolean
+  volume?: number | null
+  muted?: boolean | null
   browser_running?: boolean
   browser_page?: string | null
   outputs?: ThinClientOutput[]
