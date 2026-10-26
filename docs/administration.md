@@ -49,6 +49,16 @@ reported only as present/absent — never shown.
   Docker on its workspaces once the deployment-wide toggle is on. Because the
   nested daemon is privileged, treat this grant as handing out root on the host.
   Admins have it implicitly.
+- **Limit to specific zones** (per user, off by default): restrict the account
+  to the zones you tick, Local included, for example to keep a LAN zone for
+  yourself. The account's zone pickers offer only those zones, and launching,
+  starting, cloning or migrating a workspace anywhere else is refused. That
+  applies even when an admin acts on the account's workspace, because the
+  limit follows the workspace's owner. Existing workspaces on a zone the
+  account loses are kept, but can't start until migrated to an allowed zone.
+  Ticking no zones leaves the account unable to run any workspace. Admins
+  always have every zone. The **Zones** column in the list shows each
+  account's limit.
 - Usernames may not begin with `.`, `_` or `cove-` — those prefixes name Cove's
   own directories under the storage root.
 

@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, s
 from fastapi.responses import Response
 from sqlalchemy import select
 
-from server import stream_leases
+from server import stream_leases, zone_access
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.favicons import refresh_workspace_favicon
@@ -451,6 +451,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     _validate_gpu(body.gpu_accel, body.pixelflux_wayland)
 
     _validate_zone(db, body.zone_id)
+    zone_access.require_zone(db, user, body.zone_id, action="run")
     _check_name_unique(db, user.id, body.name)
 
     ws = Workspace(
@@ -597,6 +598,7 @@ def clone_workspace(
     if src.use_gluetun:
         _check_gluetun_single_connection(db, user.id, g_profile_id)
     _validate_docker(db, src.use_docker, src.zone_id)
+    zone_access.require_zone(db, user, src.zone_id, action="run")
 
     clone = Workspace(
         user_id=user.id,
@@ -677,6 +679,7 @@ def migrate_workspace(
             status_code=409, detail="Stop the workspace before migrating so its files are at rest"
         )
     _validate_zone(db, target)
+    zone_access.require_zone(db, ws.user, target, action="move")
     if ws.use_docker:
         # A DinD workspace would arrive somewhere its nested daemon can't start,
         # and with the Docker toggle hidden from its edit form.
@@ -1387,6 +1390,14 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
     # reuses the persistent home. Only block states that are already in flight.
     if ws.status not in ("stopped", "error"):
         raise HTTPException(status_code=400, detail=f"Cannot start workspace in state: {ws.status}")
+    if not zone_access.may_use(db, ws.user, ws.zone_id):
+        zone = db.get(Zone, ws.zone_id)
+        raise HTTPException(
+            status_code=403,
+            detail=f"{ws.user.username} may no longer run workspaces on zone "
+            f"'{zone.name if zone else ws.zone_id}'. Migrate it to an allowed zone, "
+            "or ask an admin to allow this one.",
+        )
     if ws.use_gluetun:
         _check_gluetun_single_connection(
             db, ws.user_id, ws.gluetun_profile_id, exclude_ws_id=ws.id

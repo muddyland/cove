@@ -27,7 +27,14 @@ vi.mock('@/api/workspaces', () => ({
 
 const launchMock = vi.fn()
 vi.mock('@/stores/workspaces', () => ({ useWorkspacesStore: () => ({ launch: launchMock }) }))
-vi.mock('@/stores/zones', () => ({ useZonesStore: () => ({ fetch: vi.fn(), hasRemote: false, items: [] }) }))
+// The zones this user may use: Local only by default; tests change it.
+const zonesState = vi.hoisted(() => ({
+  items: [{ id: 0, name: 'Local' }] as { id: number; name: string }[],
+  hasRemote: false,
+  loaded: true,
+  fetch: async () => [] as unknown[],
+}))
+vi.mock('@/stores/zones', () => ({ useZonesStore: () => zonesState }))
 vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ toast: vi.fn() }) }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/components/BaseModal.vue', () => ({ default: { template: '<div><slot /></div>' } }))
@@ -65,6 +72,9 @@ describe('LaunchWizard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
+    zonesState.items = [{ id: 0, name: 'Local' }]
+    zonesState.hasRemote = false
+    zonesState.fetch = async () => zonesState.items
     vi.mocked(imagesApi.list).mockResolvedValue([desktopImage])
     vi.mocked(prootApi.list).mockResolvedValue({ apps: ['firefox', 'obs-studio', 'blender'] })
     vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })
@@ -86,6 +96,25 @@ describe('LaunchWizard', () => {
     expect(payload.workspace_type).toBe('desktop')
     expect(payload.use_tailscale).toBe(false)
     expect(payload).not.toHaveProperty('ts_exit_node')
+  })
+
+  it('launches on the only zone a zone-limited user may use', async () => {
+    zonesState.items = [{ id: 3, name: 'LAN' }]
+    const wrapper = mount(LaunchWizard, { props: { modelValue: true } })
+    await toBasics(wrapper)
+    await clickBtn(wrapper, 'Launch')
+    await flushPromises()
+    expect(launchMock.mock.calls[0][0].zone_id).toBe(3)
+  })
+
+  it('explains and blocks a launch when the user may use no zone', async () => {
+    zonesState.items = []
+    const wrapper = mount(LaunchWizard, { props: { modelValue: true } })
+    await toBasics(wrapper)
+    expect(wrapper.text()).toContain("isn't allowed to run workspaces on any zone")
+    await clickBtn(wrapper, 'Launch')
+    await flushPromises()
+    expect(launchMock).not.toHaveBeenCalled()
   })
 
   it('includes ts_* fields when Tailscale is chosen in the Network step', async () => {
@@ -280,6 +309,9 @@ describe('LaunchWizard: GPU and Docker per zone', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
+    zonesState.items = [{ id: 0, name: 'Local' }]
+    zonesState.hasRemote = false
+    zonesState.fetch = async () => zonesState.items
     vi.mocked(imagesApi.list).mockResolvedValue([desktopImage])
     vi.mocked(prootApi.list).mockResolvedValue({ apps: [] })
     vi.mocked(workspacesApi.lanPolicy).mockResolvedValue({ enabled: false, subnets: [] })

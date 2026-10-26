@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 
-from server import settings_store
+from server import settings_store, zone_access
 from server.config import get_settings
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace, Zone
@@ -78,6 +78,9 @@ def create_user(body: AdminUserCreate, user: AdminUser, db: DbSession, request: 
         docker_allowed=body.docker_allowed,
     )
     db.add(new_user)
+    db.flush()
+    if body.zones_restricted:
+        zone_access.set_allowed(db, new_user, True, body.allowed_zone_ids)
     db.commit()
     db.refresh(new_user)
     _audit(db, "admin.user.create", detail=new_user.username, user=user, request=request)
@@ -117,6 +120,13 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
         target.tokens_valid_from = datetime.now(timezone.utc)
     if body.docker_allowed is not None:
         target.docker_allowed = body.docker_allowed
+    if body.zones_restricted is not None or body.allowed_zone_ids is not None:
+        zone_access.set_allowed(
+            db,
+            target,
+            target.zones_restricted if body.zones_restricted is None else body.zones_restricted,
+            target.allowed_zone_ids if body.allowed_zone_ids is None else body.allowed_zone_ids,
+        )
     db.commit()
     db.refresh(target)
     _audit(db, "admin.user.update", detail=target.username, user=admin, request=request)

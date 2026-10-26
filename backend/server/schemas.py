@@ -36,6 +36,9 @@ class UserOut(BaseModel):
     username: str
     is_admin: bool
     docker_allowed: bool = False
+    # False: every zone. True: only allowed_zone_ids (see Admin -> Users).
+    zones_restricted: bool = False
+    allowed_zone_ids: list[int] = []
     auth_provider: str
     created_at: datetime
     last_login_at: Optional[datetime]
@@ -440,6 +443,8 @@ class AdminUserCreate(BaseModel):
     password: str
     is_admin: bool = False
     docker_allowed: bool = False
+    zones_restricted: bool = False
+    allowed_zone_ids: list[int] = []
 
 
 class AdminUserUpdate(BaseModel):
@@ -447,6 +452,9 @@ class AdminUserUpdate(BaseModel):
     is_admin: Optional[bool] = None
     password: Optional[str] = None
     docker_allowed: Optional[bool] = None
+    # Both optional: send either or both to change the user's zone limit.
+    zones_restricted: Optional[bool] = None
+    allowed_zone_ids: Optional[list[int]] = None
 
 
 # ── App settings ──────────────────────────────────────────────────────────────
