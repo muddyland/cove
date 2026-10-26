@@ -1137,6 +1137,18 @@ class Agent:
             return None, None
         return round(float(m.group(1)) * 100), bool(m.group(2))
 
+    def audio_output(self):
+        """Description of the default output, or None when PipeWire has no real
+        one (its silent "Dummy Output", e.g. a VM sound card with no codec)."""
+        rc, out = self._wpctl("inspect", "@DEFAULT_AUDIO_SINK@")
+        if rc != 0:
+            return None
+        name = re.search(r'node\.name = "([^"]*)"', out)
+        if not name or name.group(1) == "auto_null":
+            return None
+        desc = re.search(r'node\.description = "([^"]*)"', out)
+        return desc.group(1) if desc else name.group(1)
+
     def ensure_initial_volume(self):
         """Once per device: lift an output still at WirePlumber's quiet default
         to 100%, unless the policy sets a volume of its own."""
@@ -1179,6 +1191,7 @@ class Agent:
             uptime = None
         self.refresh_upgradable()
         volume, muted = self.get_volume() if self.sway.available() else (None, None)
+        audio = self.audio_output() if self.sway.available() else None
         return {
             "hostname": socket.gethostname(),
             "ips": local_ips(),
@@ -1194,6 +1207,7 @@ class Agent:
             "media_playing": audio_playing(),
             "volume": volume,
             "muted": muted,
+            "audio_output": audio,
             "browser_running": self.browser.running(),
             "browser_page": self.browser.page,
             "outputs": outs,

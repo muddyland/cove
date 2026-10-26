@@ -182,3 +182,14 @@ def test_sway_reloads_only_when_its_loaded_config_is_stale(tmp_path, monkeypatch
         monkeypatch.setattr(sway, "loaded_config", lambda loaded=loaded: loaded)
         assert sway.reload_if_stale() is reloads
         assert sent == (["reload"] if reloads else [])
+
+
+def test_audio_output_detects_the_dummy_sink():
+    fake = types.SimpleNamespace()
+    real = '  * node.description = "Built-in Audio Analog Stereo"\n  * node.name = "alsa_output.pci-0000_00_1b.0"\n'
+    dummy = '  * node.description = "Dummy Output"\n  * node.name = "auto_null"\n'
+    for out, want in [(real, "Built-in Audio Analog Stereo"), (dummy, None)]:
+        fake._wpctl = lambda *a, out=out: (0, out)
+        assert agent.Agent.audio_output(fake) == want
+    fake._wpctl = lambda *a: (1, "")
+    assert agent.Agent.audio_output(fake) is None

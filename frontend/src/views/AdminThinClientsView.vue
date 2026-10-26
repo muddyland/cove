@@ -65,9 +65,15 @@
             <dt>Display</dt>
             <dd>{{ displaySummary(c) }}</dd>
           </div>
-          <div v-if="c.state.volume !== undefined && c.state.volume !== null">
+          <div v-if="c.state.audio_output === null && c.state.session_running">
             <dt>Audio</dt>
-            <dd>
+            <dd class="warn" title="PipeWire found no sound card it can play through (a VM's sound device may need an audio backend)">
+              no audio output
+            </dd>
+          </div>
+          <div v-else-if="c.state.volume !== undefined && c.state.volume !== null">
+            <dt>Audio</dt>
+            <dd :title="c.state.audio_output ?? ''">
               <span :class="c.state.muted ? 'muted' : ''">{{ c.state.volume }}%</span>
               <span v-if="c.state.muted" class="warn">&nbsp;· muted</span>
             </dd>

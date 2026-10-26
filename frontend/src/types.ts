@@ -603,6 +603,8 @@ export interface ThinClientState {
   media_playing?: boolean
   volume?: number | null
   muted?: boolean | null
+  /** The default output's name; null when there's no real audio device. */
+  audio_output?: string | null
   browser_running?: boolean
   browser_page?: string | null
   outputs?: ThinClientOutput[]

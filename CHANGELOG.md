@@ -11,6 +11,10 @@
     150%. New outputs start at 100% instead of Debian's near-silent 40%, and
     devices already installed are lifted to 100% once. The card shows the
     current volume, and the volume setting goes up to 150%.
+  - **A device with no usable sound card says so.** When PipeWire has nothing
+    to play through (it falls back to a silent "Dummy Output", for example a VM
+    sound device with no audio backend), the card shows **no audio output**
+    instead of a volume that can't change.
   - **Sign-in pages can render dark.** A new **Colour scheme for web pages**
     setting (default dark) tells pages such as an OIDC sign-in page the user's
     preferred scheme. Before, Chromium on a kiosk always said light.

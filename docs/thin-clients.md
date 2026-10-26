@@ -291,6 +291,7 @@ variable, restart Cove, and run the new install command.
 | Kiosk shows **DEVICE REVOKED** | The device was deleted or re-enrolled elsewhere. Mint a code and re-run the installer. |
 | **BINDING FAILED** | A launch ticket expired or was reused. The agent restarts the browser. If it repeats, check the device clock and the agent log. |
 | Black screen, card says *no session on screen* | sway didn't start: `journalctl -t cove-session -b`. Common causes are GPU drivers and a missing `/dev/dri`. |
+| Card says **no audio output**, volume keys do nothing | PipeWire found no sound card to play through and fell back to a silent dummy output. On a VM, the sound device needs an audio backend: in Proxmox, set the Audio Device (Intel HDA) backend driver to **spice**, then stop and start the VM. Check with `cat /proc/asound/cards` and `dmesg \| grep -i codec` ("no codecs found" means no backend). |
 | Brightness does nothing | The monitor may not support DDC/CI (often a menu option), or the cable or adapter drops it. Run `ddcutil detect` on the device. |
 | Need a shell | SSH as `coveadmin` (install USB with `--ssh-key`), or boot GRUB's recovery entry. |
 
