@@ -168,6 +168,22 @@
       </div>
     </div>
 
+    <!-- Another browser or thin client opened this workspace: Selkies serves one
+         controlling screen and disconnected this one. Say where it went instead
+         of leaving a dead stream on screen. -->
+    <div v-else-if="movedTo" class="overlay-state moved">
+      <MonitorUp class="halt-icon" :size="56" />
+      <p class="boot-text">SESSION MOVED</p>
+      <p class="boot-sub">
+        “{{ ws?.name }}” is now open on <strong>{{ movedTo.label || 'another screen' }}</strong>{{ movedSince ? ` since ${movedSince}` : '' }}.
+        A workspace streams to one screen at a time, so this one was disconnected.
+      </p>
+      <div class="foreign-actions">
+        <NeonButton v-if="!lockedToWorkspace" variant="secondary" @click="router.push('/app')">← BACK</NeonButton>
+        <NeonButton variant="primary" :loading="connecting" @click="takeBack">TAKE IT BACK HERE</NeonButton>
+      </div>
+    </div>
+
     <div class="frame-wrap" v-else-if="ws?.status === 'running' && streamUrl" ref="frameWrap">
       <iframe
         ref="streamFrame"
@@ -244,6 +260,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { workspacesApi } from '@/api/workspaces'
+import { useStreamLease } from '@/composables/useStreamLease'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
@@ -255,7 +272,7 @@ import SystemInfoModal from '@/components/SystemInfoModal.vue'
 import DocsModal from '@/components/DocsModal.vue'
 import { promptInstall, isStandalone } from '@/pwa'
 import { workspaceIconUrl, type IconSource } from '@/utils/workspaceIcon'
-import { ScanLine, Maximize, Minimize, ChevronDown, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package, Timer, FolderOpen, Upload } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, MonitorUp, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package, Timer, FolderOpen, Upload } from 'lucide-vue-next'
 import WorkspaceFilesModal from '@/components/WorkspaceFilesModal.vue'
 import WsTransferList from '@/components/WsTransferList.vue'
 import { useWsTransfersStore } from '@/stores/wsTransfers'
@@ -469,6 +486,7 @@ function runAction(fn: () => void) {
 watch(wsId, async () => {
   menuOpen.value = false
   streamUrl.value = null
+  dismissMoved()
   foreignStreamPending.value = null
   streamError.value = null
   connecting.value = false
@@ -580,6 +598,19 @@ function retryStream() {
   loadStreamUrl()
 }
 
+// ── Stream hand-off ──────────────────────────────────────────────────────
+// Opening this workspace on another screen disconnects this page's stream
+// (Selkies serves one); useStreamLease notices and says where it went.
+const { movedTo, movedSince, dismissMoved } = useStreamLease(wsId, streamUrl)
+
+// "Take it back here": open the stream again; claiming it moves the other screen
+// to this same message.
+function takeBack() {
+  dismissMoved()
+  streamError.value = null
+  loadStreamUrl()
+}
+
 onMounted(async () => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
   // Keep the whole list fresh too (quick-switch menu, and noticing this
@@ -608,12 +639,13 @@ watch(() => [ws.value?.status, ws.value?.connectable] as const, ([s, connectable
   if (s !== 'running') {
     streamUrl.value = null
     streamError.value = null
+    dismissMoved()
   }
   if ((s === 'running' && connectable) || s === 'error' || s === 'stopped') {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
     booting.value = false
   }
-  if (s === 'running') {
+  if (s === 'running' && !movedTo.value) {
     if (connectable) loadStreamUrl()
     else startPollIfNeeded()
   }
@@ -1246,6 +1278,11 @@ async function handleStop() {
 
 .halt-icon { color: var(--amber); filter: drop-shadow(0 0 10px rgba(255, 176, 0, 0.5)); }
 .overlay-state.halted .boot-text { color: var(--amber); }
+.overlay-state.moved .halt-icon,
+.overlay-state.moved .boot-text { color: var(--accent-2); }
+.overlay-state.moved .halt-icon { filter: drop-shadow(0 0 10px rgba(255, 0, 170, 0.5)); }
+.overlay-state.moved .boot-sub { max-width: 52ch; line-height: 1.6; text-align: center; }
+.overlay-state.moved strong { color: var(--text); font-weight: normal; }
 .overlay-state.error { color: var(--red); }
 .foreign-actions { display: flex; gap: 12px; margin-top: 18px; }
 .error-text { font-family: var(--font-mono); font-size: 13px; max-width: 70ch; text-align: center; padding: 0 16px; }

@@ -51,6 +51,9 @@ cookies.
 | DELETE | `/api/workspaces/{id}` | owner/admin | Delete (optional `?purge_storage=true`). |
 | POST | `/api/workspaces/{id}/stream-auth` | owner/admin | Mint the iframe stream URL/token. |
 | GET | `/api/workspaces/{id}/stream-ready` | owner/admin | Whether Traefik already has a route for the stream (the SPA polls this before loading the iframe). |
+| POST | `/api/workspaces/{id}/stream-lease` | owner/admin | `{"viewer_id"}`: this page's stream loaded, so it holds the workspace now. |
+| GET | `/api/workspaces/{id}/stream-lease?viewer_id=` | owner/admin | Does this page still hold the stream? `{holder, label, since}`: when `holder` is false, `label` names where it moved ("Desk (thin client)", "Firefox on Linux"). A missing or expired lease is re-claimed by the asker. |
+| DELETE | `/api/workspaces/{id}/stream-lease?viewer_id=` | owner/admin | The holding page closed. |
 | GET | `/api/workspaces/{id}/logs` | owner/admin | Container logs (desktop / tailscale / gluetun). |
 | GET | `/api/workspaces/{id}/tailscale-status` | owner/admin | `tailscale status` from the sidecar. |
 | GET | `/api/workspaces/{id}/info` | owner/admin | System info for the stream page in one call: uptime / auto-stop, container (IDs, restarts, real CPU/memory/PID/shm limits, hardening), live resources (CPU, memory, processes, network and block I/O totals), network route with profile and sidecar health, storage kind, features. Fields are `null` when not running or not reported. |
