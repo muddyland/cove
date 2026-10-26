@@ -246,6 +246,20 @@ class StreamReadyOut(BaseModel):
     ready: bool
 
 
+class StreamLeaseIn(BaseModel):
+    # Random id of one open stream page (per page load), from the SPA.
+    viewer_id: str = Field(..., min_length=8, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
+
+
+class StreamLeaseOut(BaseModel):
+    # Whether the asking page still holds the workspace's stream. False once
+    # another browser or thin client opened it (Selkies disconnected this one).
+    holder: bool
+    # Where the holder is ("Desk (thin client)", "Firefox on Linux") and since when.
+    label: Optional[str] = None
+    since: Optional[datetime] = None
+
+
 class WorkspaceStats(BaseModel):
     cpu_pct: float
     mem_used: int

@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import select
 
+from server import stream_leases
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.favicons import refresh_workspace_favicon
@@ -29,6 +30,8 @@ from server.schemas import (
     PublicIpOut,
     RuntimePolicyOut,
     StreamAuthOut,
+    StreamLeaseIn,
+    StreamLeaseOut,
     StreamReadyOut,
     SysContainerOut,
     SysNetworkOut,
@@ -1175,6 +1178,45 @@ def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
     return StreamAuthOut(url=f"//{host}/?__cove_t={token}")
 
 
+_VIEWER_ID = Query(..., min_length=8, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
+
+
+def _viewer_label(request: Request, db) -> str:
+    """Where a stream page is: a thin client by its name, else the browser."""
+    from server import thin_clients
+
+    client = thin_clients.client_from_bind_cookie(db, request.cookies.get(thin_clients.BIND_COOKIE))
+    if client is not None:
+        return f"{client.name} (thin client)"
+    return stream_leases.describe_browser(request.headers.get("user-agent", ""))
+
+
+@router.post("/{ws_id}/stream-lease", response_model=StreamLeaseOut)
+def claim_stream_lease(ws_id: int, body: StreamLeaseIn, request: Request, user: CurrentUser, db: DbSession):
+    """This page's stream just loaded, so it holds the workspace now. Any other
+    page that held it learns so on its next check and explains the disconnect."""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    lease = stream_leases.claim(ws.id, body.viewer_id, _viewer_label(request, db))
+    return StreamLeaseOut(holder=True, label=lease.label, since=lease.since)
+
+
+@router.get("/{ws_id}/stream-lease", response_model=StreamLeaseOut)
+def check_stream_lease(
+    ws_id: int, request: Request, user: CurrentUser, db: DbSession, viewer_id: str = _VIEWER_ID
+):
+    """Polled by an open stream page: does it still hold the workspace?"""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    holder, lease = stream_leases.check(ws.id, viewer_id, _viewer_label(request, db))
+    return StreamLeaseOut(holder=holder, label=lease.label if lease else None, since=lease.since if lease else None)
+
+
+@router.delete("/{ws_id}/stream-lease", status_code=status.HTTP_204_NO_CONTENT)
+def release_stream_lease(ws_id: int, user: CurrentUser, db: DbSession, viewer_id: str = _VIEWER_ID):
+    """The holding page closed."""
+    ws = _get_workspace_or_404(ws_id, user, db)
+    stream_leases.release(ws.id, viewer_id)
+
+
 @router.get("/{ws_id}/stream-ready", response_model=StreamReadyOut)
 async def stream_ready(ws_id: int, user: CurrentUser, db: DbSession):
     """Report whether Traefik can already route to this workspace's stream.
@@ -1331,6 +1373,7 @@ def stop_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: BackgroundT
     if not _transition(db, ws.id, ("running", "creating"), "stopping"):
         raise HTTPException(status_code=409, detail="Workspace is already changing state")
     db.refresh(ws)
+    stream_leases.forget(ws.id)
     _audit(db, "workspace.stop", detail=ws.public_id, user=user, request=request)
     from server.docker_manager import get_docker_manager
     bg.add_task(get_docker_manager(ws.zone_id).stop_workspace, ws.id)

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Opening a workspace elsewhere explains itself on the screen that had it.**
+  A workspace streams to one screen at a time, so opening it on another
+  browser or a thin client disconnected the first page, which was left showing
+  a dead stream. That page now shows **Session moved**, naming where the
+  workspace went and since when, with **Take it back here**. Each stream page
+  claims the workspace with Cove when its stream loads and checks every few
+  seconds whether it still holds it.
 - **Thin client fixes from the first real device.**
   - **Screenshots show in Admin → Thin clients.** They were drawn from `blob:`
     URLs, which Cove's Content Security Policy blocks behind Traefik. They are

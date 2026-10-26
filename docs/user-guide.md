@@ -107,6 +107,15 @@ While viewing a running workspace, a top bar provides:
 - **APP / install** — install *this* workspace as its own PWA (its own icon and window). Handy for a single-purpose browser workspace.
 - **System info** — the gauge button next to the status badge. It carries a green lock when the workspace is routed through a VPN and a network icon for Tailscale (the tooltip names the profile and exit node), and opens one dialog with everything about the running workspace: uptime and auto-stop (with **Extend**), live CPU / memory / processes / network / disk I/O against its limits, the network route (VPN profile, provider and servers with the tunnel's health, or the tailnet IP, hostname, exit node and `tailscale status`), LAN access, the public IP it really exits from (**Check**, looked up from inside the workspace), home folder type and size, and container details (image, IDs, restarts, zone, options, hardening).
 
+### One screen at a time
+
+A workspace streams to one screen at a time. Opening it somewhere else (another
+browser, another computer, a thin client) moves the stream there, and the page
+that had it says so: **Session moved** names where it went ("Desk (thin
+client)", "Firefox on Linux") and since when. **Take it back here** moves the
+stream back, and the other screen then shows the same message. The workspace
+keeps running throughout; only the screen showing it changes.
+
 ## Moving files in and out
 
 - **Drop files onto the stream** to copy them into the workspace: they land in

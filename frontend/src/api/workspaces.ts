@@ -94,8 +94,22 @@ export const workspacesApi = {
     api.post<{ captured: boolean; preview_at: string | null }>(`/workspaces/${id}/preview/refresh`),
   streamAuth: (id: number) => api.post<{ url: string }>(`/workspaces/${id}/stream-auth`),
   streamReady: (id: number) => api.get<{ ready: boolean }>(`/workspaces/${id}/stream-ready`),
+  // Which open page holds the stream (Selkies serves one controlling screen).
+  claimStream: (id: number, viewerId: string) =>
+    api.post<StreamLease>(`/workspaces/${id}/stream-lease`, { viewer_id: viewerId }),
+  checkStream: (id: number, viewerId: string) =>
+    api.get<StreamLease>(`/workspaces/${id}/stream-lease?viewer_id=${encodeURIComponent(viewerId)}`),
+  releaseStream: (id: number, viewerId: string) =>
+    api.delete(`/workspaces/${id}/stream-lease?viewer_id=${encodeURIComponent(viewerId)}`),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),
   start: (id: number) => api.post<Workspace>(`/workspaces/${id}/start`),
   remove: (id: number, purgeStorage = false) =>
     api.delete(`/workspaces/${id}${purgeStorage ? '?purge_storage=true' : ''}`),
+}
+
+export interface StreamLease {
+  holder: boolean
+  /** Where the holder is: "Desk (thin client)", "Firefox on Linux". */
+  label: string | null
+  since: string | null
 }
