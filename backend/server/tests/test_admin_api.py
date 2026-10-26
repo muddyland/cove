@@ -401,3 +401,57 @@ def test_storage_lists_local_zone_once(client, monkeypatch):
     local = [z for z in zones if z["zone_name"] == "Local"]
     assert len(local) == 1, f"'Local' listed {len(local)}x: {zones}"
     assert local[0]["zone_id"] == 0
+
+
+def test_storage_explains_an_old_zone_agent(client, monkeypatch):
+    """A zone whose agent stack blocks /system/df (docker-socket-proxy without
+    SYSTEM=1) gets an actionable message, not the raw 403 page."""
+    from unittest.mock import MagicMock
+
+    import docker.errors
+    import requests
+
+    from server.db import SessionLocal
+    from server.models import Zone
+
+    setup_admin(client)
+    with SessionLocal() as db:
+        db.add(Zone(name="Desk DMZ", status="enrolled", endpoint_host="10.12.0.53"))
+        db.commit()
+
+    # Built the way docker-py builds it, so str() reads as on the Storage page.
+    refused = requests.Response()
+    refused.status_code = 403
+    refused.reason = "Forbidden"
+    refused.url = "https://10.12.0.53:8443/v1.41/system/df"
+    refusal = docker.errors.APIError(
+        "403 Client Error", response=refused,
+        explanation="<html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>",
+    )
+    assert "administrative rules" in str(refusal) and "system/df" in str(refusal)
+    local, remote = MagicMock(), MagicMock()
+    local.disk_usage.return_value = {"categories": []}
+    remote.disk_usage.side_effect = refusal
+    monkeypatch.setattr(
+        "server.docker_manager.get_docker_manager", lambda zone_id=0, *a, **k: local if zone_id == 0 else remote
+    )
+    monkeypatch.setattr("server.routers.admin._host_disk_local", lambda: None)
+    monkeypatch.setattr("server.routers.admin._host_disk_remote", lambda zone: None)
+
+    zones = {z["zone_name"]: z for z in client.get("/api/admin/storage").json()["zones"]}
+    assert zones["Local"]["online"] is True
+    assert zones["Desk DMZ"]["online"] is False
+    assert "Re-enroll" in zones["Desk DMZ"]["error"] and "403" not in zones["Desk DMZ"]["error"]
+
+    # Any other failure still shows the daemon's own error.
+    remote.disk_usage.side_effect = RuntimeError("connection refused")
+    zones = {z["zone_name"]: z for z in client.get("/api/admin/storage").json()["zones"]}
+    assert zones["Desk DMZ"]["error"] == "connection refused"
+
+
+def test_zone_agent_stack_allows_disk_usage():
+    """New and re-enrolled zones let /system/df through their socket proxy."""
+    from server.routers.enroll import _INSTALL_TEMPLATE
+
+    sockproxy = _INSTALL_TEMPLATE.split("  sockproxy:", 1)[1].split("  sockproxy-ro:", 1)[0]
+    assert "SYSTEM=1" in sockproxy

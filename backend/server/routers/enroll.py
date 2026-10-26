@@ -291,7 +291,10 @@ services:
     image: tecnativa/docker-socket-proxy
     container_name: cove-agent-sockproxy
     restart: unless-stopped
-    environment: [POST=1, CONTAINERS=1, IMAGES=1, NETWORKS=1, VOLUMES=1, EXEC=1, PING=1, VERSION=1]
+    # SYSTEM=1 lets GET /system/df (disk usage, Admin -> Storage) through, as on
+    # the control plane. Read-only; the policy-filtering cove-agent proxy in front
+    # allows no other /system endpoint.
+    environment: [POST=1, CONTAINERS=1, IMAGES=1, NETWORKS=1, VOLUMES=1, EXEC=1, PING=1, VERSION=1, SYSTEM=1]
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
     networks: [cove-agent]
   sockproxy-ro:

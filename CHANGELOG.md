@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Admin → Storage works for remote zones.** Their cards showed
+  `403 … Request forbidden by administrative rules`: the agent's local Docker
+  socket proxy didn't allow `/system/df` (disk usage), unlike the control
+  plane's. New zones' agent stacks allow it (`SYSTEM=1`; the agent's policy
+  filter still allows no other `/system` endpoint). **Operator action:**
+  re-enroll each existing zone (**Admin → Zones → Enroll**, then re-run the
+  install command on that host) — **Update agent** doesn't rewrite the stack.
+  Until then, its Storage card says exactly that instead of the raw error.
 - **Opening a workspace elsewhere explains itself on the screen that had it.**
   A workspace streams to one screen at a time, so opening it on another
   browser or a thin client disconnected the first page, which was left showing
