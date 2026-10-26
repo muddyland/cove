@@ -15,6 +15,7 @@
             <th>Username</th>
             <th>Provider</th>
             <th>Role</th>
+            <th>Zones</th>
             <th>Last Login</th>
             <th></th>
           </tr>
@@ -24,6 +25,7 @@
             <td>{{ u.username }}</td>
             <td><span class="badge">{{ u.auth_provider }}</span></td>
             <td>{{ u.is_admin ? 'Admin' : 'User' }}<span v-if="u.docker_allowed && !u.is_admin" class="muted"> · docker</span></td>
+            <td :class="{ muted: !u.zones_restricted || u.is_admin }">{{ zoneSummary(u) }}</td>
             <td>{{ u.last_login_at ? formatDate(u.last_login_at) : '—' }}</td>
             <td class="actions">
               <NeonButton variant="ghost" @click="openEdit(u)"><Pencil :size="13" /> Edit</NeonButton>
@@ -70,12 +72,13 @@ import { ref, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import UserFormModal from '@/components/UserFormModal.vue'
+import { zonesApi } from '@/api/zones'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { Plus, Pencil, Trash2, LogOut } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
-import type { User } from '@/types'
+import type { User, UserFormPayload } from '@/types'
 
 const users = ref<User[]>([])
 const ui = useUiStore()
@@ -87,6 +90,19 @@ const deleteTarget = ref<User | null>(null)
 const deleting = ref(false)
 
 onMounted(async () => { users.value = await adminApi.users.list() })
+
+// Zone names for the Zones column.
+const zoneNames = ref<Record<number, string>>({})
+onMounted(() => {
+  zonesApi.list()
+    .then(zs => { zoneNames.value = Object.fromEntries(zs.map(z => [z.id, z.id === 0 ? 'Local' : z.name])) })
+    .catch(() => {})
+})
+function zoneSummary(u: User) {
+  if (u.is_admin || !u.zones_restricted) return 'All'
+  if (!u.allowed_zone_ids.length) return 'None'
+  return u.allowed_zone_ids.map(id => zoneNames.value[id] ?? `#${id}`).join(', ')
+}
 
 // API timestamps are naive UTC; parse them as UTC, not local time.
 const formatDate = absoluteTime
@@ -110,7 +126,7 @@ function confirmDelete(u: User) { deleteTarget.value = u; showConfirm.value = tr
 
 // Errors propagate to the modal (it stays open + shows them inline); we only
 // toast + mutate the list on success.
-async function handleSubmit(payload: { username: string; password?: string; is_admin: boolean; docker_allowed: boolean }) {
+async function handleSubmit(payload: UserFormPayload) {
   if (editTarget.value) {
     const updated = await adminApi.users.update(editTarget.value.id, payload)
     const idx = users.value.findIndex(u => u.id === editTarget.value!.id)

@@ -84,6 +84,9 @@
         <p v-if="showError('name')" class="field-error">Give your workspace a name.</p>
       </div>
 
+      <p v-if="noZones" class="field-error">
+        Your account isn't allowed to run workspaces on any zone. Ask an admin to allow one under Admin → Users.
+      </p>
       <div v-if="zonesStore.hasRemote" class="form-group">
         <label>Zone</label>
         <select v-model.number="form.zone_id">
@@ -498,8 +501,20 @@ function goBack() {
   }
 }
 
+// The zones this user may use (an admin can limit them). Default to Local when
+// it's allowed, else the first allowed zone, so a launch never targets a zone
+// the server will refuse.
+const noZones = computed(() => zonesStore.loaded && !zonesStore.items.length)
+function defaultZone(): number {
+  const items = zonesStore.items
+  return !items.length || items.some(z => z.id === 0) ? 0 : items[0].id
+}
+function ensureAllowedZone() {
+  if (zonesStore.loaded && !zonesStore.items.some(z => z.id === form.zone_id)) form.zone_id = defaultZone()
+}
+
 onMounted(async () => {
-  zonesStore.fetch()
+  zonesStore.fetch().then(ensureAllowedZone)
   images.value = await imagesApi.list()
   loadAvailability()
   try {
@@ -521,7 +536,7 @@ function resetForm() {
   search.value = ''
   kind.value = 'desktop'
   Object.assign(form, {
-    name: '', image_id: '', zone_id: 0, target_url: '',
+    name: '', image_id: '', zone_id: defaultZone(), target_url: '',
     kiosk: false, kiosk_dark: prefersDark, kiosk_menu: false,
     use_tailscale: false, use_gluetun: false, tailscale_profile_id: null, gluetun_profile_id: null,
     ephemeral: false, auto_remove: false, lan_access: false,
@@ -545,6 +560,7 @@ async function launch() {
   // Guard the required fields (name + image, and URL for link images) so we don't
   // bounce off a server 422; jump the user to the offending step.
   if (!form.image_id) { step.value = 'choose'; return }
+  if (noZones.value) { step.value = 'basics'; return }
   if (!form.name.trim() || (urlRequired.value && !form.target_url.trim())) { step.value = 'basics'; return }
   if (dnsErr.value) { customizing.value = true; step.value = 'network'; return }
   if (appsStepAvailable.value && (pkgErr.value || (launchersAvailable.value && appImageErr.value))) {

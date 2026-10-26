@@ -1,23 +1,11 @@
 import { api } from './client'
-import type {
-  User,
-  Workspace,
-  AuditEntry,
-  AuditFacets,
-  AuditQuery,
-  AppSettings,
-  EnvSummary,
-  StorageInfo,
-  PruneResult,
-} from '@/types'
+import type { AppSettings, AuditEntry, AuditFacets, AuditQuery, EnvSummary, PruneResult, StorageInfo, User, UserFormPayload, Workspace } from '@/types'
 
 export const adminApi = {
   users: {
     list: () => api.get<User[]>('/admin/users'),
-    create: (payload: { username: string; password: string; is_admin: boolean; docker_allowed?: boolean }) =>
-      api.post<User>('/admin/users', payload),
-    update: (id: number, payload: { username?: string; is_admin?: boolean; password?: string; docker_allowed?: boolean }) =>
-      api.patch<User>(`/admin/users/${id}`, payload),
+    create: (payload: UserFormPayload & { password: string }) => api.post<User>('/admin/users', payload),
+    update: (id: number, payload: Partial<UserFormPayload>) => api.patch<User>(`/admin/users/${id}`, payload),
     remove: (id: number) => api.delete(`/admin/users/${id}`),
     // Sign the user out everywhere (invalidates every token issued before now).
     revokeSessions: (id: number) => api.post<void>(`/admin/users/${id}/revoke-sessions`),

@@ -27,10 +27,13 @@ user_router = APIRouter(prefix="/api/zones", tags=["zones"])
 
 @user_router.get("", response_model=list[ZoneListItem])
 def list_zones_for_user(user: CurrentUser, db: DbSession):
+    from server.zone_access import allowed_zone_ids
+
     zones = db.scalars(
         select(Zone).where(Zone.status == "enrolled").order_by(Zone.id)
     ).all()
-    return [ZoneListItem(id=z.id, name=z.name) for z in zones]
+    allowed = allowed_zone_ids(db, user)
+    return [ZoneListItem(id=z.id, name=z.name) for z in zones if allowed is None or z.id in allowed]
 
 
 def _audit(db, action, *, detail=None, user=None, request=None):

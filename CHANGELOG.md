@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Limit users to certain zones.** Under **Admin → Users → Edit**, *Limit to
+  specific zones* restricts an account to the zones you tick (Local included).
+  Its zone pickers show only those, and the server refuses to launch, start,
+  clone or migrate the account's workspaces anywhere else, even when an admin
+  does it. Existing workspaces on a zone the account loses stay put, but must be
+  migrated before they can start. Admins always have every zone, and accounts
+  without a limit keep every zone as before. The launch wizard now defaults to
+  the first zone you may use, so an account limited to one remote zone launches
+  there without seeing a picker.
 - **Admin → Storage works for remote zones.** Their cards showed
   `403 … Request forbidden by administrative rules`: the agent's local Docker
   socket proxy didn't allow `/system/df` (disk usage), unlike the control

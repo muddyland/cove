@@ -3,9 +3,22 @@ export interface User {
   username: string
   is_admin: boolean
   docker_allowed: boolean
+  /** False: every zone. True: only allowed_zone_ids. Admins always have every zone. */
+  zones_restricted: boolean
+  allowed_zone_ids: number[]
   auth_provider: string
   created_at: string
   last_login_at: string | null
+}
+
+/** What the admin user form submits (password only when set). */
+export interface UserFormPayload {
+  username: string
+  password?: string
+  is_admin: boolean
+  docker_allowed: boolean
+  zones_restricted: boolean
+  allowed_zone_ids: number[]
 }
 
 export interface AuthConfig {

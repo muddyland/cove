@@ -43,6 +43,11 @@ class User(Base):
     ssh_private_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ssh_public_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ssh_key_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # Zone access. False: every enrolled zone (the default). True: only the zones
+    # listed in user_zone (possibly none). Admins always have every zone.
+    zones_restricted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
 
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"
@@ -53,6 +58,14 @@ class User(Base):
     tailscale_profiles: Mapped[list["TailscaleProfile"]] = relationship(
         "TailscaleProfile", cascade="all, delete-orphan", order_by="TailscaleProfile.id"
     )
+    zone_links: Mapped[list["UserZone"]] = relationship(
+        "UserZone", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    @property
+    def allowed_zone_ids(self) -> list[int]:
+        """Zones a restricted user may use (meaningless when unrestricted)."""
+        return sorted(link.zone_id for link in self.zone_links)
 
 
 class WorkspaceImage(Base):
@@ -595,3 +608,16 @@ class ThinClientCommand(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class UserZone(Base):
+    """A zone a zone-restricted user may use (see User.zones_restricted)."""
+
+    __tablename__ = "user_zone"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), primary_key=True
+    )
+    zone_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("zone.id", ondelete="CASCADE"), primary_key=True
+    )

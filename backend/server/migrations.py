@@ -261,6 +261,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0054_zone_agent_allows_docker",
         "ALTER TABLE zone ADD COLUMN agent_allows_docker BOOLEAN",
     ),
+    # Per-user zone limits (the user_zone table itself comes from create_all).
+    (
+        "0055_user_zones_restricted",
+        "ALTER TABLE user ADD COLUMN zones_restricted BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 
