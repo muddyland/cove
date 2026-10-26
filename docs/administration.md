@@ -93,7 +93,10 @@ and streams begin to drop. Each zone card shows:
 - **Docker breakdown** — a `docker system df`-style table of **Images**, **Containers**, **Local Volumes**, and **Build Cache**, each with active/total item counts, size, and reclaimable bytes.
 
 A zone the control plane can't reach is shown as **Unreachable** with the daemon
-error instead of a breakdown.
+error instead of a breakdown. A zone enrolled before disk usage worked on zones
+says so instead: re-enroll it (**Admin → Zones → Enroll**, then re-run the
+install command on that host) to update its agent stack. **Update agent** isn't
+enough, because it replaces only the agent container, not the stack around it.
 
 Two prune actions reclaim Docker disk on a zone (both confirm first):
 

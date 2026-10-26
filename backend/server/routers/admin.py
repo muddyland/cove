@@ -354,6 +354,26 @@ def _host_disk_remote(zone) -> HostDisk | None:
     return None
 
 
+# docker-socket-proxy's refusal page ("Request forbidden by administrative rules").
+_SOCKPROXY_REFUSAL = "administrative rules"
+
+
+def _storage_error(zone_id: int, exc: Exception) -> str:
+    """The message a zone card shows when its disk usage can't be read."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    text = f"{exc} {getattr(exc, 'explanation', '') or ''}"
+    if zone_id != 0 and status == 403 and _SOCKPROXY_REFUSAL in text:
+        # Agents enrolled before disk usage was allowed through their local
+        # socket proxy (SYSTEM=1 in the agent stack). The stack is written at
+        # enrolment, so re-enrolling (not Update agent) brings it in.
+        return (
+            "This zone's agent stack predates disk usage on zones. Re-enroll it to "
+            "update the stack: Admin → Zones → Enroll, then re-run the install "
+            "command on that host. Its workspaces and data are kept."
+        )
+    return str(exc)[:200]
+
+
 @router.get("/storage", response_model=StorageOut)
 def get_storage(admin: AdminUser, db: DbSession):
     """Per-zone disk usage: host free-space plus a Docker breakdown (images,
@@ -377,7 +397,7 @@ def get_storage(admin: AdminUser, db: DbSession):
             entry.categories = [StorageCategory(**c) for c in usage["categories"]]
         except Exception as e:  # noqa: BLE001 — surface any daemon error to the UI
             entry.online = False
-            entry.error = str(e)[:200]
+            entry.error = _storage_error(zone_id, e)
         entry.host = _host_disk_local() if zone_id == 0 else _host_disk_remote(zone)
         out.append(entry)
     return StorageOut(zones=out)
