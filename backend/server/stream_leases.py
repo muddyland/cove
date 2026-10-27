@@ -30,6 +30,8 @@ class Lease:
     label: str
     since: datetime
     last_seen: float
+    # The thin client (public id) the page runs on, if any.
+    device: Optional[str] = None
 
 
 _leases: dict[int, Lease] = {}
@@ -40,7 +42,7 @@ def _now() -> float:
     return time.monotonic()
 
 
-def claim(ws_id: int, viewer_id: str, label: str) -> Lease:
+def claim(ws_id: int, viewer_id: str, label: str, device: Optional[str] = None) -> Lease:
     """This page's stream just loaded: it is the holder now (Selkies has already
     disconnected whoever had it before)."""
     with _lock:
@@ -48,19 +50,20 @@ def claim(ws_id: int, viewer_id: str, label: str) -> Lease:
         if current is not None and current.viewer_id == viewer_id:
             current.last_seen = _now()
             current.label = label
+            current.device = device
             return current
-        lease = Lease(viewer_id, label, datetime.now(timezone.utc), _now())
+        lease = Lease(viewer_id, label, datetime.now(timezone.utc), _now(), device)
         _leases[ws_id] = lease
         return lease
 
 
-def check(ws_id: int, viewer_id: str, label: str) -> tuple[bool, Optional[Lease]]:
+def check(ws_id: int, viewer_id: str, label: str, device: Optional[str] = None) -> tuple[bool, Optional[Lease]]:
     """``(still_holder, current_lease)``. A missing or expired lease is
     re-claimed by the asking page, so a Cove restart is invisible to users."""
     with _lock:
         current = _leases.get(ws_id)
         if current is None or _now() - current.last_seen > LEASE_TTL:
-            current = Lease(viewer_id, label, datetime.now(timezone.utc), _now())
+            current = Lease(viewer_id, label, datetime.now(timezone.utc), _now(), device)
             _leases[ws_id] = current
             return True, current
         if current.viewer_id == viewer_id:
@@ -81,6 +84,18 @@ def forget(ws_id: int) -> None:
     """The workspace stopped or was removed."""
     with _lock:
         _leases.pop(ws_id, None)
+
+
+def by_device() -> dict[str, tuple[int, datetime]]:
+    """Thin client public id -> ``(workspace id, since)`` for every live lease
+    held on a thin client: what each device is showing right now."""
+    with _lock:
+        now = _now()
+        return {
+            lease.device: (ws_id, lease.since)
+            for ws_id, lease in _leases.items()
+            if lease.device and now - lease.last_seen <= LEASE_TTL
+        }
 
 
 def clear() -> None:

@@ -155,7 +155,7 @@ See [Thin clients](thin-clients.md) for the device side and the session model.
 | PATCH | `/api/admin/thin-clients/{id}` | admin | Update name, location and/or `policy` (validated; bumps `policy_version`). |
 | DELETE | `/api/admin/thin-clients/{id}` | admin | Delete a device: its token stops working and its sessions end. |
 | POST | `/api/admin/thin-clients/{id}/enroll-token` | admin | Mint a single-use enrolment code (`{"ttl_hours": 1..168}`) and install one-liner. Only its sha256 is stored. Using it on an enrolled device replaces that device's token. |
-| GET/POST | `/api/admin/thin-clients/{id}/commands` | admin | List the last 50 commands, or queue one (`screen_on`, `screen_off`, `restart_browser`, `identify`, `screenshot`, `apt_upgrade`, `reboot`, `poweroff`, `logs`). `409` if not enrolled, `400` for an unknown kind. |
+| GET/POST | `/api/admin/thin-clients/{id}/commands` | admin | List the last 50 commands, or queue one (`screen_on`, `screen_off`, `restart_browser`, `identify`, `screenshot`, `apt_upgrade`, `reboot`, `poweroff`, `logs`, `set_volume` with `{"level": 0..150}`, `set_mute` with `{"muted": bool}`). `409` if not enrolled, `400` for an unknown kind. |
 | POST | `/api/admin/thin-clients/{id}/signout` | admin | Revoke the device's sessions and reset its browser. |
 | POST | `/api/admin/thin-clients/{id}/keep-awake` | admin | Treat the device as active for `{"minutes"}` (0 clears it). |
 | GET | `/api/admin/thin-clients/{id}/screenshot.png` | admin | The latest screenshot (`404` if none). |
@@ -170,6 +170,24 @@ See [Thin clients](thin-clients.md) for the device side and the session model.
 | GET | `/api/thin-client/agent` | device token | The agent file, with `X-Agent-Sha256` and `X-Agent-Version`. |
 | GET | `/thin-client/bind?ticket=` | one-time ticket | Sets the httpOnly `cove_tc` cookie that binds this browser to the device, then redirects to `/app`. `403` page (fails closed) for a bad or reused ticket. |
 | GET | `/api/thin-client/self` | `cove_tc` cookie | Which device this browser is bound to, and its auto-open settings (`404` on a normal browser). |
+
+## Integrations — `/api/admin/integration-tokens`, `/api/integration/v1`
+
+See [Home Assistant](home-assistant.md). The `/api/integration/v1` endpoints take
+an integration token (`Authorization: Bearer cit_…`) and nothing else; the token
+is accepted nowhere else.
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/admin/integration-tokens` | admin | List tokens (name, scope, prefix, created, last used and from where). Never the token. |
+| POST | `/api/admin/integration-tokens` | admin | `{"name", "scope": "read"\|"control"}` → `201` with the plaintext `token`, shown this once. Only its sha256 is stored. |
+| DELETE | `/api/admin/integration-tokens/{id}` | admin | Revoke a token. |
+| GET | `/api/admin/integration-tokens/home-assistant.zip` | admin | The Home Assistant custom component (`custom_components/cove/…`). `404` when the build doesn't include it. |
+| GET | `/api/integration/v1/status` | read | Users, workspaces (by state), zones (online, counts, summed workspace CPU/memory) and enrolled thin clients (online, session, workspace on screen, screen, volume, updates…), plus the token's name and scope. |
+| GET | `/api/integration/v1/thin-clients/{public_id}/screenshot.png` | read | The latest screenshot (`404` if none). |
+| POST | `/api/integration/v1/thin-clients/{public_id}/commands` | control | Queue `screen_on`, `screen_off`, `restart_browser`, `identify`, `screenshot`, `reboot`, `poweroff`, `set_volume` (`{"level": 0..150}`) or `set_mute` (`{"muted": bool}`) → `202`. Anything else is a `400`. |
+| POST | `/api/integration/v1/thin-clients/{public_id}/signout` | control | Revoke the device's sessions and reset its browser. |
+| POST | `/api/integration/v1/thin-clients/{public_id}/keep-awake` | control | `{"minutes"}` (0 clears it). |
 
 ## Files — `/api/files` (all auth)
 
@@ -228,5 +246,6 @@ route of its own — it opens as a modal from the **?** in the top bar, so
 | `/app/admin/zones` | Zones | admin |
 | `/app/admin/thin-clients` | Thin clients | admin |
 | `/app/admin/storage` | Storage | admin |
+| `/app/admin/integrations` | Integrations | admin |
 | `/app/admin/audit` | Audit | admin |
 | `/app/admin/settings` | Settings | admin |

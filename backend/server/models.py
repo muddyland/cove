@@ -621,3 +621,25 @@ class UserZone(Base):
     zone_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("zone.id", ondelete="CASCADE"), primary_key=True
     )
+
+
+class IntegrationToken(Base):
+    """A long-lived bearer token for a home-automation integration (Home
+    Assistant). It works only on ``/api/integration/v1``, never as a session,
+    so a leaked token can read Cove's counters and, with the ``control`` scope,
+    drive thin clients, but can't reach workspaces, files or administration.
+    Only its sha256 is stored; the plaintext is shown once."""
+
+    __tablename__ = "integration_token"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    # The first characters of the token, so an admin can tell tokens apart.
+    prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    # "read" (stats only) or "control" (stats + thin client commands).
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="read")
+    created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_used_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

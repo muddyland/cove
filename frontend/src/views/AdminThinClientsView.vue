@@ -508,6 +508,8 @@ const COMMAND_LABELS: Record<ThinClientCommandKind, string> = {
   reboot: 'Reboot',
   poweroff: 'Power off',
   logs: 'Logs',
+  set_volume: 'Set volume',
+  set_mute: 'Set mute',
 }
 function commandLabel(k: ThinClientCommandKind) { return COMMAND_LABELS[k] ?? k }
 

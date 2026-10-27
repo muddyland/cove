@@ -1244,3 +1244,33 @@ class ThinClientSelfOut(BaseModel):
     pinned_workspace_id: Optional[str]
     signout_minutes: int
     screen_off_minutes: int
+
+
+# ── Integrations (Home Assistant) ────────────────────────────────────────────
+
+class IntegrationTokenCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    scope: Literal["read", "control"] = "read"
+
+
+class IntegrationTokenOut(BaseModel):
+    id: int
+    name: str
+    prefix: str
+    scope: str
+    created_by: Optional[str] = None
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+    last_used_ip: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class IntegrationTokenCreated(IntegrationTokenOut):
+    # The plaintext token, returned once at creation and never again.
+    token: str
+
+
+class IntegrationCommandIn(BaseModel):
+    kind: str = Field(..., max_length=32)
+    args: dict[str, Any] = Field(default_factory=dict)

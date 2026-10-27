@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-AGENT_VERSION = "1.0.0"
+AGENT_VERSION = "1.1.0"
 
 ETC = "/etc/cove-thin-client"
 CONFIG = f"{ETC}/config.json"
@@ -1339,6 +1339,14 @@ class Agent:
         if kind == "poweroff":
             threading.Timer(3, lambda: run(["systemctl", "poweroff"])).start()
             return True, "powering off"
+        if kind == "set_volume":
+            level = max(0, min(int(args.get("level", 100)), 150))
+            rc, out = self.set_volume(level)
+            return rc == 0, out or f"volume {level}%"
+        if kind == "set_mute":
+            muted = bool(args.get("muted"))
+            rc, out = self._wpctl("set-mute", "@DEFAULT_AUDIO_SINK@", "1" if muted else "0")
+            return rc == 0, out or ("muted" if muted else "unmuted")
         if kind == "logs":
             lines = str(int(args.get("lines", 200)))
             unit = args.get("unit", "agent")

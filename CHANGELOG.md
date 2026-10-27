@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Home Assistant integration.** **Admin → Integrations** mints tokens for
+  Home Assistant and offers its integration as a download (unzip into Home
+  Assistant's config folder). It adds Cove as a device with user and workspace
+  counts, each zone with its running workspaces and their summed CPU and memory,
+  and each thin client with who is signed in, the workspace on screen, screen,
+  volume, audio, updates and the last screenshot. A **Control** token adds
+  switches for the screen, mute and keep-awake, a volume slider, and buttons to
+  identify, screenshot, restart the browser, sign out, reboot and power off.
+  Tokens work only on the new `/api/integration/v1` and never as a sign-in.
+  Home Assistant polls over Cove's usual HTTPS address, so nothing new is
+  exposed. See [Home Assistant](docs/home-assistant.md). Needs Home Assistant
+  2026.10 or newer.
+- **Thin clients: volume and mute commands.** `set_volume` and `set_mute`
+  change a device's output without pinning it in the policy. Devices pick them
+  up with agent 1.1.0, which they install by themselves.
+- **Zones without workspaces show their real status.** The status monitor now
+  pings every enrolled zone, not only those running workspaces, so an idle
+  zone that goes down shows **offline**.
+
 - **Limit users to certain zones.** Under **Admin → Users → Edit**, *Limit to
   specific zones* restricts an account to the zones you tick (Local included).
   Its zone pickers show only those, and the server refuses to launch, start,

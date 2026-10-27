@@ -86,6 +86,7 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 - **Persistent storage** — per-workspace home directories that survive restarts (or go fully ephemeral, wiped on halt).
 
 - **Thin clients** — turn a spare mini PC into a kiosk that boots straight into Cove (Debian, sway and locked-down Chromium), set up with a one-liner or an install USB. Manage every screen from **Admin → Thin clients**: screen-off and on-hours, idle sign-out that ends only that screen's session, auto-open the running or a pinned workspace, rotation and brightness, screenshots, OS updates and reboots. Devices only dial out, so no port is opened, and their agent updates itself from Cove. See [Thin clients](docs/thin-clients.md).
+- **Home Assistant integration** — Cove, its zones and its thin clients as Home Assistant devices: user and workspace counts, per-zone workspace CPU and memory, who is signed in on each screen and what it shows, plus switches for screen, mute and keep-awake, a volume slider, and identify, sign-out and reboot buttons. Scoped integration tokens from **Admin → Integrations**; Home Assistant polls over Cove's usual HTTPS address. See [Home Assistant](docs/home-assistant.md).
 - **Browser extension** — *Open in Cove* sends any link from your own Chrome-based browser into a disposable Cove browser workspace. Served by your own server from the **user menu → Browser extension**, no store or internet needed.
 
 ### 🌐 Networking & privacy

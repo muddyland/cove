@@ -29,6 +29,7 @@ If you're new here, start with **[Installation](installation.md)**, then skim th
 - **[Administration](administration.md)** — the admin UI: settings, user management, the image catalog, live sessions, and the audit log.
 - **[Zones (remote agents)](zones.md)** — running workspaces on remote agent nodes over mTLS: enrollment, the agent stack, networking, storage parity, migration, and troubleshooting.
 - **[Thin clients](thin-clients.md)** — kiosk screens that boot straight into Cove and are managed from it: setup (one-liner or install USB), display and session policy, device-scoped sign-out, updates, and the security model.
+- **[Home Assistant](home-assistant.md)** — the Home Assistant integration: integration tokens, the devices and entities it adds (server counters, zone load, thin client state and controls), example automations, and its API.
 - **[Security model](security.md)** — how Cove isolates workspaces, protects credentials, and what trust assumptions it makes.
 - **[API reference](api-reference.md)** — every HTTP endpoint, the auth model, and the SPA routes.
 - **[Troubleshooting](troubleshooting.md)** — common symptoms and fixes.

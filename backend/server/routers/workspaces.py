@@ -1184,14 +1184,15 @@ def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
 _VIEWER_ID = Query(..., min_length=8, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
 
 
-def _viewer_label(request: Request, db) -> str:
-    """Where a stream page is: a thin client by its name, else the browser."""
+def _viewer(request: Request, db) -> tuple[str, str | None]:
+    """Where a stream page is: ``(label, thin client public id)``. A thin client
+    is labelled by its name, anything else by its browser."""
     from server import thin_clients
 
     client = thin_clients.client_from_bind_cookie(db, request.cookies.get(thin_clients.BIND_COOKIE))
     if client is not None:
-        return f"{client.name} (thin client)"
-    return stream_leases.describe_browser(request.headers.get("user-agent", ""))
+        return f"{client.name} (thin client)", client.public_id
+    return stream_leases.describe_browser(request.headers.get("user-agent", "")), None
 
 
 @router.post("/{ws_id}/stream-lease", response_model=StreamLeaseOut)
@@ -1199,7 +1200,7 @@ def claim_stream_lease(ws_id: int, body: StreamLeaseIn, request: Request, user: 
     """This page's stream just loaded, so it holds the workspace now. Any other
     page that held it learns so on its next check and explains the disconnect."""
     ws = _get_workspace_or_404(ws_id, user, db)
-    lease = stream_leases.claim(ws.id, body.viewer_id, _viewer_label(request, db))
+    lease = stream_leases.claim(ws.id, body.viewer_id, *_viewer(request, db))
     return StreamLeaseOut(holder=True, label=lease.label, since=lease.since)
 
 
@@ -1209,7 +1210,7 @@ def check_stream_lease(
 ):
     """Polled by an open stream page: does it still hold the workspace?"""
     ws = _get_workspace_or_404(ws_id, user, db)
-    holder, lease = stream_leases.check(ws.id, viewer_id, _viewer_label(request, db))
+    holder, lease = stream_leases.check(ws.id, viewer_id, *_viewer(request, db))
     return StreamLeaseOut(holder=holder, label=lease.label if lease else None, since=lease.since if lease else None)
 
 

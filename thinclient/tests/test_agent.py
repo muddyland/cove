@@ -193,3 +193,18 @@ def test_audio_output_detects_the_dummy_sink():
         assert agent.Agent.audio_output(fake) == want
     fake._wpctl = lambda *a: (1, "")
     assert agent.Agent.audio_output(fake) is None
+
+
+def test_volume_and_mute_commands_drive_wpctl():
+    calls = []
+    fake = types.SimpleNamespace(_wpctl=lambda *a: calls.append(a) or (0, ""))
+    fake.set_volume = lambda level: agent.Agent.set_volume(fake, level)
+
+    assert agent.Agent._execute(fake, "set_volume", {"level": 400}) == (True, "volume 150%")
+    # Setting a level unmutes first, as the volume keys do.
+    assert calls == [("set-mute", "@DEFAULT_AUDIO_SINK@", "0"),
+                     ("set-volume", "@DEFAULT_AUDIO_SINK@", f"{agent.VOLUME_MAX:.2f}")]
+
+    calls.clear()
+    assert agent.Agent._execute(fake, "set_mute", {"muted": True}) == (True, "muted")
+    assert calls == [("set-mute", "@DEFAULT_AUDIO_SINK@", "1")]

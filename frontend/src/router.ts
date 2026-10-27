@@ -22,6 +22,7 @@ const router = createRouter({
     { path: '/app/admin/images', component: () => import('@/views/AdminImagesView.vue'), meta: { admin: true } },
     { path: '/app/admin/zones', component: () => import('@/views/AdminZonesView.vue'), meta: { admin: true } },
     { path: '/app/admin/thin-clients', component: () => import('@/views/AdminThinClientsView.vue'), meta: { admin: true } },
+    { path: '/app/admin/integrations', component: () => import('@/views/AdminIntegrationsView.vue'), meta: { admin: true } },
     { path: '/app/admin/storage', component: () => import('@/views/AdminStorageView.vue'), meta: { admin: true } },
     { path: '/app/admin/audit', component: () => import('@/views/AdminAuditView.vue'), meta: { admin: true } },
     { path: '/app/admin/settings', component: () => import('@/views/AdminSettingsView.vue'), meta: { admin: true } },
