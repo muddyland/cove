@@ -88,6 +88,7 @@ PyJWT for JWTs. Key modules:
 | `favicons.py` | Site favicons for browser workspaces pinned to one URL: discovers icons from the page's `<link rel=icon>` tags (else `/favicon.ico`), fetches and normalizes them to PNG. Refuses loopback/link-local targets. |
 | `deps.py` | FastAPI dependencies: `CurrentUser`, `AdminUser`, `DbSession`. Token revocation, including the per-device check for thin-client sessions. |
 | `thin_clients.py` | Thin clients: enrolment codes and device tokens, policy, long-poll wake-ups, the command queue, the browser-binding ticket and cookie, and device-scoped session checks. |
+| `integration.py` | Home Assistant integration: integration tokens (sha256 only, `read`/`control` scopes, valid only on `/api/integration/v1`), the status snapshot (counts, per-zone load from a 20 s Docker stats cache, thin client state), and the custom-component zip. |
 | `thin_client_install.py` | The `/thin-client/install.sh` bootstrap script (enrol, fetch + verify the agent, hand over to `agent.py install`). |
 
 **Routers** (all under `/api`):
@@ -102,6 +103,7 @@ PyJWT for JWTs. Key modules:
 | `/api/files` | Per-user file browser (list/upload/download/delete) confined to the user's storage. |
 | `/api` (proot) | proot-apps catalog; per-workspace installed apps, update status and background tasks; `/proot-tasks` for the navbar. |
 | `/api/admin/thin-clients`, `/api/thin-client`, `/thin-client/*` | Thin clients: admin management; the device protocol (long-poll check-in, command results, screenshots, binding tickets, agent download) on a bearer device token; and the public bootstrap (install script, enrolment, browser binding, `/self`). |
+| `/api/admin/integration-tokens`, `/api/integration/v1` | Home Assistant: admins mint and revoke integration tokens and download the custom component; the integration polls `/status` and drives thin clients, on its token only. The component itself lives in `integrations/home-assistant/`. |
 | `/api/extension` | The "Open in Cove" browser extension as a zip, built in memory from `extension/` (vendored by `scripts/vendor-extension.sh`) and cached until those files change. |
 
 ### Frontend (`frontend/src/`)
@@ -261,6 +263,7 @@ the agent file Cove serves changes. See [docs/thin-clients.md](docs/thin-clients
 | `app_setting` | Key/value runtime settings (see `settings_store`). |
 | `audit_log` | `ts`, `user_id`/`username`, `action`, `detail`, `ip`. |
 | `thin_client` | `public_id`, `name`, `status`, enrolment-code + device-token sha256s, `policy_json` + `policy_version`, reported `state_json`, `session_valid_from` (device-scoped revocation), current session user, one-time ticket hash, `bound_at`, `keep_awake_until`, latest screenshot. |
+| `integration_token` | `name`, `token_hash` (sha256), `prefix`, `scope` (`read`/`control`), `created_by`, `last_used_at`/`last_used_ip`. |
 | `thin_client_command` | `client_id`, `kind`, `args_json`, `status` (queued → sent → done/failed), `result`, `created_by`. |
 
 Schema is created and evolved by ordered migrations at startup (no Alembic). With

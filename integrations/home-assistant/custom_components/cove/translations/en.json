@@ -1,0 +1,101 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Cove",
+        "description": "In Cove, open Admin → Integrations and create a token. Choose **Control** to switch screens, set volume and restart thin clients from Home Assistant; **Read** only shows status.",
+        "data": {
+          "url": "Cove URL",
+          "api_token": "Integration token",
+          "verify_ssl": "Verify the TLS certificate"
+        },
+        "data_description": {
+          "url": "The address you open Cove at, e.g. https://cove.example.com",
+          "api_token": "Starts with cit_. Cove shows it once, when it is created.",
+          "verify_ssl": "Turn off only for a Cove with a self-signed certificate on your own network."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Cove",
+        "data": {
+          "url": "Cove URL",
+          "api_token": "Integration token",
+          "verify_ssl": "Verify the TLS certificate"
+        }
+      },
+      "reauth_confirm": {
+        "title": "New Cove token",
+        "description": "The integration token for {url} no longer works (it was probably revoked). Create a new one in Admin → Integrations.",
+        "data": {
+          "api_token": "Integration token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Can't reach Cove at that address, or something other than Cove answered.",
+      "invalid_auth": "Cove doesn't recognise that token.",
+      "invalid_url": "Enter a full http:// or https:// address."
+    },
+    "abort": {
+      "already_configured": "This Cove is already set up.",
+      "reauth_successful": "Token updated.",
+      "reconfigure_successful": "Settings updated.",
+      "wrong_server": "That is a different Cove server than the one set up here."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "online": { "name": "Online" },
+      "in_use": { "name": "In use" },
+      "media_playing": { "name": "Playing audio" },
+      "browser_running": { "name": "Browser running" },
+      "reboot_required": { "name": "Reboot required" }
+    },
+    "button": {
+      "identify": { "name": "Identify" },
+      "take_screenshot": { "name": "Take screenshot" },
+      "restart_browser": { "name": "Restart browser" },
+      "sign_out": { "name": "Sign out" },
+      "reboot": { "name": "Reboot" },
+      "power_off": { "name": "Power off" }
+    },
+    "image": {
+      "screenshot": { "name": "Screenshot" }
+    },
+    "number": {
+      "volume_level": { "name": "Volume" }
+    },
+    "sensor": {
+      "users_total": { "name": "Users", "unit_of_measurement": "users" },
+      "users_active": { "name": "Active users", "unit_of_measurement": "users" },
+      "users_on_thin_clients": { "name": "Users on thin clients", "unit_of_measurement": "users" },
+      "workspaces_total": { "name": "Workspaces", "unit_of_measurement": "workspaces" },
+      "workspaces_running": { "name": "Running workspaces", "unit_of_measurement": "workspaces" },
+      "workspaces_starting": { "name": "Starting workspaces", "unit_of_measurement": "workspaces" },
+      "workspaces_stopped": { "name": "Stopped workspaces", "unit_of_measurement": "workspaces" },
+      "workspaces_error": { "name": "Failed workspaces", "unit_of_measurement": "workspaces" },
+      "thin_clients_summary_online": { "name": "Thin clients online", "unit_of_measurement": "thin clients" },
+      "thin_clients_summary_in_use": { "name": "Thin clients in use", "unit_of_measurement": "thin clients" },
+      "zone_workspaces_running": { "name": "Running workspaces", "unit_of_measurement": "workspaces" },
+      "zone_workspaces_total": { "name": "Workspaces", "unit_of_measurement": "workspaces" },
+      "zone_users_active": { "name": "Active users", "unit_of_measurement": "users" },
+      "zone_cpu": { "name": "Workspace CPU" },
+      "zone_memory": { "name": "Workspace memory" },
+      "signed_in_user": { "name": "Signed-in user" },
+      "workspace": { "name": "Workspace on screen" },
+      "volume": { "name": "Volume level" },
+      "idle": { "name": "Idle time" },
+      "last_seen": { "name": "Last seen" },
+      "booted": { "name": "Booted" },
+      "updates_available": { "name": "Updates available", "unit_of_measurement": "packages" },
+      "agent_version": { "name": "Agent version" },
+      "ip_address": { "name": "IP address" },
+      "last_error": { "name": "Last error" }
+    },
+    "switch": {
+      "screen": { "name": "Screen" },
+      "mute": { "name": "Mute" },
+      "keep_awake": { "name": "Keep awake" }
+    }
+  }
+}

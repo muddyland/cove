@@ -334,6 +334,22 @@ def _logs_args(args: dict) -> dict:
     return {"lines": max(10, min(lines, 2000)), "unit": unit}
 
 
+def _volume_args(args: dict) -> dict:
+    try:
+        level = int(args.get("level"))
+    except (TypeError, ValueError):
+        raise ValueError("level must be a number")
+    # Same range as the policy's volume: above 100 PipeWire amplifies.
+    return {"level": max(0, min(level, 150))}
+
+
+def _mute_args(args: dict) -> dict:
+    muted = args.get("muted")
+    if not isinstance(muted, bool):
+        raise ValueError("muted must be true or false")
+    return {"muted": muted}
+
+
 COMMANDS = {
     "screen_on": _no_args,
     "screen_off": _no_args,
@@ -344,6 +360,8 @@ COMMANDS = {
     "reboot": _no_args,
     "poweroff": _no_args,
     "logs": _logs_args,
+    "set_volume": _volume_args,
+    "set_mute": _mute_args,
 }
 
 

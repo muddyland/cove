@@ -66,6 +66,8 @@ COPY extension/ ./extension/
 # The thin client agent, handed to devices at enrolment and on every update
 # (/api/thin-client/agent).
 COPY thinclient/agent/ ./thinclient/agent/
+# The Home Assistant custom component offered in Admin → Integrations.
+COPY integrations/home-assistant/custom_components/ ./integrations/home-assistant/custom_components/
 
 # Cove runs as root, on both bases. It stages helper scripts into the
 # workspace storage tree and extracts migrated workspace homes with their

@@ -652,7 +652,7 @@ export interface ThinClient {
 
 export type ThinClientCommandKind =
   | 'screen_on' | 'screen_off' | 'restart_browser' | 'identify' | 'screenshot'
-  | 'apt_upgrade' | 'reboot' | 'poweroff' | 'logs'
+  | 'apt_upgrade' | 'reboot' | 'poweroff' | 'logs' | 'set_volume' | 'set_mute'
 
 export interface ThinClientCommand {
   id: number
@@ -687,4 +687,22 @@ export interface ThinClientSelf {
   pinned_workspace_id: string | null
   signout_minutes: number
   screen_off_minutes: number
+}
+
+// Home automation integration tokens (Admin → Integrations).
+export type IntegrationScope = 'read' | 'control'
+
+export interface IntegrationToken {
+  id: number
+  name: string
+  prefix: string
+  scope: IntegrationScope
+  created_by: string | null
+  created_at: string
+  last_used_at: string | null
+  last_used_ip: string | null
+}
+
+export interface IntegrationTokenCreated extends IntegrationToken {
+  token: string
 }

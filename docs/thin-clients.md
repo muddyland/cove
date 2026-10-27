@@ -126,7 +126,10 @@ reboot, and the agent version. A device that misses a few check-ins shows
 | **Update system now** | `apt-get update && full-upgrade && autoremove`; the output is in *Activity*. |
 | **Agent logs / System warnings** | The agent's and browser's journal, or this boot's warnings. |
 | **Reboot / Power off** | After a confirmation. |
-| **Activity** | The last 50 commands, with their output. |
+| **Activity** | The last 50 commands, with their output. Commands from Home Assistant show as `integration:<token name>`. |
+
+Home Assistant can show these devices and drive most of these actions, plus
+volume and mute. See [Home Assistant](home-assistant.md).
 
 ### Settings
 

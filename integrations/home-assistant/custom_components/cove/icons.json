@@ -1,0 +1,48 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "browser_running": { "default": "mdi:web" }
+    },
+    "button": {
+      "take_screenshot": { "default": "mdi:monitor-screenshot" },
+      "restart_browser": { "default": "mdi:web-refresh" },
+      "sign_out": { "default": "mdi:logout" },
+      "power_off": { "default": "mdi:power" }
+    },
+    "image": {
+      "screenshot": { "default": "mdi:monitor-screenshot" }
+    },
+    "number": {
+      "volume_level": { "default": "mdi:volume-high" }
+    },
+    "sensor": {
+      "users_total": { "default": "mdi:account-multiple" },
+      "users_active": { "default": "mdi:account-check" },
+      "users_on_thin_clients": { "default": "mdi:account-box" },
+      "workspaces_total": { "default": "mdi:monitor-multiple" },
+      "workspaces_running": { "default": "mdi:monitor-shimmer" },
+      "workspaces_starting": { "default": "mdi:timer-sand" },
+      "workspaces_stopped": { "default": "mdi:monitor-off" },
+      "workspaces_error": { "default": "mdi:alert-circle" },
+      "thin_clients_summary_online": { "default": "mdi:monitor-dashboard" },
+      "thin_clients_summary_in_use": { "default": "mdi:monitor-account" },
+      "zone_workspaces_running": { "default": "mdi:monitor-shimmer" },
+      "zone_workspaces_total": { "default": "mdi:monitor-multiple" },
+      "zone_users_active": { "default": "mdi:account-check" },
+      "zone_cpu": { "default": "mdi:cpu-64-bit" },
+      "zone_memory": { "default": "mdi:memory" },
+      "signed_in_user": { "default": "mdi:account" },
+      "workspace": { "default": "mdi:monitor" },
+      "volume": { "default": "mdi:volume-high" },
+      "updates_available": { "default": "mdi:package-up" },
+      "agent_version": { "default": "mdi:tag" },
+      "ip_address": { "default": "mdi:ip-network" },
+      "last_error": { "default": "mdi:alert" }
+    },
+    "switch": {
+      "screen": { "default": "mdi:monitor", "state": { "off": "mdi:monitor-off" } },
+      "mute": { "default": "mdi:volume-high", "state": { "on": "mdi:volume-off" } },
+      "keep_awake": { "default": "mdi:coffee-outline", "state": { "on": "mdi:coffee" } }
+    }
+  }
+}

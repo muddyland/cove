@@ -119,7 +119,7 @@ import type { ExtensionInfo } from '@/types'
 import {
   LayoutGrid, FolderOpen, MonitorPlay, Users, Boxes, Network,
   ScrollText, Settings, Shield, ChevronDown, UserRound, LogOut, Menu, X, HelpCircle, HardDrive,
-  SlidersHorizontal, Puzzle, MonitorSmartphone,
+  SlidersHorizontal, Puzzle, MonitorSmartphone, House,
 } from 'lucide-vue-next'
 
 withDefaults(defineProps<{ wide?: boolean }>(), { wide: false })
@@ -137,6 +137,7 @@ const adminItems = [
   { to: '/app/admin/zones', label: 'Zones', icon: Network },
   { to: '/app/admin/thin-clients', label: 'Thin clients', icon: MonitorSmartphone },
   { to: '/app/admin/storage', label: 'Storage', icon: HardDrive },
+  { to: '/app/admin/integrations', label: 'Integrations', icon: House },
   { to: '/app/admin/audit', label: 'Audit', icon: ScrollText },
   { to: '/app/admin/settings', label: 'Settings', icon: Settings },
 ]

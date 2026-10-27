@@ -22,7 +22,7 @@ _SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 # README first, then a reading order, then anything else alphabetically.
 _ORDER = [
     "README", "installation", "configuration", "deployment", "user-guide",
-    "workspaces", "networking", "zones", "thin-clients", "authentication", "security",
+    "workspaces", "networking", "zones", "thin-clients", "home-assistant", "authentication", "security",
     "administration", "api-reference", "troubleshooting",
 ]
 
@@ -36,7 +36,7 @@ _USER_DOCS = frozenset({
 # _scope() from _USER_DOCS alone so an unclassified file can't slip through.
 _ADMIN_DOCS = frozenset({
     "installation", "configuration", "deployment", "administration",
-    "authentication", "security", "zones", "thin-clients", "api-reference",
+    "authentication", "security", "zones", "thin-clients", "home-assistant", "api-reference",
 })
 
 

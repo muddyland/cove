@@ -24,6 +24,7 @@ from server.routers import (
     extension,
     files,
     images,
+    integration,
     internal,
     proot,
     thin_clients,
@@ -254,16 +255,19 @@ def _purge_expired_trash():
 
 def _sync_all_zones():
     """Reconcile every zone that has workspaces, plus the local zone, each
-    against its own Docker daemon. One unreachable zone never blocks the rest."""
+    against its own Docker daemon. Enrolled zones with no workspaces are pinged
+    too, so their online/offline status stays true. One unreachable zone never
+    blocks the rest."""
     from sqlalchemy import select
 
     from server.db import SessionLocal
     from server.docker_manager import get_docker_manager
-    from server.models import Workspace
+    from server.models import Workspace, Zone
 
     db = SessionLocal()
     try:
         zone_ids = set(db.scalars(select(Workspace.zone_id).distinct()).all())
+        zone_ids |= set(db.scalars(select(Zone.id).where(Zone.status.in_(("enrolled", "offline")))).all())
     finally:
         db.close()
     zone_ids.add(0)  # always reconcile the local zone
@@ -445,6 +449,8 @@ def create_app() -> FastAPI:
     app.include_router(thin_clients.admin_router)
     app.include_router(thin_clients.device_router)
     app.include_router(thin_clients.public_router)
+    app.include_router(integration.admin_router)
+    app.include_router(integration.router)
 
     @app.get("/api/health")
     def health():
