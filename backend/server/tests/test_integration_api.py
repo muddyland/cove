@@ -306,6 +306,7 @@ def test_home_assistant_download(client):
     assert r.headers["content-disposition"].startswith('attachment; filename="cove-home-assistant-')
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     assert "custom_components/cove/manifest.json" in names and "custom_components/cove/__init__.py" in names
+    assert "custom_components/cove/brand/icon.png" in names
     assert not any("__pycache__" in n for n in names)
     # Same files, same bytes.
     assert client.get(url, headers=auth_header(admin)).content == r.content

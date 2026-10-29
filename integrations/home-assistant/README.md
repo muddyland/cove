@@ -4,6 +4,17 @@ A Home Assistant custom integration for Cove. Users get it from **Admin →
 Integrations → Home Assistant integration**, a zip that Cove builds from
 `custom_components/cove/` in this folder (see `docs/home-assistant.md`).
 
+`custom_components/cove/brand/` holds the icon Home Assistant shows for the
+integration (its local brand images, 2026.3+). It is `frontend/public/favicon.svg`
+rendered at 256 and 512 px; re-render it if the logo changes:
+
+```bash
+docker run --rm -v "$PWD":/repo -w /repo alpine:3.22 sh -c \
+  "apk add -q rsvg-convert && cd integrations/home-assistant/custom_components/cove/brand && \
+   rsvg-convert -w 256 -h 256 /repo/frontend/public/favicon.svg -o icon.png && \
+   rsvg-convert -w 512 -h 512 /repo/frontend/public/favicon.svg -o icon@2x.png"
+```
+
 The component talks only to `/api/integration/v1`
 (`backend/server/routers/integration.py`). If you change the status document
 there, change `tests/conftest.py`'s `STATUS` to match.
