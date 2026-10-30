@@ -112,6 +112,10 @@ describe('LaunchWizard', () => {
     const wrapper = mount(LaunchWizard, { props: { modelValue: true } })
     await toBasics(wrapper)
     expect(wrapper.text()).toContain("isn't allowed to run workspaces on any zone")
+    // No "Ready to launch" next to that, and Launch looks as blocked as it is.
+    expect(wrapper.text()).not.toContain('Ready to launch')
+    const launch = wrapper.findAll('button').find(b => b.text().trim().startsWith('Launch'))!
+    expect(launch.attributes('disabled')).toBeDefined()
     await clickBtn(wrapper, 'Launch')
     await flushPromises()
     expect(launchMock).not.toHaveBeenCalled()
