@@ -1158,7 +1158,7 @@ def container_logs(
 
 
 @router.post("/{ws_id}/stream-auth", response_model=StreamAuthOut)
-def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
+def stream_auth(ws_id: int, request: Request, user: CurrentUser, db: DbSession):
     """Mint the iframe URL the SPA uses to open a workspace stream.
 
     Subdomain mode: returns ``//{host}/?__cove_t=<token>`` where the one-time
@@ -1176,7 +1176,13 @@ def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
 
     # One-time, short-lived bootstrap token for the URL — swapped for a fresh
     # stream cookie by ForwardAuth on first hit, then dead.
-    token = create_stream_bootstrap_token(user.id, ws.public_id)
+    from server import thin_clients
+    from server.routers.auth import _token_payload
+
+    # From a thin client, the stream is part of that device session: it ends
+    # when the device is signed out or its session cap passes.
+    claims = thin_clients.device_claims(db, _token_payload(request))
+    token = create_stream_bootstrap_token(user.id, ws.public_id, **claims)
     host = settings.workspace_host(ws.public_id)
     return StreamAuthOut(url=f"//{host}/?__cove_t={token}")
 

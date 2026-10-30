@@ -29,6 +29,7 @@ import logging
 import re
 import secrets
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -52,7 +53,11 @@ ONLINE_WINDOW = timedelta(seconds=75)
 MAX_WAIT_SECONDS = 25
 TICKET_SECONDS = 120
 BIND_COOKIE = "cove_tc"
-BIND_COOKIE_DAYS = 30
+# The binding cookie outlives any session by far (Chrome caps cookies at 400
+# days); Cove re-binds an unused device every REBIND_AFTER instead, so a kiosk
+# never quietly loses its binding and starts handing out unscoped sessions.
+BIND_COOKIE_DAYS = 400
+REBIND_AFTER = timedelta(days=7)
 # A command the device never answered is shown as lost after this long.
 COMMAND_LOST_AFTER = timedelta(minutes=30)
 STATE_MAX_BYTES = 32 * 1024
@@ -441,7 +446,14 @@ def has_queued(db: Session, client_id: int) -> bool:
 
 # ── Sessions ─────────────────────────────────────────────────────────────────
 
-def revoke_sessions(db: Session, client: ThinClient, *, by: Optional[str] = None, reset_browser: bool = True) -> None:
+def revoke_sessions(
+    db: Session,
+    client: ThinClient,
+    *,
+    by: Optional[str] = None,
+    reset_browser: bool = True,
+    reason: str = "signout",
+) -> None:
     """Sign the device out: revoke every token and browser binding minted for it,
     and (unless the device asked for this itself) tell it to restart Chromium on
     a wiped profile."""
@@ -451,14 +463,13 @@ def revoke_sessions(db: Session, client: ThinClient, *, by: Optional[str] = None
     client.session_started_at = None
     db.commit()
     if reset_browser and client.status == "enrolled":
-        queue_command(db, client, "restart_browser", {"reason": "signout"}, by=by)
+        queue_command(db, client, "restart_browser", {"reason": reason}, by=by)
 
 
 def session_cap(client: ThinClient, sst: float) -> Optional[datetime]:
     """Absolute end of a device session that started at ``sst`` (epoch secs)."""
-    hours = load_policy(client).session_max_hours
-    if not hours:
-        return None
+    # 0 means "Cove's default": the normal refresh-token lifetime, not "never".
+    hours = load_policy(client).session_max_hours or get_settings().refresh_token_days * 24
     return datetime.fromtimestamp(sst, tz=timezone.utc) + timedelta(hours=hours)
 
 
@@ -503,15 +514,70 @@ def active_session_username(client: ThinClient) -> Optional[str]:
     return client.session_username
 
 
-def note_session(db: Session, public_id: str, user) -> None:
+def note_session(db: Session, public_id: str, user, sst: float) -> None:
+    """Record who is signed in on the device and when that sign-in started.
+
+    ``sst`` is the device session's own start (carried in its tokens), so a new
+    sign-in always restarts the clock (even by the same user after a cap), and a
+    token refresh never does."""
     client = db.scalar(select(ThinClient).where(ThinClient.public_id == public_id))
     if client is None:
         return
-    if client.session_user_id != user.id:
-        client.session_started_at = now_utc()
+    client.session_started_at = datetime.fromtimestamp(sst, tz=timezone.utc)
     client.session_user_id = user.id
     client.session_username = user.username
     db.commit()
+
+
+def _restart_pending(db: Session, client: ThinClient) -> bool:
+    """A browser restart is queued, or sent and not yet answered (nor lost)."""
+    cmds = db.scalars(
+        select(ThinClientCommand).where(
+            ThinClientCommand.client_id == client.id,
+            ThinClientCommand.kind == "restart_browser",
+            ThinClientCommand.status.in_(("queued", "sent")),
+        )
+    ).all()
+    return any(command_status(c) in ("queued", "sent") for c in cmds)
+
+
+def enforce_session_limits(db: Session, client: ThinClient) -> Optional[str]:
+    """Called on every check-in. Returns the reason for a browser reset it queued.
+
+    - A session past its cap is signed out like any other: tokens revoked, the
+      session cleared and the browser restarted on a wiped profile. Otherwise the
+      kiosk keeps the old profile (and the identity provider's cookie in it), so
+      the next person could sign in as the previous one with a click.
+    - A device nobody is using re-binds its browser every REBIND_AFTER, so its
+      binding cookie never expires under it.
+    """
+    if client.status != "enrolled":
+        return None
+    if client.session_username:
+        started = _utc(client.session_started_at)
+        cap = session_cap(client, started.timestamp()) if started else None
+        if cap is not None and now_utc() >= cap:
+            revoke_sessions(db, client, by="session cap", reason="cap")
+            return "cap"
+        return None
+    bound = _utc(client.bound_at)
+    if bound is not None and now_utc() - bound > REBIND_AFTER and not _restart_pending(db, client):
+        queue_command(db, client, "restart_browser", {"reason": "rebind"}, by="rebind")
+        return "rebind"
+    return None
+
+
+def device_claims(db: Session, payload: Optional[dict]) -> dict:
+    """``tc``/``sst``/``cap`` for a token minted on behalf of ``payload``'s session,
+    so stream tokens from a thin client die with that device session too."""
+    if not payload or not payload.get("tc"):
+        return {}
+    client = db.scalar(select(ThinClient).where(ThinClient.public_id == str(payload["tc"])))
+    try:
+        sst = float(payload.get("sst") or payload.get("iat"))
+    except (TypeError, ValueError):
+        sst = time.time()
+    return {"tc": str(payload["tc"]), "sst": sst, "cap": session_cap(client, sst) if client else None}
 
 
 # ── Browser binding (ticket -> cookie) ───────────────────────────────────────

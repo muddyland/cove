@@ -198,10 +198,19 @@ differs is that the session belongs to the **device**:
   `/thin-client/bind?ticket=…`. That sets an httpOnly cookie naming the device.
   The device token itself never enters the browser. A browser that fails to
   bind is restarted. The page fails closed and never falls back to an unscoped
-  login.
+  login: a browser whose binding is revoked, expired or whose device is gone
+  can't sign in at all ("This screen's thin client binding has expired") until
+  the agent restarts it with a fresh one.
+- The binding lasts far longer than any session, and Cove re-binds a device
+  nobody is using once a week, so it never lapses under a kiosk.
 - Every token minted in that browser carries the device's id and the time the
-  sign-in started. Cove accepts them only while the device is enrolled, until
-  the device is signed out, and never past the **longest session** cap.
+  sign-in started, and so do the stream cookies of workspaces opened there.
+  Cove accepts them only while the device is enrolled, until the device is
+  signed out, and never past the **longest session** cap.
+- When the cap passes, the device is signed out like any other way: Cove
+  revokes its tokens and tells it to restart the browser on a wiped profile
+  (`thin_client.session_cap` in the audit log). *Cove default* means Cove's
+  normal sign-in lifetime (`COVE_REFRESH_TOKEN_DAYS`, 7 days), never "forever".
 - Signing out there, by the idle timeout, the SPA's *Log out*, an admin's
   **Sign out**, or deleting the device, revokes that device's sessions and
   nothing else. A normal *Log out* elsewhere, or **Users → Revoke sessions**,
@@ -209,8 +218,11 @@ differs is that the session belongs to the **device**:
 - Every sign-out also wipes the browser profile, so nothing (cookies, stream
   tokens, cached pages) is left for the next person.
 
-Idle sign-outs appear in the audit log as `thin_client.idle_signout`. Logging
-out on a kiosk appears as `logout.thin_client`.
+Idle sign-outs appear in the audit log as `thin_client.idle_signout`, other
+browser resets with someone signed in (a *Restart browser* command, a rebind)
+as `thin_client.browser_reset` with the reason, and the session cap as
+`thin_client.session_cap`. Logging out on a kiosk appears as
+`logout.thin_client`.
 
 ## 6. Updates in detail
 
@@ -236,6 +248,10 @@ out on a kiosk appears as `logout.thin_client`.
   you already give Cove over its zones. To pin a device's agent, set
   `"allow_agent_update": false` in `/etc/cove-thin-client/config.json`. Cove can
   then still manage it, but not replace its code.
+- **The agent never acts as root inside the kiosk user's home.** The NSS
+  database is written as the `kiosk` user, and files the agent writes there are
+  replaced without following symlinks, so code running as `kiosk` (a browser
+  exploit) can't turn the agent into a way to root.
 - **The kiosk is for honest users.** No key bindings beyond volume, no consoles, URL
   allowlisting and no DevTools stop casual escapes. Someone with physical access
   and time can still boot other media or enter GRUB's recovery mode. Set a BIOS

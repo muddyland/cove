@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **Security: thin client sessions end properly.** Found in a review of the
+  new thin client code:
+  - *The session cap never reset the kiosk.* When **Longest session** passed,
+    Cove stopped accepting the session's tokens but never told the device, so
+    the browser kept its profile, and the identity provider's cookie in it. The
+    next person to press *Sign in with SSO* was signed in as the previous user.
+    Cove now signs the device out at the cap, the same way as an admin's **Sign
+    out**: it revokes the device's tokens and restarts the browser on a wiped
+    profile. Signing in again after the cap also restarts the session clock;
+    before, the same user signing in again had idle sign-out switched off.
+  - *A stale binding gave an ordinary session.* A kiosk browser whose binding
+    cookie was revoked (signed out while the agent was offline), expired (30
+    days without a restart) or whose device was deleted could still sign in.
+    It got a normal session that no device sign-out, idle timer or cap ever
+    ended. Such a browser is now refused (`403`) until the agent re-binds it.
+    The binding cookie lasts 400 days, and Cove re-binds an idle device weekly.
+  - *Stream cookies outlived the device session.* A workspace opened on a kiosk
+    now gets a stream cookie tied to that device session, which ends with it.
+  - *Kiosk user to root.* The agent (root) changed ownership through the kiosk
+    user's `~/.pki`, and wrote `~/.bash_profile` through a temp file, both
+    following symlinks. Code running as the kiosk user could use either to take
+    over a root-owned file. The NSS import now runs as the kiosk user, and the
+    agent's writes never follow symlinks. Agent **1.1.1**, which thin clients
+    install by themselves.
+  - *Longest session = Cove default* now means Cove's normal sign-in lifetime
+    (`COVE_REFRESH_TOKEN_DAYS`), not "no cap".
+  - Audit: the session cap is logged as `thin_client.session_cap`. Browser
+    resets other than the idle timeout (*Restart browser*, rebind) are logged
+    as `thin_client.browser_reset` with the reason, instead of
+    `thin_client.idle_signout`.
 - **Security: zone agents refuse paths that change on the way to Docker.**
   The agent's Docker proxy checked a request's path as written, but forwarded
   it with dot segments resolved. A path like `/_ping/..%2fcontainers/create`

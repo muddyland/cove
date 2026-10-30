@@ -168,7 +168,14 @@ def create_refresh_token(
     return jwt.encode(payload, settings.get_secret_key(), algorithm=settings.jwt_algorithm)
 
 
-def create_stream_token(user_id: int, public_id: str) -> str:
+def create_stream_token(
+    user_id: int,
+    public_id: str,
+    *,
+    tc: Optional[str] = None,
+    sst: Optional[float] = None,
+    cap: Optional[datetime] = None,
+) -> str:
     """Mint a per-workspace stream token (subdomain mode).
 
     Scoped to a single workspace (``ws``) and the requesting user (``sub``) so a
@@ -186,12 +193,22 @@ def create_stream_token(user_id: int, public_id: str) -> str:
         "iat": now.timestamp(),
         "exp": expire,
     }
+    # Minted for a thin client's session: carry that device session (tc/sst) and
+    # never outlive its cap, so signing the device out ends the stream too.
+    _device_claims(payload, tc, sst, cap)
     return jwt.encode(
         payload, settings.get_stream_signing_key(), algorithm=settings.jwt_algorithm
     )
 
 
-def create_stream_bootstrap_token(user_id: int, public_id: str) -> str:
+def create_stream_bootstrap_token(
+    user_id: int,
+    public_id: str,
+    *,
+    tc: Optional[str] = None,
+    sst: Optional[float] = None,
+    cap: Optional[datetime] = None,
+) -> str:
     """Mint a one-time bootstrap token for the ``?__cove_t`` URL (subdomain mode).
 
     Short-lived and carries a unique ``jti`` so the ForwardAuth endpoint can
@@ -209,6 +226,7 @@ def create_stream_bootstrap_token(user_id: int, public_id: str) -> str:
         "iat": now.timestamp(),
         "exp": expire,
     }
+    _device_claims(payload, tc, sst, cap)
     return jwt.encode(
         payload, settings.get_stream_signing_key(), algorithm=settings.jwt_algorithm
     )

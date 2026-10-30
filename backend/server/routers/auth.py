@@ -87,11 +87,22 @@ def _device_ctx(request: Request, db: Session, user: User, payload: Optional[dic
         except (TypeError, ValueError):
             sst = time.time()
     else:
-        client = thin_clients.client_from_bind_cookie(db, request.cookies.get(thin_clients.BIND_COOKIE))
+        cookie = request.cookies.get(thin_clients.BIND_COOKIE)
+        client = thin_clients.client_from_bind_cookie(db, cookie)
+        if cookie and client is None:
+            # Fail closed: this browser WAS bound to a thin client, but that
+            # binding is revoked, expired or its device is gone. Handing out an
+            # ordinary session here would give a kiosk an unscoped sign-in that
+            # no device sign-out, idle timer or session cap ever ends. The
+            # agent restarts the browser with a fresh binding.
+            raise HTTPException(
+                status_code=403,
+                detail="This screen's thin client binding has expired. It reconnects by itself in a moment.",
+            )
         sst = time.time()
     if client is None or client.status != "enrolled":
         return None
-    thin_clients.note_session(db, client.public_id, user)
+    thin_clients.note_session(db, client.public_id, user, sst)
     return {"tc": client.public_id, "sst": sst, "cap": thin_clients.session_cap(client, sst)}
 
 
@@ -556,7 +567,7 @@ def _forward_auth_subdomain(request, db, settings, public_id: str, uri: str | No
         ):
             # Mint a FRESH, longer-lived cookie token — the short-lived bootstrap
             # token is never persisted as the session cookie.
-            cookie_token = create_stream_token(user.id, public_id)
+            cookie_token = create_stream_token(user.id, public_id, **thin_clients.device_claims(db, payload))
             resp = Response(
                 status_code=302,
                 headers={"Location": _clean_stream_url(request, settings, uri)},
@@ -605,7 +616,9 @@ def _forward_auth_subpath(request, db, uri: str | None):
             # secret, no user DB), and the session cookie is meaningless to it.
             # Hand it a short-lived token scoped to exactly this workspace via
             # authResponseHeaders. Local workspaces never see this header.
-            headers[STREAM_AUTH_HEADER] = create_stream_token(user.id, public_id)
+            headers[STREAM_AUTH_HEADER] = create_stream_token(
+                user.id, public_id, **thin_clients.device_claims(db, decode_token(token))
+            )
         return Response(status_code=200, headers=headers)
 
     _record_audit(db, "stream.deny", detail=uri, user=user, ip=client_ip(request))

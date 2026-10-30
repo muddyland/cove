@@ -125,6 +125,48 @@ def test_write_if_changed(tmp_path):
     assert p.read_text() == "b\n" and oct(p.stat().st_mode & 0o777) == "0o600"
 
 
+def test_write_if_changed_never_follows_symlinks(tmp_path):
+    """The kiosk user owns its home; a symlink planted at the target or its temp
+    file must be replaced, never written through (root runs this)."""
+    victim = tmp_path / "victim"
+    victim.write_text("root's file\n")
+    home = tmp_path / "home"
+    home.mkdir()
+    # A symlink at the temp path: the old code opened it and wrote the target.
+    (home / ".bash_profile.cove-tmp").symlink_to(victim)
+    assert agent.write_if_changed(str(home / ".bash_profile"), "exec sway\n") is True
+    assert victim.read_text() == "root's file\n"
+    assert (home / ".bash_profile").read_text() == "exec sway\n"
+    assert not (home / ".bash_profile").is_symlink()
+    # A symlink at the target itself is replaced by a regular file.
+    (home / ".profile").symlink_to(victim)
+    assert agent.write_if_changed(str(home / ".profile"), "x\n") is True
+    assert victim.read_text() == "root's file\n"
+    assert not (home / ".profile").is_symlink() and (home / ".profile").read_text() == "x\n"
+
+
+def test_import_local_cas_runs_as_the_kiosk_user(tmp_path, monkeypatch):
+    """certutil and the NSS directory are handled as the kiosk user, and root
+    never chowns anything under the kiosk's home."""
+    cadir = tmp_path / "cas"
+    cadir.mkdir()
+    (cadir / "cove.crt").write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+    monkeypatch.setattr(agent.glob, "glob", lambda *a, **k: [str(cadir / "cove.crt")])
+    monkeypatch.setattr(agent.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(agent, "STATE_DIR", str(tmp_path / "state"))
+    (tmp_path / "state").mkdir()
+    calls = []
+    monkeypatch.setattr(agent, "run", lambda cmd, **kw: calls.append((cmd, kw)) or (0, ""))
+    chowned = []
+    monkeypatch.setattr(agent.os, "chown", lambda *a: chowned.append(a))
+    agent.import_local_cas(1000, 1000, str(tmp_path / "kiosk"))
+    assert calls and all(c[0][:5] == ["setpriv", "--reuid=1000", "--regid=1000", "--clear-groups", "--"]
+                         for c in calls)
+    add = [c for c in calls if "-A" in c[0]]
+    assert add and "-i" not in add[0][0] and "BEGIN CERTIFICATE" in add[0][1]["input_"]
+    assert chowned == []
+
+
 def test_output_mode():
     assert agent.output_mode({"width": 1920, "height": 1080, "refresh": 59951}) == "1920x1080@60"
     assert agent.output_mode({"width": 1280, "height": 720, "refresh": 0}) == "1280x720"

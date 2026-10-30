@@ -45,6 +45,7 @@ from server.schemas import (
     ThinClientPolicy,
     ThinClientResultIn,
     ThinClientSelfOut,
+    ThinClientSignedOutIn,
     ThinClientTicketOut,
     ThinClientUpdate,
     ThinClientWorkspaceOption,
@@ -285,6 +286,9 @@ def _checkin_once(token: str, body: ThinClientCheckinIn, cp: str, record: bool) 
                 client.state_json = blob
         client.last_seen_at = tc.now_utc()
         db.commit()
+        who = client.session_username
+        if tc.enforce_session_limits(db, client) == "cap":
+            _audit(db, "thin_client.session_cap", detail=f"{client.name}: {who}")
         cmds = tc.take_queued(db, client)
         bundle = tc.agent_bundle()
         return ThinClientCheckinOut(
@@ -397,14 +401,19 @@ def browser_ticket(request: Request, db: DbSession):
 
 
 @device_router.post("/signed-out", status_code=status.HTTP_204_NO_CONTENT)
-def device_signed_out(request: Request, db: DbSession):
-    """The device signed itself out (idle timeout). Revoke its sessions; the
-    agent resets the browser itself, so no restart command is queued."""
+def device_signed_out(request: Request, db: DbSession, body: Optional[ThinClientSignedOutIn] = None):
+    """The device reset its browser (idle timeout, or a restart command). Revoke
+    its sessions; the agent resets the browser itself, so no restart command is
+    queued. Agents before 1.1.1 send no reason; theirs was always "idle"
+    unless a command asked for the reset."""
     client = _device(db, request)
     who = client.session_username
+    reason = (body.reason if body else "") or "idle"
     tc.revoke_sessions(db, client, reset_browser=False)
     if who:
-        _audit(db, "thin_client.idle_signout", detail=f"{client.name}: {who}", request=request)
+        action = "thin_client.idle_signout" if reason == "idle" else "thin_client.browser_reset"
+        detail = f"{client.name}: {who}" + ("" if reason == "idle" else f" ({reason})")
+        _audit(db, action, detail=detail, request=request)
 
 
 @device_router.get("/agent")

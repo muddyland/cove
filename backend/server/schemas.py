@@ -1228,6 +1228,12 @@ class ThinClientResultIn(BaseModel):
     output: str = Field("", max_length=200_000)
 
 
+class ThinClientSignedOutIn(BaseModel):
+    # Why the device reset its browser: "idle", "cap", "signout", "rebind", a
+    # command's reason… Display-only (it names the audit entry).
+    reason: str = Field("idle", max_length=32)
+
+
 class ThinClientTicketOut(BaseModel):
     url: str
     expires_in: int
