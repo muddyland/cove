@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, s
 from fastapi.responses import Response
 from sqlalchemy import select
 
-from server import stream_leases, zone_access
+from server import stream_leases, workspace_limits, zone_access
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.favicons import refresh_workspace_favicon
@@ -42,6 +42,7 @@ from server.schemas import (
     TailscaleStatusOut,
     WorkspaceClone,
     WorkspaceCreate,
+    WorkspaceLimitsOut,
     WorkspaceMigrate,
     WorkspaceOut,
     WorkspaceStats,
@@ -414,6 +415,15 @@ def _get_workspace_or_404(ws_id: int, user, db) -> Workspace:
     return ws
 
 
+@router.get("/limits", response_model=WorkspaceLimitsOut)
+def workspace_limits_status(user: CurrentUser, db: DbSession):
+    """The caller's workspace caps and how much of them is used (0 = no limit),
+    so the dashboard can say "2 of 3 running" before a start is refused."""
+    max_total, max_running = workspace_limits.caps(db, user)
+    total, running = workspace_limits.usage(db, user.id)
+    return WorkspaceLimitsOut(max_workspaces=max_total, max_running=max_running, workspaces=total, running=running)
+
+
 @router.get("", response_model=list[WorkspaceOut])
 def list_workspaces(user: CurrentUser, db: DbSession):
     # The dashboard always shows only the caller's own workspaces — even for
@@ -494,8 +504,12 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         status="creating",
         status_changed_at=datetime.now(timezone.utc),
     )
-    db.add(ws)
-    db.commit()
+    # Check and take the slot under the account's lock, so two launches racing
+    # each other can't both get the last one.
+    with workspace_limits.guard(user.id):
+        workspace_limits.require_room_for_new(db, user, user)
+        db.add(ws)
+        db.commit()
     db.refresh(ws)
 
     _audit(db, "workspace.launch", detail=ws.public_id, user=user, request=request)
@@ -643,8 +657,10 @@ def clone_workspace(
         status="creating",
         status_changed_at=datetime.now(timezone.utc),
     )
-    db.add(clone)
-    db.commit()
+    with workspace_limits.guard(user.id):
+        workspace_limits.require_room_for_new(db, user, user)
+        db.add(clone)
+        db.commit()
     db.refresh(clone)
 
     _audit(db, "workspace.clone", detail=f"{src.public_id}->{clone.public_id}", user=user, request=request)
@@ -1416,9 +1432,13 @@ def start_workspace(ws_id: int, user: CurrentUser, db: DbSession, bg: Background
             db, ws.user_id, ws.gluetun_profile_id, exclude_ws_id=ws.id
         )
     # Conditional UPDATE: a second concurrent start sees rowcount 0 and stops
-    # here instead of launching a duplicate container.
-    if not _transition(db, ws.id, ("stopped", "error"), "creating", clear_error=True):
-        raise HTTPException(status_code=409, detail="Workspace is already starting")
+    # here instead of launching a duplicate container. The running cap is
+    # checked under the owner's lock, together with the transition that takes
+    # the slot.
+    with workspace_limits.guard(ws.user_id):
+        workspace_limits.require_room_to_start(db, ws.user, user)
+        if not _transition(db, ws.id, ("stopped", "error"), "creating", clear_error=True):
+            raise HTTPException(status_code=409, detail="Workspace is already starting")
     db.refresh(ws)
     if ws.runtime_extended_at is not None:
         # A fresh start gets a fresh runtime window; an old extension is moot.

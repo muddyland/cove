@@ -26,6 +26,7 @@ from server.routers import (
     images,
     integration,
     internal,
+    mfa,
     proot,
     thin_clients,
     users,
@@ -120,6 +121,15 @@ async def lifespan(app: FastAPI):
             logger.warning("Agent: failed to stage helper scripts: %s", exc)
         yield
         return
+    # The proxies in front of Cove's Traefik, so client_ip() sees past them.
+    try:
+        from server import net, settings_store
+        from server.db import SessionLocal
+
+        with SessionLocal() as _db:
+            net.set_trusted_proxies(settings_store.get_trusted_proxies(_db))
+    except Exception as exc:
+        logger.warning("Could not load trusted proxies: %s", exc)
     if not settings.cookie_secure:
         logger.warning(
             "COVE_COOKIE_SECURE is false: session cookies are sent over plaintext "
@@ -444,6 +454,7 @@ def create_app() -> FastAPI:
         return app
 
     app.include_router(auth.router)
+    app.include_router(mfa.router)
     app.include_router(images.router)
     app.include_router(workspaces.router)
     app.include_router(workspace_files.router)

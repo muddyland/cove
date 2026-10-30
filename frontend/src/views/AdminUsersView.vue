@@ -24,7 +24,12 @@
           <tr v-for="u in users" :key="u.id">
             <td>{{ u.username }}</td>
             <td><span class="badge">{{ u.auth_provider }}</span></td>
-            <td>{{ u.is_admin ? 'Admin' : 'User' }}<span v-if="u.docker_allowed && !u.is_admin" class="muted"> · docker</span></td>
+            <td>
+              {{ u.is_admin ? 'Admin' : 'User' }}<span v-if="u.docker_allowed && !u.is_admin" class="muted"> · docker</span>
+              <span v-if="u.lan_only" class="muted" title="Local network only"> · LAN only</span>
+              <span v-if="u.totp_enabled || u.passkey_count" class="muted" title="Two-factor sign-in set up"> · 2FA</span>
+              <span v-else-if="u.require_2fa" class="warn" title="Sets up two-factor sign-in at the next sign-in"> · 2FA pending</span>
+            </td>
             <td :class="{ muted: !u.zones_restricted || u.is_admin }">{{ zoneSummary(u) }}</td>
             <td>{{ u.last_login_at ? formatDate(u.last_login_at) : '—' }}</td>
             <td class="actions">
@@ -35,6 +40,12 @@
                 title="Invalidate every login of this user (all devices)"
                 @click="confirmRevoke(u)"
               ><LogOut :size="13" /> Sign out</NeonButton>
+              <NeonButton
+                v-if="u.totp_enabled || u.passkey_count"
+                variant="ghost"
+                title="Remove this user's authenticator app, passkeys and recovery codes (a lost phone or key)"
+                @click="confirmReset(u)"
+              ><ShieldOff :size="13" /> Reset 2FA</NeonButton>
               <NeonButton
                 v-if="u.id !== auth.user?.id"
                 variant="danger"
@@ -56,6 +67,14 @@
       @confirm="handleDelete"
     />
     <ConfirmModal
+      v-model="showReset"
+      title="Reset two-factor sign-in"
+      :message="`Remove ${resetTarget?.username}'s authenticator app, passkeys and recovery codes, and sign them out everywhere? Use this when they've lost their phone or key. They sign in with just their password next time${resetTarget?.require_2fa ? ', then set up a new second factor' : ''}.`"
+      confirm-label="Reset 2FA"
+      :loading="resetting"
+      @confirm="handleReset"
+    />
+    <ConfirmModal
       v-model="showRevoke"
       title="Sign user out"
       :message="`Sign '${revokeTarget?.username}' out on every device? Their running workspaces keep running; they just have to log in again.`"
@@ -74,7 +93,7 @@ import NeonButton from '@/components/NeonButton.vue'
 import UserFormModal from '@/components/UserFormModal.vue'
 import { zonesApi } from '@/api/zones'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Plus, Pencil, Trash2, LogOut } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, LogOut, ShieldOff } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
@@ -120,6 +139,22 @@ async function handleRevoke() {
   } catch (e: any) { ui.toast(e.message, 'error') }
   finally { revoking.value = false }
 }
+const showReset = ref(false)
+const resetTarget = ref<User | null>(null)
+const resetting = ref(false)
+function confirmReset(u: User) { resetTarget.value = u; showReset.value = true }
+async function handleReset() {
+  if (!resetTarget.value) return
+  resetting.value = true
+  try {
+    const updated = await adminApi.users.reset2fa(resetTarget.value.id)
+    const idx = users.value.findIndex(u => u.id === updated.id)
+    if (idx !== -1) users.value[idx] = updated
+    showReset.value = false
+    ui.toast(`${updated.username}'s two-factor sign-in was reset`, 'success')
+  } catch (e: any) { ui.toast(e.message, 'error') }
+  finally { resetting.value = false }
+}
 function openCreate() { editTarget.value = null; showForm.value = true }
 function openEdit(u: User) { editTarget.value = u; showForm.value = true }
 function confirmDelete(u: User) { deleteTarget.value = u; showConfirm.value = true }
@@ -153,6 +188,7 @@ async function handleDelete() {
 </script>
 
 <style scoped>
+.warn { color: var(--amber); }
 @import '@/styles/tables.css';
 .badge {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;

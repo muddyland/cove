@@ -13,6 +13,11 @@ python-multipart==0.0.32
 # Composites the Cove watermark onto project logos to bake per-image PWA icons
 # (server.icons). Self-contained manylinux wheels — no system libs needed.
 Pillow==13.0.0
+# Passkeys / security keys (server.passkeys). Pulls cbor2, pyOpenSSL and pyasn1
+# for attestation parsing; Cove asks for no attestation but the library parses it.
+webauthn==3.0.1
+# QR code for TOTP setup, rendered server-side as SVG. Pure Python, no deps.
+segno==1.6.6
 # Prebuilt SQLCipher wheels are published for x86_64 only. On other arches
 # (e.g. arm64) there is no wheel, so scope this to x86_64 — the app imports
 # sqlcipher3 lazily and only when COVE_DB_ENCRYPTION_KEY is set (see db.py).

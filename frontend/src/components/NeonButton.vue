@@ -17,6 +17,8 @@ defineProps<{
 .btn {
   display: inline-flex;
   align-items: center;
+  /* Full-width buttons (sign-in) keep their label centred. */
+  justify-content: center;
   gap: 6px;
   padding: 7px 16px;
   border-radius: var(--radius-sm);

@@ -29,6 +29,11 @@ def test_settings_defaults(client):
         "workspace_docker": False,
         "dind_image": "docker:dind",
         "trash_retention_days": 30,
+        "default_max_workspaces": 0,
+        "default_max_running": 0,
+        "signin_lan_networks": "10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10",
+        "trusted_proxies": "",
+        "require_2fa_all": False,
     }
 
 
@@ -55,6 +60,11 @@ def test_settings_put_updates_both(client):
         "workspace_docker": False,
         "dind_image": "docker:dind",
         "trash_retention_days": 30,
+        "default_max_workspaces": 0,
+        "default_max_running": 0,
+        "signin_lan_networks": "10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10",
+        "trusted_proxies": "",
+        "require_2fa_all": False,
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()

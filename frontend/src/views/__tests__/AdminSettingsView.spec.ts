@@ -11,6 +11,9 @@ vi.mock('@/api/admin', () => ({
     env: {
       get: vi.fn(),
     },
+    networkCheck: vi.fn().mockResolvedValue({
+      client_ip: '203.0.113.9', is_lan: false, forwarded_for: ['203.0.113.9'], claimed: [], warning: null,
+    }),
   },
 }))
 
@@ -39,6 +42,11 @@ const baseSettings: AppSettings = {
   workspace_docker: false,
   dind_image: 'docker:dind',
   trash_retention_days: 30,
+  default_max_workspaces: 0,
+  default_max_running: 0,
+  signin_lan_networks: '10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10',
+  trusted_proxies: '',
+  require_2fa_all: false,
 }
 
 describe('AdminSettingsView', () => {
@@ -79,6 +87,11 @@ describe('AdminSettingsView', () => {
       workspace_docker: false,
       dind_image: 'docker:dind',
       trash_retention_days: 30,
+      default_max_workspaces: 0,
+      default_max_running: 0,
+      signin_lan_networks: '10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10',
+      trusted_proxies: '',
+      require_2fa_all: false,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()
@@ -93,6 +106,28 @@ describe('AdminSettingsView', () => {
     const payload = vi.mocked(adminApi.settings.update).mock.calls[0][0]
     expect(payload.tailscale_image).toBe('tailscale/tailscale:latest')
     expect(payload.workspace_lan_access).toBe(true)
+  })
+
+  it('shows how Cove sees this connection next to the sign-in settings', async () => {
+    vi.mocked(adminApi.settings.get).mockResolvedValue(baseSettings)
+    vi.mocked(adminApi.networkCheck).mockResolvedValueOnce({
+      client_ip: '10.9.0.2', is_lan: false, forwarded_for: ['10.9.0.2'], claimed: ['203.0.113.9'],
+      warning: 'This request came through a tunnel or CDN.',
+    })
+    const wrapper = mount(AdminSettingsView)
+    await flushPromises()
+    const box = wrapper.find('.netcheck')
+    expect(box.text()).toContain('10.9.0.2')
+    expect(box.text()).toContain('outside the local network')
+    expect(box.text()).toContain('tunnel or CDN')
+
+    vi.mocked(adminApi.settings.update).mockResolvedValue({ ...baseSettings, trusted_proxies: '10.9.0.2/32' })
+    const proxies = wrapper.findAll('input[type="text"]').find(i => i.attributes('placeholder') === 'none')!
+    await proxies.setValue('10.9.0.2')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    expect(vi.mocked(adminApi.settings.update).mock.calls[0][0].trusted_proxies).toBe('10.9.0.2')
+    expect(adminApi.networkCheck).toHaveBeenCalledTimes(2) // re-checked with the saved settings
   })
 
   it('loads and renders the environment summary', async () => {

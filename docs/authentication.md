@@ -37,6 +37,111 @@ Cove issues signed (HS256) JSON Web Tokens delivered as **httpOnly cookies**:
 - The API also accepts an `Authorization: Bearer <token>` header as an alternative to the cookie.
 - **Refresh:** the SPA silently rotates the session via the refresh cookie. **Logout** revokes all of a user's outstanding tokens (it stamps a `tokens_valid_from` marker) and clears the cookies. Changing your password does the same, ending other sessions.
 
+## Two-factor sign-in
+
+Local accounts can add a second step to signing in (SSO accounts use their
+identity provider's instead). In **Preferences → Two-factor sign-in**:
+
+- **Authenticator app**: scan the QR code with an app such as Aegis, 2FAS or
+  1Password and confirm a code. Signing in then asks for the 6-digit code after
+  the password.
+- **Passkey or security key**: your device's passkey (Windows Hello, Touch ID,
+  a phone) or a USB / NFC key such as a YubiKey. Cove always asks the key for
+  its PIN or fingerprint, so a passkey on its own is two factors: **Sign in
+  with a passkey** needs only your username, with no password and no code.
+  After a password, a passkey also works as the second step.
+- **Recovery codes**: ten one-time codes, shown once when you add your first
+  second factor. Each signs you in once if you lose your phone or key. Make a
+  new set (the old ones stop working) from the same panel.
+
+<img src="../screenshots/2fa-preferences.png" width="60%" alt="Preferences, Two-factor sign-in: the authenticator app is on, a YubiKey 5C security key, 10 recovery codes left, and Add passkey" />
+
+<img src="../screenshots/2fa-login-code.png" width="45%" alt="Signing in, second step: enter the 6-digit code from your authenticator app, with Use a recovery code, Use a passkey and Start over" />
+
+Adding, removing or renewing anything here asks for your password. Your first
+second factor also signs you out everywhere else: those sessions began with the
+password alone. This browser stays signed in. Wrong codes are limited: five per sign-in (then it
+starts over with the password) and ten per account in 15 minutes. A code
+can't be used twice.
+
+**Passkeys need Cove's domain name.** Cove offers passkeys only when
+`COVE_APP_ORIGIN` is set to its public address by name (for example
+`https://cove.example.com`; `docker-compose.prod.yml` sets it). Every passkey is
+made for that name and works only there, whatever address a request arrives
+on, so a look-alike site in front of Cove can't collect them. WebAuthn doesn't
+work by IP address at all; on such installs only the authenticator app is
+offered.
+
+### Requiring it
+
+An admin can require two-factor sign-in for one account (**Admin → Users →
+Edit → Require two-factor sign-in**) or every local account (**Admin →
+Settings → Sign-in**). An account without a second factor then sets one up as
+part of its next sign-in, before it gets a session, and can't remove its last
+one. Sessions that already exist aren't ended; they're asked at their next
+sign-in (use **Sign out** on the user to end them now).
+
+<img src="../screenshots/2fa-required-setup.png" width="45%" alt="Signing in to an account that requires two-factor sign-in: choose an authenticator app or a passkey or security key to finish" />
+
+Lost phone or key? **Admin → Users → Reset 2FA** removes the account's
+authenticator app, passkeys and recovery codes and signs it out everywhere.
+The user signs in with their password next (and sets up a new factor, if
+it's required).
+
+### On a thin client
+
+A kiosk has no passkey store of its own, so it signs in with a **USB security
+key**: it asks for the username, then the password or **Use security key**
+(touch the key and enter its PIN). Debian's udev rules give the signed-in
+kiosk user access to a plugged-in FIDO key; nothing else needs installing. A
+code from an authenticator app is asked for only after a password, never after
+a key. NFC isn't supported (Chromium on Linux doesn't read NFC keys).
+
+<img src="../screenshots/kiosk-login-key.png" width="45%" alt="Thin client sign-in, second screen: alice, a password field, or Use security key" />
+
+Register the key once from any browser (Preferences → Two-factor sign-in →
+Add passkey), or from the kiosk itself.
+
+## Local network only accounts
+
+Tick **Local network only** on an account (Admin → Users) and it works only
+from your own network: signing in (password or SSO), refreshing a session,
+every API call and opening a workspace stream are all refused from anywhere
+else, with *"This account can only be used from the local network."* A leaked
+password, or a session cookie stolen from a laptop, is then useless from the
+internet. A browser that leaves the network (a laptop taken out of the house)
+is signed out on its next request. The message only appears after a correct
+password, so it doesn't tell a guesser that the account exists.
+
+What counts as the local network is set in **Admin → Settings → Sign-in**:
+
+- **LAN networks**: default `10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10`.
+  `172.16.0.0/12` is left out because Docker can present visitors from the
+  internet (IPv6 ones in particular) as its bridge gateway, `172.17.0.1`; add
+  your own range if your LAN uses it.
+- **Trusted proxies**: anything in front of Cove's Traefik (another reverse
+  proxy, a tunnel). Cove skips their addresses to find each visitor's own. See
+  [Deployment → Behind another reverse proxy](deployment.md#behind-another-reverse-proxy).
+
+<img src="../screenshots/admin-settings-signin.png" width="70%" alt="Admin → Settings → Sign-in: require two-factor sign-in for every local account, LAN networks, trusted proxies, and this connection's address shown as outside the local network" />
+
+The page shows the address Cove sees for your own connection and whether it
+counts as local. **Check it once from a phone off the Wi-Fi**: it must say
+*outside the local network*. If it says local, every visitor looks local to
+Cove (typically a tunnel or proxy that isn't listed) and the setting protects
+nothing.
+
+Cove errs towards refusing. A request is local only if its address is in the
+LAN networks, isn't itself a trusted proxy (Cove can't see past it), and no
+other address the request carries for its visitor (`X-Forwarded-For`,
+`CF-Connecting-IP`, `True-Client-IP`, `Forwarded`) is outside them. Those
+headers can't make a request look local; a client faking them only locks
+itself out.
+
+Cove won't let you lock yourself out: it refuses to turn the setting on for
+your own account from outside the network, or to save network settings under
+which your current connection would stop counting as local.
+
 ## OIDC / SSO
 
 Cove speaks standard OpenID Connect (authorization-code flow) and is **not tied

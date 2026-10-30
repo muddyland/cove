@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 
-from server import integration, settings_store, zone_access
+from server import integration, lan_access, net, settings_store, zone_access
 from server.config import get_settings
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace, Zone
@@ -18,6 +18,7 @@ from server.schemas import (
     EnvEntry,
     EnvSummaryOut,
     HostDisk,
+    NetworkCheckOut,
     PruneRequest,
     PruneResultOut,
     StorageCategory,
@@ -76,6 +77,10 @@ def create_user(body: AdminUserCreate, user: AdminUser, db: DbSession, request: 
         auth_provider="local",
         is_admin=body.is_admin,
         docker_allowed=body.docker_allowed,
+        max_workspaces=body.max_workspaces,
+        max_running=body.max_running,
+        lan_only=body.lan_only,
+        require_2fa=body.require_2fa,
     )
     db.add(new_user)
     db.flush()
@@ -123,6 +128,22 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
         target.tokens_valid_from = datetime.now(timezone.utc)
     if body.docker_allowed is not None:
         target.docker_allowed = body.docker_allowed
+    # Explicit null = back to the deployment default, so check fields_set.
+    if "max_workspaces" in body.model_fields_set:
+        target.max_workspaces = body.max_workspaces
+    if "max_running" in body.model_fields_set:
+        target.max_running = body.max_running
+    if body.lan_only is not None and body.lan_only != target.lan_only:
+        if body.lan_only and target.id == admin.id and not lan_access.request_is_lan(db, request):
+            # The very next request would be refused: don't lock yourself out.
+            raise HTTPException(
+                status_code=400,
+                detail=f"You're connected from outside the local network ({client_ip(request)}), so this "
+                "would sign you out. Turn it on from the LAN, or check Admin → Settings → LAN networks.",
+            )
+        target.lan_only = body.lan_only
+    if body.require_2fa is not None:
+        target.require_2fa = body.require_2fa
     if body.zones_restricted is not None or body.allowed_zone_ids is not None:
         zone_access.set_allowed(
             db,
@@ -143,6 +164,24 @@ def _revoke_integration_tokens(db, username: str, why: str, admin, request: Requ
     when that authority does."""
     for name in integration.revoke_tokens_of(db, username):
         _audit(db, "admin.integration_token.revoke", detail=f"{name} ({username} {why})", user=admin, request=request)
+
+
+@router.post("/users/{user_id}/reset-2fa", response_model=UserOut)
+def reset_user_2fa(user_id: int, admin: AdminUser, db: DbSession, request: Request):
+    """Remove an account's authenticator app, passkeys and recovery codes (a
+    lost phone or key), and sign it out everywhere. If 2FA is required for the
+    account, it sets up a new factor at its next sign-in."""
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    from server import mfa
+
+    mfa.reset(db, target)
+    target.tokens_valid_from = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(target)
+    _audit(db, "admin.user.reset_2fa", detail=target.username, user=admin, request=request)
+    return target
 
 
 @router.post("/users/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)
@@ -454,6 +493,40 @@ def prune_storage(
     )
 
 
+def _save_network_settings(db, admin, request: Request, lan_networks, trusted_proxies) -> None:
+    """Save the LAN networks / trusted proxies, unless that would lock the
+    admin's own LAN-only account out on its very next request."""
+    old_lan = settings_store.get_signin_lan_networks(db)
+    old_proxies = settings_store.get_trusted_proxies(db)
+    if lan_networks is not None:
+        settings_store.set_setting(
+            db, settings_store.KEY_SIGNIN_LAN_NETWORKS, ", ".join(net.parse_networks(lan_networks))
+        )
+    if trusted_proxies is not None:
+        proxies = ", ".join(net.parse_networks(trusted_proxies))
+        settings_store.set_setting(db, settings_store.KEY_TRUSTED_PROXIES, proxies)
+        net.set_trusted_proxies(proxies)
+    if not lan_access.allows(db, admin, request):
+        settings_store.set_setting(db, settings_store.KEY_SIGNIN_LAN_NETWORKS, old_lan)
+        settings_store.set_setting(db, settings_store.KEY_TRUSTED_PROXIES, old_proxies)
+        net.set_trusted_proxies(old_proxies)
+        raise HTTPException(
+            status_code=400,
+            detail="Your account is local network only, and with these settings this connection "
+            f"({client_ip(request)}) wouldn't count as the local network, so you'd be signed out. "
+            "Nothing was changed.",
+        )
+
+
+@router.get("/network-check", response_model=NetworkCheckOut)
+def network_check(admin: AdminUser, db: DbSession, request: Request):
+    """What Cove sees of this request: the client address it uses, whether
+    that counts as the LAN, and a warning when a proxy in front of Cove hides
+    visitors' addresses. Check it from a phone off the Wi-Fi before relying on
+    Local network only."""
+    return NetworkCheckOut(**lan_access.describe(db, request))
+
+
 @router.get("/settings", response_model=AppSettingsOut)
 def get_app_settings(admin: AdminUser, db: DbSession):
     return AppSettingsOut(**settings_store.get_all(db))
@@ -551,5 +624,13 @@ def update_app_settings(
             settings_store.KEY_TRASH_RETENTION_DAYS,
             str(max(0, body.trash_retention_days)),
         )
+    if body.default_max_workspaces is not None:
+        settings_store.set_setting(db, settings_store.KEY_DEFAULT_MAX_WORKSPACES, str(body.default_max_workspaces))
+    if body.default_max_running is not None:
+        settings_store.set_setting(db, settings_store.KEY_DEFAULT_MAX_RUNNING, str(body.default_max_running))
+    if body.require_2fa_all is not None:
+        settings_store.set_setting(db, settings_store.KEY_REQUIRE_2FA_ALL, "true" if body.require_2fa_all else "false")
+    if body.signin_lan_networks is not None or body.trusted_proxies is not None:
+        _save_network_settings(db, admin, request, body.signin_lan_networks, body.trusted_proxies)
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

@@ -9,8 +9,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from server import lan_access, thin_clients
 from server import oidc as oidc_module
-from server import thin_clients
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession, _check_revocation, resolve_user_from_token
 from server.models import ThinClient, User, Workspace
@@ -179,6 +179,13 @@ def _check_rate_limit(ip: str, scope: str = "login") -> bool:
     return True
 
 
+def _require_lan(db: Session, user: User, request: Request) -> None:
+    """Refuse (403) a LAN-only account outside the LAN, and audit it."""
+    if not lan_access.allows(db, user, request):
+        _record_audit(db, "login.lan_only", detail=user.username, user=user, ip=client_ip(request))
+        raise HTTPException(status_code=403, detail=lan_access.DETAIL, headers=lan_access.ERROR_HEADER)
+
+
 def _needs_setup(db: Session) -> bool:
     return db.scalar(select(func.count()).select_from(User)) == 0
 
@@ -192,7 +199,14 @@ def get_auth_config(db: DbSession):
         # In OIDC-only mode there are no local users to set up.
         needs_setup=_needs_setup(db) and not settings.oidc_only_active,
         oidc_only=settings.oidc_only_active,
+        passkeys=_passkeys_enabled() and not settings.oidc_only_active,
     )
+
+
+def _passkeys_enabled() -> bool:
+    from server import passkeys
+
+    return passkeys.enabled()
 
 
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
@@ -237,6 +251,17 @@ def login(body: LoginRequest, request: Request, db: DbSession):
     if not password_ok:
         _record_audit(db, "login.fail", detail=body.username, user=user, ip=ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    # Only after the password checked out: telling a guesser the account is
+    # LAN-only would confirm it exists.
+    _require_lan(db, user, request)
+
+    # Two-factor sign-in: answer with the second step instead of a session.
+    from server.routers.mfa import first_step_response
+
+    step = first_step_response(db, request, user)
+    if step is not None:
+        _record_audit(db, "login.password_ok", detail="second factor next", user=user, ip=ip)
+        return step
 
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
@@ -268,6 +293,7 @@ def refresh(request: Request, db: DbSession):
     # Enforce revocation: iat must be >= tokens_valid_from (second granularity).
     if not _check_revocation(user, payload):
         raise HTTPException(status_code=401, detail="Refresh token revoked")
+    _require_lan(db, user, request)
 
     # Set fresh session cookie + rotate refresh cookie (same device session, if any).
     return _session_response(user, _device_ctx(request, db, user, payload))
@@ -309,7 +335,8 @@ def change_password(
     if user.auth_provider != "local":
         raise HTTPException(status_code=400, detail="Cannot change password for SSO accounts")
     if not verify_password(body.current_password, user.password_hash or ""):
-        raise HTTPException(status_code=401, detail="Current password is incorrect")
+        # 403, not 401: a 401 makes the SPA end the session (see mfa.py).
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
     validate_password(body.new_password)
     user.password_hash = hash_password(body.new_password)
     user.tokens_valid_from = datetime.now(timezone.utc)
@@ -438,6 +465,11 @@ async def oidc_callback(
         if settings.oidc_admin_group:
             user.is_admin = oidc_module.is_admin_from_claims(claims)
 
+    if not lan_access.allows(db, user, request):
+        db.commit()  # keep a just-provisioned account; it just can't sign in from here
+        _record_audit(db, "login.lan_only", detail=user.username, user=user, ip=client_ip(request))
+        return RedirectResponse(url="/app/login?error=lan_only", status_code=303)
+
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
@@ -552,7 +584,7 @@ def _forward_auth_subdomain(request, db, settings, public_id: str, uri: str | No
     cookie = request.cookies.get(settings.cookie_stream_name)
     if cookie:
         user = _resolve_stream_user(db, cookie, public_id)
-        if user and _authorize_ws(db, public_id, user):
+        if user and _authorize_ws(db, public_id, user) and lan_access.allows(db, user, request):
             return Response(status_code=200, headers={"X-Cove-User": user.username})
 
     token = _stream_token_from_uri(uri)
@@ -562,6 +594,7 @@ def _forward_auth_subdomain(request, db, settings, public_id: str, uri: str | No
         # Single-use: consume the jti so a leaked ?__cove_t URL can't be replayed.
         if (
             user
+            and lan_access.allows(db, user, request)
             and _consume_bootstrap_jti(payload.get("jti") if payload else None)
             and _authorize_ws(db, public_id, user)
         ):
@@ -596,7 +629,7 @@ def _forward_auth_subpath(request, db, uri: str | None):
     if not token:
         return Response(status_code=401)
     user = resolve_user_from_token(db, token)
-    if not user:
+    if not user or not lan_access.allows(db, user, request):
         return Response(status_code=401)
 
     public_id = None

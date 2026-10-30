@@ -1,5 +1,8 @@
 import { api } from './client'
-import type { AppSettings, AuditEntry, AuditFacets, AuditQuery, EnvSummary, PruneResult, StorageInfo, User, UserFormPayload, Workspace } from '@/types'
+import type {
+  AppSettings, AuditEntry, AuditFacets, AuditQuery, EnvSummary, NetworkCheck, PruneResult, StorageInfo, User,
+  UserFormPayload, Workspace,
+} from '@/types'
 
 export const adminApi = {
   users: {
@@ -9,6 +12,8 @@ export const adminApi = {
     remove: (id: number) => api.delete(`/admin/users/${id}`),
     // Sign the user out everywhere (invalidates every token issued before now).
     revokeSessions: (id: number) => api.post<void>(`/admin/users/${id}/revoke-sessions`),
+    // Remove the user's authenticator app, passkeys and recovery codes, and sign them out.
+    reset2fa: (id: number) => api.post<User>(`/admin/users/${id}/reset-2fa`),
   },
   sessions: {
     list: () => api.get<Workspace[]>('/admin/sessions'),
@@ -32,6 +37,8 @@ export const adminApi = {
   env: {
     get: () => api.get<EnvSummary>('/admin/env'),
   },
+  /** What Cove sees of this request: client address, LAN or not, proxy warnings. */
+  networkCheck: () => api.get<NetworkCheck>('/admin/network-check'),
   storage: {
     get: () => api.get<StorageInfo>('/admin/storage'),
     prune: (zone_id: number, deep: boolean) =>

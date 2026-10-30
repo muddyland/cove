@@ -52,7 +52,7 @@ file is [`.env.example`](../.env.example).
 | Variable | Default | Purpose |
 |---|---|---|
 | `COVE_WORKSPACE_DOMAIN` | _(unset)_ | When set, each workspace streams at `<public_id>.<domain>` — its own origin. Unset = subpath routing (`/workspace/<id>/`). Requires wildcard DNS + cert. See [Deployment](deployment.md#per-workspace-subdomain-isolation). |
-| `COVE_APP_ORIGIN` | _(unset)_ | Public origin of the SPA (e.g. `https://cove.example.com`); used for cross-origin framing CSP in subdomain mode. Set automatically by `docker-compose.prod.yml`. |
+| `COVE_APP_ORIGIN` | _(unset)_ | Public origin of the SPA (e.g. `https://cove.example.com`); used for cross-origin framing CSP in subdomain mode, and as the passkey relying party: passkeys are offered only when it's a domain name, and are tied to it. Set automatically by `docker-compose.prod.yml`. |
 
 ### Authentication & OIDC
 

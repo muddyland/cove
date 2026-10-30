@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **Two-factor sign-in: authenticator apps, passkeys and security keys.**
+  Local accounts can add a code from an authenticator app, a passkey, or a
+  USB / NFC security key (Preferences → Two-factor sign-in), with ten
+  one-time recovery codes. A passkey signs in on its own (username, then the
+  key and its PIN, no password and no code). Admins can require 2FA per
+  account (Admin → Users) or for every local account (Admin → Settings →
+  Sign-in); such accounts set it up while signing in. **Reset 2FA** (Admin →
+  Users) helps a user who lost their phone or key. On a thin client, sign-in
+  asks for the username, then the password or **Use security key**; Debian's
+  udev rules already let the kiosk use a plugged-in key. SSO accounts are
+  unaffected. Adding a first factor signs out the account's other sessions.
+  **Operator action:** passkeys are offered only when `COVE_APP_ORIGIN` is
+  Cove's public address by domain name (`docker-compose.prod.yml` sets it);
+  they're tied to that name. Without it, only authenticator apps are offered.
+  Also: full-width buttons (sign-in) centre their label, and a mistyped
+  current password (Preferences → Change password) shows an error instead of
+  signing you out (it now answers 403, not 401).
+- **Local network only accounts.** Tick **Local network only** on an account
+  (Admin → Users) and it can only sign in, keep a session, call the API and
+  open workspaces from your own network, so a leaked password or stolen
+  session is useless from the internet. Admin → Settings → Sign-in sets which
+  networks count as local and which proxies sit in front of Cove, and shows
+  how Cove sees your own connection. **Operator action:** if Cove is behind
+  another reverse proxy or a tunnel, add it under **Trusted proxies** before
+  using this (and in Traefik's `forwardedHeaders.trustedIPs`), then check from
+  a phone off the Wi-Fi that Cove reports *outside the local network*.
+- **Workspace limits per account.** Admin → Settings sets how many workspaces
+  each account may have and how many may run at once (default: no limit), and
+  Admin → Users overrides either for one account. Launching, cloning or
+  starting past a limit is refused with a message naming the limit; the
+  dashboard shows "2 of 3 running" and disables **Launch** at the cap. A
+  workspace that's starting counts toward the running limit, one that's
+  stopping doesn't, and two starts racing for the last slot can't both get
+  it. Admins are never limited.
 - **Admin pages: fixes from a visual check.** Thin client thumbnails no
   longer go missing when several load at once (the same race could drop an
   image's update check). The thin client page's help text, labels and the

@@ -14,6 +14,8 @@ class AuthConfig(BaseModel):
     oidc_provider_name: str
     needs_setup: bool
     oidc_only: bool = False
+    # Passkey sign-in works on this server (COVE_APP_ORIGIN is a domain name).
+    passkeys: bool = False
 
 
 class SetupRequest(BaseModel):
@@ -39,11 +41,57 @@ class UserOut(BaseModel):
     # False: every zone. True: only allowed_zone_ids (see Admin -> Users).
     zones_restricted: bool = False
     allowed_zone_ids: list[int] = []
+    # Per-account workspace caps: None follows the deployment default, 0 = none.
+    max_workspaces: Optional[int] = None
+    max_running: Optional[int] = None
+    lan_only: bool = False
+    # Two-factor sign-in (local accounts): what's set up, and whether an admin requires it.
+    totp_enabled: bool = False
+    passkey_count: int = 0
+    require_2fa: bool = False
     auth_provider: str
     created_at: datetime
     last_login_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
+
+class MfaCodeIn(BaseModel):
+    mfa_token: str = Field(max_length=4096)
+    code: str = Field(max_length=64)
+
+
+class MfaEnrolIn(BaseModel):
+    # Set while finishing a required 2FA setup during sign-in; else the session is used.
+    mfa_token: Optional[str] = Field(default=None, max_length=4096)
+
+
+class TotpEnableIn(MfaEnrolIn):
+    setup_token: str = Field(max_length=4096)
+    code: str = Field(max_length=16)
+    # Required when adding it from a session (not during sign-in): a stolen
+    # session must not be able to add the thief's own second factor.
+    password: Optional[str] = Field(default=None, max_length=1024)
+
+
+class PasswordConfirmIn(BaseModel):
+    password: str = Field(max_length=1024)
+
+
+class PasskeyOptionsIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+
+
+class PasskeyLoginIn(BaseModel):
+    state: str = Field(max_length=4096)
+    credential: dict
+
+
+class PasskeyRegisterIn(MfaEnrolIn):
+    state: str = Field(max_length=4096)
+    credential: dict
+    name: str = Field(default="", max_length=64)
+    password: Optional[str] = Field(default=None, max_length=1024)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -445,6 +493,10 @@ class AdminUserCreate(BaseModel):
     docker_allowed: bool = False
     zones_restricted: bool = False
     allowed_zone_ids: list[int] = []
+    max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
+    max_running: Optional[int] = Field(default=None, ge=0, le=1000)
+    lan_only: bool = False
+    require_2fa: bool = False
 
 
 class AdminUserUpdate(BaseModel):
@@ -455,6 +507,20 @@ class AdminUserUpdate(BaseModel):
     # Both optional: send either or both to change the user's zone limit.
     zones_restricted: Optional[bool] = None
     allowed_zone_ids: Optional[list[int]] = None
+    # Explicit null resets to the deployment default; leaving it out keeps the
+    # current value (the router checks model_fields_set).
+    max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
+    max_running: Optional[int] = Field(default=None, ge=0, le=1000)
+    lan_only: Optional[bool] = None
+    require_2fa: Optional[bool] = None
+
+
+class WorkspaceLimitsOut(BaseModel):
+    """The caller's caps and usage; 0 means no limit."""
+    max_workspaces: int
+    max_running: int
+    workspaces: int
+    running: int
 
 
 # ── App settings ──────────────────────────────────────────────────────────────
@@ -475,6 +541,20 @@ class AppSettingsOut(BaseModel):
     workspace_docker: bool
     dind_image: str
     trash_retention_days: int
+    default_max_workspaces: int = 0
+    default_max_running: int = 0
+    signin_lan_networks: str = ""
+    trusted_proxies: str = ""
+    require_2fa_all: bool = False
+
+
+class NetworkCheckOut(BaseModel):
+    """What Cove sees of the admin's own request (Admin -> Settings)."""
+    client_ip: str
+    is_lan: bool
+    forwarded_for: list[str]
+    claimed: list[str]
+    warning: Optional[str] = None
 
 
 class EnvEntry(BaseModel):
@@ -545,6 +625,11 @@ class AppSettingsUpdate(BaseModel):
     workspace_docker: Optional[bool] = None
     dind_image: Optional[str] = None
     trash_retention_days: Optional[int] = None
+    default_max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
+    default_max_running: Optional[int] = Field(default=None, ge=0, le=1000)
+    signin_lan_networks: Optional[str] = Field(default=None, max_length=4000)
+    trusted_proxies: Optional[str] = Field(default=None, max_length=4000)
+    require_2fa_all: Optional[bool] = None
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

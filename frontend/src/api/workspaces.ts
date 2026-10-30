@@ -1,13 +1,15 @@
 import { api } from './client'
 import type {
   ContainerLogs, DiskUsage, DockerPolicy, GpuPolicy, LanPolicy, PublicIp, RuntimePolicy, SystemInfo,
-  TailscaleStatus, Workspace, WorkspaceStats,
+  TailscaleStatus, Workspace, WorkspaceLimits, WorkspaceStats,
 } from '@/types'
 
 export type LogSource = 'desktop' | 'tailscale' | 'gluetun'
 
 export const workspacesApi = {
   list: () => api.get<Workspace[]>('/workspaces'),
+  /** The caller's caps (0 = no limit) and usage. */
+  limits: () => api.get<WorkspaceLimits>('/workspaces/limits'),
   stats: () => api.get<Record<number, WorkspaceStats>>('/workspaces/stats'),
   lanPolicy: () => api.get<LanPolicy>('/workspaces/lan-policy'),
   // GPU and Docker-in-Docker depend on the zone the workspace runs on.
