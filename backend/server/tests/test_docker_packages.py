@@ -503,6 +503,53 @@ def test_prune_core_dumps_removes_only_real_dumps(tmp_path):
     assert survivors == ["core.789", "core.dir", "core.log"]
 
 
+def _run_theme_script(root: Path) -> subprocess.CompletedProcess:
+    script = Path(__file__).resolve().parents[3] / "scripts" / "install-cove-theme.sh"
+    body = script.read_text().replace("/usr/share/selkies", str(root))
+    patched = root / "theme.sh"
+    patched.write_text(body)
+    return subprocess.run(["bash", str(patched)], capture_output=True, text=True)
+
+
+def test_theme_script_stops_framed_pointerrawupdate(tmp_path):
+    """Chromium gives `pointerrawupdate` top-page coordinates inside an iframe,
+    and Selkies sends motion from it, so Cove's framed stream put the desktop
+    pointer one top-bar height below the browser's. The init script must put
+    the opt-out first in every dashboard's <head>, once, before Selkies loads."""
+    head = (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<script type="module" crossorigin src="./assets/index-X.js"></script></head>'
+        '<body><div id="app"></div></body></html>'
+    )
+    for name in ("selkies-dashboard", "selkies-dashboard-wish", "web"):
+        (tmp_path / name / "assets").mkdir(parents=True)
+        (tmp_path / name / "index.html").write_text(head)
+        (tmp_path / name / "assets" / "index-X.css").write_text(":root{--sidebar-header-color:#fff}")
+
+    out = _run_theme_script(tmp_path)
+    assert out.returncode == 0, out.stderr
+    for name in ("selkies-dashboard", "selkies-dashboard-wish", "web"):
+        html = (tmp_path / name / "index.html").read_text()
+        assert html.startswith('<!doctype html><html lang="en"><head><script>/* COVE-FRAMED-POINTER')
+        script = html.split("<head>", 1)[1].split("</script>", 1)[0]
+        assert "window===window.top" in script  # a stream opened directly keeps the raw path
+        assert "delete window.onpointerrawupdate" in script
+        assert html.index("COVE-FRAMED-POINTER") < html.index('type="module"')
+        assert html.rstrip("\n").endswith("</html>")
+
+    # A restart runs init again: still exactly one copy.
+    assert _run_theme_script(tmp_path).returncode == 0
+    for name in ("selkies-dashboard", "selkies-dashboard-wish", "web"):
+        assert (tmp_path / name / "index.html").read_text().count("COVE-FRAMED-POINTER") == 1
+
+
+def test_theme_script_leaves_non_selkies_images_alone(tmp_path):
+    out = _run_theme_script(tmp_path)
+    assert out.returncode == 0
+    assert "non-Selkies image" in out.stdout
+    assert "selkies pointer" not in out.stdout
+
+
 def test_dind_names():
     assert DockerManager._dind_sidecar_name(7) == "cove-dind-7"
     assert DockerManager._dind_volume_name(7) == "cove-dind-state-7"
