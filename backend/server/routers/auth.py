@@ -199,7 +199,14 @@ def get_auth_config(db: DbSession):
         # In OIDC-only mode there are no local users to set up.
         needs_setup=_needs_setup(db) and not settings.oidc_only_active,
         oidc_only=settings.oidc_only_active,
+        passkeys=_passkeys_enabled() and not settings.oidc_only_active,
     )
+
+
+def _passkeys_enabled() -> bool:
+    from server import passkeys
+
+    return passkeys.enabled()
 
 
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
@@ -247,6 +254,14 @@ def login(body: LoginRequest, request: Request, db: DbSession):
     # Only after the password checked out: telling a guesser the account is
     # LAN-only would confirm it exists.
     _require_lan(db, user, request)
+
+    # Two-factor sign-in: answer with the second step instead of a session.
+    from server.routers.mfa import first_step_response
+
+    step = first_step_response(db, request, user)
+    if step is not None:
+        _record_audit(db, "login.password_ok", detail="second factor next", user=user, ip=ip)
+        return step
 
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
@@ -320,7 +335,8 @@ def change_password(
     if user.auth_provider != "local":
         raise HTTPException(status_code=400, detail="Cannot change password for SSO accounts")
     if not verify_password(body.current_password, user.password_hash or ""):
-        raise HTTPException(status_code=401, detail="Current password is incorrect")
+        # 403, not 401: a 401 makes the SPA end the session (see mfa.py).
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
     validate_password(body.new_password)
     user.password_hash = hash_password(body.new_password)
     user.tokens_valid_from = datetime.now(timezone.utc)

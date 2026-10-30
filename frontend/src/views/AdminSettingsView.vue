@@ -176,6 +176,15 @@
           </p>
 
           <h4 id="set-signin" class="section-h">Sign-in</h4>
+          <label class="checkbox-row">
+            <input type="checkbox" v-model="form.require_2fa_all" />
+            <span>Require two-factor sign-in for every local account</span>
+          </label>
+          <p class="hint">
+            Accounts without an authenticator app or a passkey set one up at their next sign-in. To
+            require it of only some accounts, tick it per account under Admin → Users. SSO accounts
+            use their identity provider's two-factor sign-in instead.
+          </p>
           <div class="form-group">
             <label>LAN networks</label>
             <input v-model="form.signin_lan_networks" type="text" autocomplete="off"
@@ -356,6 +365,7 @@ const form = reactive({
   default_max_running: 0,
   signin_lan_networks: '',
   trusted_proxies: '',
+  require_2fa_all: false,
 })
 const netCheck = ref<NetworkCheck | null>(null)
 function loadNetCheck() {
@@ -385,6 +395,7 @@ onMounted(async () => {
     form.default_max_running = settings.default_max_running
     form.signin_lan_networks = settings.signin_lan_networks
     form.trusted_proxies = settings.trusted_proxies
+    form.require_2fa_all = settings.require_2fa_all
     snapshot.value = JSON.stringify(form)
   } catch (e: any) {
     error.value = e.message
@@ -426,6 +437,7 @@ async function handleSave() {
       default_max_running: form.default_max_running || 0,
       signin_lan_networks: form.signin_lan_networks,
       trusted_proxies: form.trusted_proxies,
+      require_2fa_all: form.require_2fa_all,
     })
     form.tailscale_image = updated.tailscale_image
     form.gluetun_image = updated.gluetun_image
@@ -446,6 +458,7 @@ async function handleSave() {
     form.default_max_running = updated.default_max_running
     form.signin_lan_networks = updated.signin_lan_networks
     form.trusted_proxies = updated.trusted_proxies
+    form.require_2fa_all = updated.require_2fa_all
     loadNetCheck()
     snapshot.value = JSON.stringify(form)
     ui.toast('Settings saved', 'success')

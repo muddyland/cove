@@ -43,6 +43,8 @@ KEY_DEFAULT_MAX_RUNNING = "default_max_running"
 # hops are skipped to find the real client (server.net).
 KEY_SIGNIN_LAN_NETWORKS = "signin_lan_networks"
 KEY_TRUSTED_PROXIES = "trusted_proxies"
+# Every local account must set up 2FA at its next sign-in (server.mfa).
+KEY_REQUIRE_2FA_ALL = "require_2fa_all"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
@@ -308,6 +310,10 @@ def get_trusted_proxies(db: Session) -> str:
     return DEFAULT_TRUSTED_PROXIES if raw is None else raw
 
 
+def get_require_2fa_all(db: Session) -> bool:
+    return _to_bool(get_setting(db, KEY_REQUIRE_2FA_ALL), False)
+
+
 def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
@@ -329,4 +335,5 @@ def get_all(db: Session) -> dict:
         "default_max_running": get_default_max_running(db),
         "signin_lan_networks": get_signin_lan_networks(db),
         "trusted_proxies": get_trusted_proxies(db),
+        "require_2fa_all": get_require_2fa_all(db),
     }

@@ -120,6 +120,17 @@ def test_login_rate_limit_returns_429(client):
     assert resp.status_code == 429
 
 
+def test_a_wrong_current_password_is_403_not_401(client):
+    # The SPA treats any 401 on a signed-in request as an expired session and
+    # signs out: a typo in the current password mustn't do that.
+    token, _ = setup_admin(client)
+    r = client.post("/api/auth/change-password", json={"current_password": "wrong-password",
+                                                       "new_password": "newpassword123"},
+                    headers=auth_header(token))
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Current password is incorrect"
+
+
 def test_change_password_rate_limited(client):
     setup_admin(client)  # leaves the session cookie in the jar
     settings = get_settings()

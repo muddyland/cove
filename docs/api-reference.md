@@ -30,6 +30,29 @@ cookies.
 | GET | `/api/auth/oidc/callback` | public | OIDC callback; provisions/updates the SSO user. |
 | GET | `/api/auth/forward` | internal (Traefik ForwardAuth) | Authorize a workspace stream. |
 
+## Two-factor sign-in — `/api/auth`
+
+`POST /api/auth/login` answers `{"mfa_required": true, "mfa_token", "methods"}`
+instead of a session when the account has a second factor, or
+`{"mfa_setup_required": true, "mfa_token"}` when it must set one up. The
+`mfa_token` lasts 5 minutes (setup: 10) and is not a session; a setup one
+stops working once the account has a factor. Wrong passwords on these
+endpoints answer `403`.
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/login/2fa` | `mfa_token` | `{mfa_token, code}`: a TOTP code or a recovery code; returns a session. 5 wrong codes per sign-in, 10 per account per 15 min. |
+| POST | `/api/auth/login/passkey/options` | none | `{username}` → `{options, state}` (WebAuthn request options; unknown accounts get stable made-up credentials). |
+| POST | `/api/auth/login/passkey` | none | `{state, credential}` → a session. No password or TOTP. |
+| GET | `/api/auth/2fa` | auth | What's set up: `totp`, `passkeys`, `recovery_codes_left`, `required`. |
+| POST | `/api/auth/2fa/totp/setup` | auth or setup `mfa_token` | A new secret, `otpauth://` URI and QR (SVG data URL), plus a `setup_token`. Nothing is saved yet. |
+| POST | `/api/auth/2fa/totp/enable` | auth + `password`, or setup `mfa_token` | `{setup_token, code}`: saves it. The first factor returns `recovery_codes` and ends every other session; this one gets a new session (`access_token` and cookies). |
+| POST | `/api/auth/2fa/totp/disable` | auth | `{password}`. |
+| POST | `/api/auth/2fa/recovery-codes` | auth | `{password}` → a new set (the old ones stop working). |
+| POST | `/api/auth/2fa/passkeys/options` | auth or setup `mfa_token` | WebAuthn creation options and `state`. `400` unless `COVE_APP_ORIGIN` is a domain name (also `passkeys` in `GET /api/auth/config`). |
+| POST | `/api/auth/2fa/passkeys` | auth + `password`, or setup `mfa_token` | `{state, credential, name}`: registers it (same extras as `totp/enable`). |
+| POST | `/api/auth/2fa/passkeys/{id}/delete` | auth | `{password}`. |
+
 ## Workspaces — `/api/workspaces`
 
 | Method | Path | Auth | Purpose |
@@ -113,7 +136,8 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 | Method | Path | Purpose |
 |---|---|---|
 | GET / POST | `/api/admin/users` | List / create users. |
-| PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. `zones_restricted` + `allowed_zone_ids` set the user's zone limit (either may be sent alone; unknown zone ids are a `400`). `lan_only`: local network only. `max_workspaces` / `max_running`: a number caps it, `0` is no limit, an explicit `null` follows the default, and leaving the field out keeps it. |
+| PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. `zones_restricted` + `allowed_zone_ids` set the user's zone limit (either may be sent alone; unknown zone ids are a `400`). `lan_only`: local network only. `require_2fa`: set up two-factor sign-in at the next sign-in. `max_workspaces` / `max_running`: a number caps it, `0` is no limit, an explicit `null` follows the default, and leaving the field out keeps it. |
+| POST | `/api/admin/users/{id}/reset-2fa` | Remove the user's authenticator app, passkeys and recovery codes, and sign them out everywhere. |
 | POST | `/api/admin/users/{id}/revoke-sessions` | Sign the user out everywhere (every token issued before now stops working). |
 | GET | `/api/admin/sessions` | List every user's running/starting workspaces. |
 | DELETE | `/api/admin/sessions/{id}` | Stop one of them (the workspace is kept; it used to be deleted). `400` unless running/starting. |

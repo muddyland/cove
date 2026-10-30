@@ -26,6 +26,7 @@ from server.routers import (
     images,
     integration,
     internal,
+    mfa,
     proot,
     thin_clients,
     users,
@@ -453,6 +454,7 @@ def create_app() -> FastAPI:
         return app
 
     app.include_router(auth.router)
+    app.include_router(mfa.router)
     app.include_router(images.router)
     app.include_router(workspaces.router)
     app.include_router(workspace_files.router)

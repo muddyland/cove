@@ -11,6 +11,10 @@ export interface User {
   max_running: number | null
   /** Sign-in, sessions and streams only from the LAN networks (Admin → Settings). */
   lan_only: boolean
+  /** Two-factor sign-in (local accounts). */
+  totp_enabled: boolean
+  passkey_count: number
+  require_2fa: boolean
   auth_provider: string
   created_at: string
   last_login_at: string | null
@@ -27,6 +31,42 @@ export interface UserFormPayload {
   max_workspaces: number | null
   max_running: number | null
   lan_only: boolean
+  require_2fa: boolean
+}
+
+/** What the password step of sign-in answers. */
+export type LoginStep =
+  | { access_token: string }
+  | { mfa_required: true; mfa_token: string; methods: ('totp' | 'passkey' | 'recovery')[] }
+  | { mfa_setup_required: true; mfa_token: string }
+
+export interface TwoFactorStatus {
+  available: boolean
+  passkeys_enabled?: boolean
+  required: boolean
+  totp: boolean
+  recovery_codes_left: number
+  passkeys: { id: number; name: string; created_at: string; last_used_at: string | null; transports: string[] }[]
+}
+
+export interface TotpSetup {
+  secret: string
+  uri: string
+  /** data: URL of an SVG QR code */
+  qr: string
+  setup_token: string
+}
+
+/** WebAuthn options as JSON (binary fields base64url) plus the signed state to send back. */
+export interface WebAuthnChallenge {
+  options: Record<string, any>
+  state: string
+}
+
+/** Enrolment answers: recovery codes on the first factor; a session when finishing setup at sign-in. */
+export interface EnrolResult {
+  recovery_codes?: string[]
+  access_token?: string
 }
 
 /** What Cove sees of the admin's own request (Admin → Settings → Sign-in). */
@@ -51,6 +91,8 @@ export interface AuthConfig {
   oidc_provider_name: string
   needs_setup: boolean
   oidc_only: boolean
+  /** Passkey sign-in works on this server (COVE_APP_ORIGIN is a domain name). */
+  passkeys?: boolean
 }
 
 export type ImageType = 'desktop' | 'browser' | 'link' | 'app'
@@ -370,6 +412,7 @@ export interface AppSettings {
   default_max_running: number
   signin_lan_networks: string
   trusted_proxies: string
+  require_2fa_all: boolean
 }
 
 export interface EnvEntry {

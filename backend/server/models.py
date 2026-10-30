@@ -55,6 +55,13 @@ class User(Base):
     # Local network only (server.lan_access): sign-in, sessions, the API and
     # workspace streams all refuse requests from outside the LAN networks.
     lan_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # Two-factor sign-in for local accounts (server.mfa, server.passkeys). The
+    # TOTP secret is encrypted at rest; totp_last_step stops a code being used
+    # twice. require_2fa: this account must set up 2FA at its next sign-in
+    # (Admin -> Settings can also require it of every local account).
+    totp_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    totp_last_step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    require_2fa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
 
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"
@@ -68,6 +75,25 @@ class User(Base):
     zone_links: Mapped[list["UserZone"]] = relationship(
         "UserZone", cascade="all, delete-orphan", passive_deletes=True
     )
+    passkeys: Mapped[list["WebAuthnCredential"]] = relationship(
+        "WebAuthnCredential", cascade="all, delete-orphan", passive_deletes=True,
+        order_by="WebAuthnCredential.id",
+    )
+    recovery_codes: Mapped[list["RecoveryCode"]] = relationship(
+        "RecoveryCode", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    @property
+    def totp_enabled(self) -> bool:
+        return bool(self.totp_secret)
+
+    @property
+    def passkey_count(self) -> int:
+        return len(self.passkeys)
+
+    @property
+    def has_2fa(self) -> bool:
+        return self.totp_enabled or bool(self.passkeys)
 
     @property
     def allowed_zone_ids(self) -> list[int]:
@@ -650,3 +676,31 @@ class IntegrationToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_used_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+
+class WebAuthnCredential(Base):
+    """A passkey or security key registered to a local account (server.passkeys)."""
+
+    __tablename__ = "webauthn_credential"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    # base64url of the authenticator's credential id.
+    credential_id: Mapped[str] = mapped_column(String(1400), unique=True, nullable=False)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transports: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class RecoveryCode(Base):
+    """A one-time 2FA recovery code; only its sha256 is stored."""
+
+    __tablename__ = "recovery_code"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

@@ -27,6 +27,8 @@
         </form>
       </section>
 
+      <TwoFactorPanel v-if="isLocalUser" :username="auth.user?.username" :thin-client="!!thinClient.info" />
+
       <section id="vpn" class="panel">
         <div class="panel-head">
           <h3>VPN PROFILES</h3>
@@ -183,6 +185,8 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import RowMenu, { type RowMenuItem } from '@/components/RowMenu.vue'
 import VpnProfileModal from '@/components/VpnProfileModal.vue'
 import TailscaleProfileModal from '@/components/TailscaleProfileModal.vue'
+import TwoFactorPanel from '@/components/TwoFactorPanel.vue'
+import { useThinClientStore } from '@/stores/thinClient'
 import { AlertTriangle, Network, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-vue-next'
 import { authApi } from '@/api/auth'
 import { usersApi } from '@/api/users'
@@ -192,6 +196,8 @@ import { useAuthStore } from '@/stores/auth'
 
 const ui = useUiStore()
 const auth = useAuthStore()
+const thinClient = useThinClientStore()
+thinClient.load()
 
 // SSO (OIDC) accounts have no local password — hide the change-password panel.
 const isLocalUser = computed(() => auth.user?.auth_provider === 'local')

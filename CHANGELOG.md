@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Two-factor sign-in: authenticator apps, passkeys and security keys.**
+  Local accounts can add a code from an authenticator app, a passkey, or a
+  USB / NFC security key (Preferences → Two-factor sign-in), with ten
+  one-time recovery codes. A passkey signs in on its own (username, then the
+  key and its PIN, no password and no code). Admins can require 2FA per
+  account (Admin → Users) or for every local account (Admin → Settings →
+  Sign-in); such accounts set it up while signing in. **Reset 2FA** (Admin →
+  Users) helps a user who lost their phone or key. On a thin client, sign-in
+  asks for the username, then the password or **Use security key**; Debian's
+  udev rules already let the kiosk use a plugged-in key. SSO accounts are
+  unaffected. Adding a first factor signs out the account's other sessions.
+  **Operator action:** passkeys are offered only when `COVE_APP_ORIGIN` is
+  Cove's public address by domain name (`docker-compose.prod.yml` sets it);
+  they're tied to that name. Without it, only authenticator apps are offered.
+  Also: full-width buttons (sign-in) centre their label, and a mistyped
+  current password (Preferences → Change password) shows an error instead of
+  signing you out (it now answers 403, not 401).
 - **Local network only accounts.** Tick **Local network only** on an account
   (Admin → Users) and it can only sign in, keep a session, call the API and
   open workspaces from your own network, so a leaked password or stolen

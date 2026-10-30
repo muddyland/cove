@@ -12,6 +12,8 @@ export const adminApi = {
     remove: (id: number) => api.delete(`/admin/users/${id}`),
     // Sign the user out everywhere (invalidates every token issued before now).
     revokeSessions: (id: number) => api.post<void>(`/admin/users/${id}/revoke-sessions`),
+    // Remove the user's authenticator app, passkeys and recovery codes, and sign them out.
+    reset2fa: (id: number) => api.post<User>(`/admin/users/${id}/reset-2fa`),
   },
   sessions: {
     list: () => api.get<Workspace[]>('/admin/sessions'),

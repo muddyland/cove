@@ -279,6 +279,19 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0058_user_lan_only",
         "ALTER TABLE user ADD COLUMN lan_only BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Two-factor sign-in (webauthn_credential and recovery_code come from create_all).
+    (
+        "0059_user_totp_secret",
+        "ALTER TABLE user ADD COLUMN totp_secret TEXT",
+    ),
+    (
+        "0060_user_totp_last_step",
+        "ALTER TABLE user ADD COLUMN totp_last_step INTEGER",
+    ),
+    (
+        "0061_user_require_2fa",
+        "ALTER TABLE user ADD COLUMN require_2fa BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

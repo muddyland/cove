@@ -59,6 +59,7 @@ assumes about its environment. For the deep architecture, see
 - Login is rate-limited both in the application (per IP) and at the Traefik edge.
 - Mutating cross-origin cookie-auth requests are rejected (CSRF protection).
 - Admins can **limit an account to certain zones**; the limit is enforced server-side wherever a workspace is placed, run or given files, and a limited account is never told the names or settings of zones it can't use.
+- Local accounts can add **two-factor sign-in**: an authenticator app (TOTP) or a passkey / security key, with one-time recovery codes. Admins can require it per account or for everyone, and reset it. The TOTP secret is encrypted at rest and recovery codes are stored as hashes; passkeys require user verification (PIN or fingerprint), challenges are single use, and the sign-in options never reveal whether an account exists. See [Authentication → Two-factor sign-in](authentication.md#two-factor-sign-in).
 - Admins can make an account **local network only**: sign-in, sessions, the API and workspace streams then refuse requests from outside the LAN networks, so a leaked password or stolen session is useless from the internet. Forwarded headers can only make a request look *less* local. See [Authentication → Local network only accounts](authentication.md#local-network-only-accounts).
 - Admins can cap how many workspaces an account may have and run at once.
 - Security-relevant actions are recorded to an **audit log** (see [Administration → Audit log](administration.md#audit-log)).

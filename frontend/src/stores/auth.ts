@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '@/api/auth'
-import type { User, AuthConfig } from '@/types'
+import type { User, AuthConfig, LoginStep } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
@@ -64,10 +64,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(username: string, password: string) {
-    const { access_token } = await authApi.login(username, password)
-    setToken(access_token)
+  /** Finish signing in with a session token from any sign-in step. */
+  async function completeSignIn(accessToken: string) {
+    setToken(accessToken)
     user.value = await authApi.me()
+  }
+
+  /** Password step. Returns null when signed in, or what the next step needs
+   *  (a second factor, or setting one up because an admin requires it). */
+  async function login(username: string, password: string): Promise<Exclude<LoginStep, { access_token: string }> | null> {
+    const step = await authApi.login(username, password)
+    if ('access_token' in step) {
+      await completeSignIn(step.access_token)
+      return null
+    }
+    return step
   }
 
   async function setup(username: string, password: string) {
@@ -88,6 +99,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user, token, config,
     isAuthenticated, isAdmin, needsSetup, oidcEnabled, oidcProviderName, oidcOnly,
-    setToken, clear, loadConfig, init, login, setup, logout,
+    setToken, clear, loadConfig, init, login, completeSignIn, setup, logout,
   }
 })

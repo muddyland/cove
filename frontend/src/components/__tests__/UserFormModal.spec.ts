@@ -11,7 +11,7 @@ import UserFormModal from '@/components/UserFormModal.vue'
 
 const bob: User = {
   id: 2, username: 'bob', is_admin: false, docker_allowed: false, zones_restricted: false,
-  allowed_zone_ids: [], max_workspaces: 3, max_running: null, lan_only: false, auth_provider: 'local',
+  allowed_zone_ids: [], max_workspaces: 3, max_running: null, lan_only: false, totp_enabled: false, passkey_count: 0, require_2fa: false, auth_provider: 'local',
   created_at: '2026-10-01T00:00:00Z', last_login_at: null,
 } as User
 

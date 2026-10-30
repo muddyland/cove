@@ -50,6 +50,16 @@
           useless from the internet.
         </p>
       </div>
+      <div v-if="!editUser || editUser.auth_provider === 'local'" class="form-group checkbox">
+        <label><input type="checkbox" v-model="form.require_2fa" /> Require two-factor sign-in</label>
+        <p class="hint">
+          <template v-if="editUser && (editUser.totp_enabled || editUser.passkey_count)">
+            Set up: {{ [editUser.totp_enabled ? 'authenticator app' : '', editUser.passkey_count ? `${editUser.passkey_count} passkey${editUser.passkey_count === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ') }}.
+            Required, it can't be removed down to nothing.
+          </template>
+          <template v-else>The account sets up an authenticator app or a passkey at its next sign-in.</template>
+        </p>
+      </div>
       <fieldset class="limits" :disabled="form.is_admin">
         <legend>Workspace limits</legend>
         <div class="limit-row">
@@ -102,6 +112,7 @@ const form = reactive({
   // Strings so "empty" (= the deployment default) survives the round trip.
   max_workspaces: '' as string | number, max_running: '' as string | number,
   lan_only: false,
+  require_2fa: false,
 })
 
 function limitValue(v: string | number): number | null {
@@ -120,6 +131,7 @@ watch(() => props.editUser, (u) => {
   form.max_workspaces = u?.max_workspaces ?? ''
   form.max_running = u?.max_running ?? ''
   form.lan_only = !!u?.lan_only
+  form.require_2fa = !!u?.require_2fa
 }, { immediate: true })
 
 // Zones to choose from (Local first). Loaded when the modal opens.
@@ -145,6 +157,7 @@ async function handleSubmit() {
       max_workspaces: limitValue(form.max_workspaces),
       max_running: limitValue(form.max_running),
       lan_only: form.lan_only,
+      require_2fa: form.require_2fa,
     }
     if (form.password) payload.password = form.password
     await props.onSubmit(payload)

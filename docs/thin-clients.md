@@ -205,6 +205,10 @@ agent in place. The browser keeps running, so nobody is signed out.
 
 ## 5. Sessions and sign-out
 
+Sign-in on a kiosk asks for the username first, then the password or a USB
+security key. See [Authentication → Two-factor sign-in → On a thin
+client](authentication.md#on-a-thin-client).
+
 Signing in on a thin client is ordinary Cove sign-in (local or OIDC/SSO). What
 differs is that the session belongs to the **device**:
 

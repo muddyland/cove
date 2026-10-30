@@ -46,6 +46,7 @@ const baseSettings: AppSettings = {
   default_max_running: 0,
   signin_lan_networks: '10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10',
   trusted_proxies: '',
+  require_2fa_all: false,
 }
 
 describe('AdminSettingsView', () => {
@@ -90,6 +91,7 @@ describe('AdminSettingsView', () => {
       default_max_running: 0,
       signin_lan_networks: '10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10',
       trusted_proxies: '',
+      require_2fa_all: false,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()
