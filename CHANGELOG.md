@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Security: zone agents refuse paths that change on the way to Docker.**
+  The agent's Docker proxy checked a request's path as written, but forwarded
+  it with dot segments resolved. A path like `/_ping/..%2fcontainers/create`
+  was therefore checked as a ping and served as a container create, which
+  skipped the create policy (privileged containers, host binds). That gives
+  root on the zone host to anyone holding the control plane's client
+  certificate, which is exactly what the agent policy exists to stop. The agent now
+  refuses any path with dot or empty segments, backslashes, or encoded
+  slashes, dots or percent signs (`400`), and the client-certificate pin
+  exempts only its exact internal paths instead of every path that starts
+  with one. docker-py never sends such paths, so nothing legitimate changes.
+  **Operator action:** after deploying, run **Admin → Zones → Update agent**
+  on every zone.
+
 - **Home Assistant integration.** **Admin → Integrations** mints tokens for
   Home Assistant and offers its integration as a download (unzip into Home
   Assistant's config folder). It adds Cove as a device with user and workspace

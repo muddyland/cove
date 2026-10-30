@@ -51,6 +51,34 @@ def _unversioned(path: str) -> str:
     return _VERSION_RE.sub("", path) or "/"
 
 
+# Percent-escapes that would decode into a path separator, a dot or another
+# escape. docker-py never sends them (it quotes with safe="/:"), so their only
+# use is to make the path the policy checks differ from the one the daemon
+# serves.
+_SMUGGLE_RE = re.compile(r"%(2f|2e|5c|25)", re.IGNORECASE)
+
+
+def path_is_canonical(path: str, raw_path: str | bytes | None = None) -> bool:
+    """True when ``path`` (decoded) can't be rewritten on its way upstream.
+
+    The policy below matches the decoded path, but httpx (and any proxy hop)
+    resolves dot segments before the request reaches the socket proxy, so
+    ``/_ping/../containers/create`` would be checked as a harmless ping and
+    served as a container create. Refuse anything that isn't already in its
+    final form: dot segments, empty segments, backslashes, and encoded
+    slashes, dots or percent signs in the raw path.
+    """
+    if not path.startswith("/") or "\\" in path or "//" in path or "%" in path:
+        return False
+    if any(seg in (".", "..") for seg in path.split("/")):
+        return False
+    if raw_path is not None:
+        raw = raw_path.decode("latin-1") if isinstance(raw_path, bytes) else raw_path
+        if _SMUGGLE_RE.search(raw):
+            return False
+    return True
+
+
 def _is_docker_path(path: str) -> bool:
     p = _unversioned(path)
     return any(p == x or p.startswith(x + "/") for x in _DOCKER_PREFIXES)
@@ -133,6 +161,10 @@ def register_docker_proxy(app: FastAPI) -> None:
     )
     async def docker_proxy(full_path: str, request: Request):
         path = "/" + full_path
+        if not path_is_canonical(request.url.path, request.scope.get("raw_path")) or not path_is_canonical(path):
+            return JSONResponse(
+                {"message": "blocked by Cove agent policy: non-canonical path"}, status_code=400
+            )
         if not _is_docker_path(path):
             return JSONResponse({"detail": "Not Found"}, status_code=404)
 
