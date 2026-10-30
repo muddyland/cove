@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-AGENT_VERSION = "1.1.0"
+AGENT_VERSION = "1.1.1"
 
 ETC = "/etc/cove-thin-client"
 CONFIG = f"{ETC}/config.json"
@@ -98,21 +98,32 @@ def run(cmd, *, timeout=60, check=False, env=None, input_=None):
 
 
 def write_if_changed(path, content, mode=0o644, owner=None):
-    """Write ``content`` atomically if it differs. Returns True when changed."""
+    """Write ``content`` atomically if it differs. Returns True when changed.
+
+    Never follows a symlink at ``path`` or at its temp file: the agent runs as
+    root and writes into the kiosk user's home (``.bash_profile``), where that
+    user could otherwise plant ``x.cove-tmp -> /etc/passwd`` and have root
+    overwrite or chown the target."""
     data = content.encode() if isinstance(content, str) else content
     try:
-        with open(path, "rb") as f:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as f:
             if f.read() == data:
                 return False
-    except FileNotFoundError:
-        pass
+    except (FileNotFoundError, OSError):
+        pass  # missing, or a symlink (ELOOP): replace it below
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.cove-tmp"
-    with open(tmp, "wb") as f:
+    try:
+        os.unlink(tmp)  # removes a planted symlink itself, never its target
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as f:
         f.write(data)
-    os.chmod(tmp, mode)
-    if owner:
-        os.chown(tmp, owner[0], owner[1])
+        os.fchmod(f.fileno(), mode)
+        if owner:
+            os.fchown(f.fileno(), owner[0], owner[1])
     os.replace(tmp, path)
     return True
 
@@ -456,16 +467,20 @@ def import_local_cas(uid, gid, home):
             return
     except OSError:
         pass
-    os.makedirs(db, exist_ok=True)
+    # Everything under the kiosk's home runs AS the kiosk user: that user owns
+    # the directory, so as root any chown or write there could be redirected
+    # through a planted symlink (e.g. ~/.pki/x -> /etc/passwd).
+    as_kiosk = ["setpriv", f"--reuid={uid}", f"--regid={gid}", "--clear-groups", "--"]
+    env = {"HOME": home, "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}
+    run([*as_kiosk, "mkdir", "-p", db], env=env)
     if not os.path.exists(f"{db}/cert9.db"):
-        run(["certutil", "-N", "-d", f"sql:{db}", "--empty-password"])
+        run([*as_kiosk, "certutil", "-N", "-d", f"sql:{db}", "--empty-password"], env=env)
     for ca in cas:
         name = "cove-local-" + os.path.basename(ca)
-        run(["certutil", "-A", "-d", f"sql:{db}", "-t", "C,,", "-n", name, "-i", ca])
-    for root, dirs, files in os.walk(f"{home}/.pki"):
-        os.chown(root, uid, gid)
-        for f in files:
-            os.chown(os.path.join(root, f), uid, gid)
+        # Readable by the kiosk user: piped in by root rather than opened by path.
+        with open(ca, "rb") as f:
+            pem = f.read().decode("ascii", "replace")
+        run([*as_kiosk, "certutil", "-A", "-d", f"sql:{db}", "-t", "C,,", "-a", "-n", name], env=env, input_=pem)
     write_if_changed(marker, digest + "\n")
 
 
@@ -983,7 +998,7 @@ class Agent:
         wipe somehow missed something."""
         with self.lock:
             try:
-                self.api.request("POST", "/api/thin-client/signed-out", {}, timeout=10)
+                self.api.request("POST", "/api/thin-client/signed-out", {"reason": str(reason)[:32]}, timeout=10)
             except Exception as exc:  # noqa: BLE001
                 log.warning("could not report sign-out (%s): %s", reason, exc)
             self.session_user = None

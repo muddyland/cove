@@ -144,7 +144,7 @@
         start downloads it, which can take several minutes — progress shows on the card.</span>
       </p>
 
-      <p v-if="!urlCapable" class="hint ready-note">Ready to launch — or customize networking &amp; apps below.</p>
+      <p v-if="!urlCapable && !noZones" class="hint ready-note">Ready to launch — or customize networking &amp; apps below.</p>
     </section>
 
     <!-- Step 3: Network -->
@@ -205,25 +205,25 @@
         <NeonButton type="button" variant="primary" :disabled="!form.image_id" @click="goNext">Next</NeonButton>
       </template>
       <template v-else-if="step === 'basics'">
-        <NeonButton type="button" variant="secondary" @click="goToNetwork">Customize →</NeonButton>
-        <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
+        <NeonButton type="button" variant="secondary" :disabled="noZones" @click="goToNetwork">Customize →</NeonButton>
+        <NeonButton type="button" variant="primary" :loading="loading" :disabled="noZones" @click="launch">Launch</NeonButton>
       </template>
       <template v-else-if="step === 'network'">
         <NeonButton type="button" variant="secondary" @click="step = 'access'">Next: Access →</NeonButton>
-        <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
+        <NeonButton type="button" variant="primary" :loading="loading" :disabled="noZones" @click="launch">Launch</NeonButton>
       </template>
       <template v-else-if="step === 'access'">
         <NeonButton type="button" variant="secondary" @click="step = appsStepAvailable ? 'apps' : 'review'">
           {{ appsStepAvailable ? 'Next: Apps →' : 'Review →' }}
         </NeonButton>
-        <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
+        <NeonButton type="button" variant="primary" :loading="loading" :disabled="noZones" @click="launch">Launch</NeonButton>
       </template>
       <template v-else-if="step === 'apps'">
         <NeonButton type="button" variant="secondary" @click="step = 'review'">Review →</NeonButton>
-        <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
+        <NeonButton type="button" variant="primary" :loading="loading" :disabled="noZones" @click="launch">Launch</NeonButton>
       </template>
       <template v-else>
-        <NeonButton type="button" variant="primary" :loading="loading" @click="launch">Launch</NeonButton>
+        <NeonButton type="button" variant="primary" :loading="loading" :disabled="noZones" @click="launch">Launch</NeonButton>
       </template>
     </div>
   </BaseModal>

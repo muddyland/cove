@@ -29,8 +29,8 @@
           <template v-if="form.is_admin">Admins can always use every zone.</template>
           <template v-else-if="!form.zones_restricted">This account can run workspaces on every zone.</template>
           <template v-else>
-            Workspaces can only be launched, started, cloned or migrated on the zones ticked below.
-            Existing workspaces elsewhere stay, but can't start until migrated.
+            Workspaces can only be launched, started, cloned, migrated or given new files on the zones
+            ticked below. Existing workspaces elsewhere stay, but can't start until migrated.
           </template>
         </p>
         <div v-if="form.zones_restricted && !form.is_admin" class="zone-list">

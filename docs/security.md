@@ -39,11 +39,26 @@ assumes about its environment. For the deep architecture, see
 - The control plane reaches a zone's Docker daemon only through the agent's mTLS port and a policy filter that allow-lists what a container may be created with, which containers may be exec'd into, and which volumes/networks may be created. See [Zones](zones.md#1-how-it-fits-together).
 - Stream relays use a separate per-zone edge cert that the agent never accepts on its API or Docker paths.
 - A zone is dialed only once enrolled; enrollment pins the endpoint an admin configured.
+- The agent refuses any Docker API path that isn't already in its final form (dot or empty segments, backslashes, encoded slashes or dots), so the path its policy checks is always the path the daemon serves.
+
+## Thin clients
+
+- A thin client **only dials out**: its agent long-polls Cove over HTTPS with a random device token, stored root-only on the device and only as a sha256 in Cove. Enrolment codes are single-use and short-lived. See [Thin clients → Security model](thin-clients.md#7-security-model).
+- **Sessions belong to the device.** The kiosk browser is bound with a one-time ticket and an httpOnly cookie (the device token never enters the browser). Every token minted there, workspace stream cookies included, carries the device and its sign-in time, and dies on that device's sign-out, idle timeout or **Longest session** cap. Signing a kiosk out never signs the user out of their other browsers.
+- **It fails closed.** A browser whose binding is revoked, expired or whose device is gone can't sign in at all, and at the cap Cove restarts the browser on a wiped profile, so the next person can't inherit an identity provider's cookie.
+- **Cove has root on its thin clients**, by design: their agent updates itself from Cove. The agent never acts as root inside the kiosk user's home, so a browser compromise can't use it as a path to root. Install USBs require an `https://` Cove address.
+
+## Integration tokens (Home Assistant)
+
+- An integration token works on `/api/integration/v1` **and nowhere else**: it is not a sign-in and can't open workspaces, files or admin endpoints. Only its sha256 is stored.
+- **Read** sees counters and who is signed in on which thin client; **Control** also sees screenshots and can command devices. Screenshots, disruptive commands, and token creation and revocation are audited.
+- A token acts with its creator's admin authority and is revoked when that account is deleted or demoted. See [Home Assistant → Tokens and security](home-assistant.md#tokens-and-security).
 
 ## Rate limiting & audit
 
 - Login is rate-limited both in the application (per IP) and at the Traefik edge.
 - Mutating cross-origin cookie-auth requests are rejected (CSRF protection).
+- Admins can **limit an account to certain zones**; the limit is enforced server-side wherever a workspace is placed, run or given files, and a limited account is never told the names or settings of zones it can't use.
 - Security-relevant actions are recorded to an **audit log** (see [Administration → Audit log](administration.md#audit-log)).
 
 ## Operator responsibilities

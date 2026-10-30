@@ -346,7 +346,10 @@ function updateClass(id: number) {
 async function checkUpdate(img: WorkspaceImage) {
   checkingId.value = img.id
   try {
-    updates.value = { ...updates.value, [img.id]: await imagesApi.checkUpdate(img.id, zoneId.value) }
+    // Await first: spreading before the await would drop a check that
+    // finished meanwhile for another image.
+    const result = await imagesApi.checkUpdate(img.id, zoneId.value)
+    updates.value = { ...updates.value, [img.id]: result }
   } catch (e: any) {
     ui.toast(e.message || 'Update check failed', 'error')
   } finally {

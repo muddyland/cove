@@ -175,6 +175,7 @@ def test_status_reports_thin_clients(client):
 def test_status_names_the_workspace_on_screen(client):
     admin, _ = setup_admin(client)
     ws = _workspace(client, admin, "lab")
+    set_workspace_status(ws, "running")  # only a running workspace streams
     _, dtoken = _enroll(client, admin, "Desk")
     _checkin(client, dtoken)
     kiosk = TestClient(client.app)
@@ -280,7 +281,8 @@ def test_signout_and_keep_awake(client):
 def test_screenshot(client):
     admin, _ = setup_admin(client)
     dev, dtoken = _enroll(client, admin)
-    token = _mint(client, admin, scope="read")["token"]
+    reader = _mint(client, admin, scope="read", name="Grafana")["token"]
+    token = _mint(client, admin, scope="control")["token"]
     url = f"/api/integration/v1/thin-clients/{dev['public_id']}/screenshot.png"
     assert client.get(url, headers=auth_header(token)).status_code == 404
     png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
@@ -289,6 +291,8 @@ def test_screenshot(client):
     r = client.get(url, headers=auth_header(token))
     assert r.status_code == 200 and r.content == png
     assert _status(client, token)["thin_clients"][0]["screenshot_at"]
+    # A screenshot shows what someone has on screen: control tokens only.
+    assert client.get(url, headers=auth_header(reader)).status_code == 403
 
 
 def test_home_assistant_download(client):

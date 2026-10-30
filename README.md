@@ -64,6 +64,16 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
     </td>
   </tr>
   <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/thin-clients.png" alt="Admin, Thin clients: three kiosk screens, one waiting to enrol and two online with live screenshots, session, screen, display, audio, OS updates and agent version" /><br />
+      <sub><b>Thin clients</b> — every kiosk screen at a glance, with screenshots and one-click sleep, sign-out and settings</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/integrations.png" alt="Admin, Integrations: Home Assistant tokens with Control or Read access, when each was created and last used, and a Revoke button" /><br />
+      <sub><b>Integrations</b> — scoped tokens for Home Assistant, separate from any sign-in</sub>
+    </td>
+  </tr>
+  <tr>
     <td colspan="2" align="center">
       <img src="screenshots/files.png" width="50%" alt="The Files page with a row's ⋯ menu open: Download, Copy, Cut, Move to trash and Delete permanently" /><br />
       <sub><b>Files</b> — browse, upload and organise your storage; per-row actions in a ⋯ (or right-click) menu</sub>
@@ -79,12 +89,12 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 - **One launcher** — a single flow asks what you want (desktop, browser or app), then shows only images of that kind. Browsers can boot straight at up to six URLs, kiosk-style for web-app delivery, with dark mode and full-screen variants offered only where that browser honours them.
 - **Seven browsers** — Chromium, Brave, Firefox, Edge, Helium, Vivaldi and Opera.
 - **In-stream controls** — fullscreen, a CRT toggle, HALT, and a **quick-switch menu** to jump between (or boot) other nodes without leaving the stream.
+- **One screen at a time** — opening a workspace on another browser or a thin client moves the stream there, and the page that had it says where it went, with **Take it back here**.
 - **Live dashboard** — workspaces split into Active/Offline, with per-container **CPU & memory** on running cards and the **Tailscale IP** shown (and copyable) for tailnet nodes.
 - **Screen previews** — every running card shows a still of what's actually on that node's screen, captured from its own stream (X11 and Wayland alike). Doubles as the readiness check: a node isn't "running" until its stream renders a real frame. Previews are dropped the moment a workspace halts, and a workspace can't be connected to until its stream has rendered that first frame.
 - **Per-workspace apps** — install distro packages (`universal-package-install`), LinuxServer **proot-apps**, and **AppImages** (auto-extracted with a desktop launcher) at launch, then **manage them from the UI**: see what's installed, which proot-apps have a newer build, update/install/remove either kind, and watch it run in a **background tasks** menu.
 - **Fresh containers** — halting a workspace removes its container; bringing it back always pulls the latest image.
 - **Persistent storage** — per-workspace home directories that survive restarts (or go fully ephemeral, wiped on halt).
-
 - **Thin clients** — turn a spare mini PC into a kiosk that boots straight into Cove (Debian, sway and locked-down Chromium), set up with a one-liner or an install USB. Manage every screen from **Admin → Thin clients**: screen-off and on-hours, idle sign-out that ends only that screen's session, auto-open the running or a pinned workspace, rotation and brightness, screenshots, OS updates and reboots. Devices only dial out, so no port is opened, and their agent updates itself from Cove. See [Thin clients](docs/thin-clients.md).
 - **Home Assistant integration** — Cove, its zones and its thin clients as Home Assistant devices: user and workspace counts, per-zone workspace CPU and memory, who is signed in on each screen and what it shows, plus switches for screen, mute and keep-awake, a volume slider, and identify, sign-out and reboot buttons. Scoped integration tokens from **Admin → Integrations**; Home Assistant polls over Cove's usual HTTPS address. See [Home Assistant](docs/home-assistant.md).
 - **Browser extension** — *Open in Cove* sends any link from your own Chrome-based browser into a disposable Cove browser workspace. Served by your own server from the **user menu → Browser extension**, no store or internet needed.
@@ -109,6 +119,7 @@ to install. It's built for home labs: simple to run, low overhead, multi-user.
 - **Resource limits** — admin-set default **CPU (cores)** and **memory (MB)** caps applied to workspace containers (0 = unlimited).
 - **Admin settings** — pin/override the Tailscale and Gluetun sidecar images, toggle LAN access, force-disable sudo, set max runtime and CPU/memory limits, plus a read-only summary of env-configured settings.
 - **Admin UI** — manage users, images, live sessions, and the audit log.
+- **Per-user zone limits** — keep a zone (say, a LAN box) for some accounts: a limited account sees, launches on and stores files to only the zones you tick.
 
 ### ✨ Experience
 

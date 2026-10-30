@@ -44,6 +44,20 @@ async def test_user_flow_errors(hass: HomeAssistant, aioclient_mock) -> None:
     result = await _start(hass, **{CONF_URL: "cove.example.com"})
     assert result["errors"] == {CONF_URL: "invalid_url"}
 
+    # Plain http:// would send the token in clear across the network.
+    for url in ("http://cove.example.com", "http://192.168.1.5:8080"):
+        result = await _start(hass, **{CONF_URL: url})
+        assert result["errors"] == {CONF_URL: "insecure_url"}, url
+
+
+async def test_plain_http_to_this_machine_is_allowed(hass: HomeAssistant, aioclient_mock, status) -> None:
+    for url in ("http://localhost:8000", "http://127.0.0.1:8000", "http://[::1]:8000"):
+        aioclient_mock.clear_requests()
+        aioclient_mock.get(f"{url}/api/integration/v1/status", json=status)
+        result = await _start(hass, **{CONF_URL: url})
+        assert result["type"] is FlowResultType.CREATE_ENTRY, (url, result.get("errors"))
+        await hass.config_entries.async_remove(result["result"].entry_id)
+
 
 async def test_same_server_twice_aborts(hass: HomeAssistant, aioclient_mock, status, entry) -> None:
     entry.add_to_hass(hass)

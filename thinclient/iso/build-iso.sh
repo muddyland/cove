@@ -61,7 +61,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$COVE_URL" ] || die "--cove-url is required"
-case "$COVE_URL" in http://*|https://*) ;; *) die "--cove-url must start with https:// (or http://)" ;; esac
+# https only: over plain http, anything on the path could swap the agent (its
+# checksum arrives in the same response) and run code as root on the device.
+case "$COVE_URL" in https://*) ;; *) die "--cove-url must start with https:// (see --ca-file for a self-signed Cove)" ;; esac
 [[ "$HOST" =~ ^[a-zA-Z0-9-]{1,63}$ ]] || die "--hostname must be a plain host name"
 [[ "$KEYMAP" =~ ^[a-z0-9_()-]+$ ]] || die "--keymap looks wrong"
 [[ "$TIMEZONE" =~ ^[A-Za-z0-9_/+-]+$ ]] || die "--timezone looks wrong"

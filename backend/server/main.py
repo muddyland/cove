@@ -387,18 +387,29 @@ def create_app() -> FastAPI:
         # carry no cert-info header. They expose nothing sensitive (the ForwardAuth
         # validates a stream token; the error page is static), so they must bypass
         # the CN pin or every workspace stream's ForwardAuth would 403.
-        _cn_exempt = ("/agent/auth/forward", "/__cove_error", "/api/health", "/agent/health")
+        _cn_exempt_exact = ("/agent/auth/forward", "/__cove_error", "/api/health", "/agent/health")
+        _cn_exempt_prefix = ("/__cove_error/",)
+
+        def _cn_exempt(path: str) -> bool:
+            # Exact paths only (plus the error page's /{status} suffix): a prefix
+            # match let "/api/health/../containers/create" skip the CN pin.
+            return path in _cn_exempt_exact or path.startswith(_cn_exempt_prefix)
 
         @app.middleware("http")
         async def verify_client_cn(request: Request, call_next):
             """Pin the agent to its control plane's client cert: reject any request
             whose forwarded client-cert CN isn't the expected cove-cp-<zone> CN.
             Skipped when no expected CN is configured (dev/tests) or for internal
-            Traefik callbacks (which have no client cert)."""
+            Traefik callbacks (which have no client cert). Non-canonical paths
+            (dot segments, encoded slashes) are refused outright, before any
+            exemption or policy sees them."""
             from server.client_cert import CLIENT_CERT_INFO_HEADER, extract_client_cn
+            from server.routers.docker_proxy import path_is_canonical
 
+            if not path_is_canonical(request.url.path, request.scope.get("raw_path")):
+                return JSONResponse(status_code=400, content={"detail": "non-canonical path"})
             expected = get_settings().agent_expected_client_cn
-            if expected and not request.url.path.startswith(_cn_exempt):
+            if expected and not _cn_exempt(request.url.path):
                 raw = request.headers.get(CLIENT_CERT_INFO_HEADER)
                 cn = extract_client_cn(raw)
                 if cn != expected:

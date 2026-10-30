@@ -75,7 +75,8 @@ async def test_read_only_token_has_no_controls(hass: HomeAssistant, aioclient_mo
     await _setup(hass, entry, aioclient_mock, status)
     registry = er.async_get(hass)
     platforms = {e.domain for e in er.async_entries_for_config_entry(registry, entry.entry_id)}
-    assert platforms == {"sensor", "binary_sensor", "image"}
+    # No screenshots either: they need a Control token.
+    assert platforms == {"sensor", "binary_sensor"}
 
 
 async def test_controls_queue_commands(hass: HomeAssistant, aioclient_mock, status, entry) -> None:
@@ -160,3 +161,18 @@ async def test_screenshot_image(hass: HomeAssistant, aioclient_mock, status, ent
     client = await hass_client()
     resp = await client.get(state.attributes["entity_picture"])
     assert resp.status == 200 and await resp.read() == png
+
+
+async def test_diagnostics_hide_the_token_network_and_who_is_where(
+    hass: HomeAssistant, aioclient_mock, status, entry
+) -> None:
+    from custom_components.cove.diagnostics import async_get_config_entry_diagnostics
+
+    await _setup(hass, entry, aioclient_mock, status)
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    flat = repr(diag)
+    for secret in ("cit_", "cove.example.com", "10.0.0.5", "'bob'", "'lab'", "Office", "'desk'"):
+        assert secret not in flat, secret
+    # Still useful for a bug report: state and versions survive.
+    assert diag["status"]["thin_clients"][0]["agent_version"] == "1.1.0"
+    assert diag["status"]["thin_clients"][0]["online"] is True

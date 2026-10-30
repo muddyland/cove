@@ -45,6 +45,7 @@ from server.schemas import (
     ThinClientPolicy,
     ThinClientResultIn,
     ThinClientSelfOut,
+    ThinClientSignedOutIn,
     ThinClientTicketOut,
     ThinClientUpdate,
     ThinClientWorkspaceOption,
@@ -162,8 +163,13 @@ def update_thin_client(client_id: int, body: ThinClientUpdate, admin: AdminUser,
         client.location = body.location.strip() or None
         changed.append("location")
     if body.policy is not None:
+        before = tc.load_policy(client).model_dump()
         tc.save_policy(client, body.policy)
-        changed.append("policy")
+        after = body.policy.model_dump()
+        # Name what changed, with values: extra allowed hosts widen what the
+        # kiosk browser may open, so they belong in the audit trail.
+        diff = [f"{k}={after[k]!r}" for k in sorted(after) if before.get(k) != after[k]]
+        changed.append(f"policy ({'; '.join(diff)})" if diff else "policy")
     db.commit()
     if changed:
         tc.notify(client.id)
@@ -285,6 +291,9 @@ def _checkin_once(token: str, body: ThinClientCheckinIn, cp: str, record: bool) 
                 client.state_json = blob
         client.last_seen_at = tc.now_utc()
         db.commit()
+        who = client.session_username
+        if tc.enforce_session_limits(db, client) == "cap":
+            _audit(db, "thin_client.session_cap", detail=f"{client.name}: {who}")
         cmds = tc.take_queued(db, client)
         bundle = tc.agent_bundle()
         return ThinClientCheckinOut(
@@ -367,11 +376,22 @@ def command_result(command_id: int, body: ThinClientResultIn, request: Request, 
 
 @device_router.post("/screenshot", status_code=status.HTTP_204_NO_CONTENT)
 async def upload_screenshot(request: Request):
-    data = b""
+    # Authenticate before reading a byte of the body, so an anonymous caller
+    # can't make Cove buffer megabytes per request.
+    if await run_in_threadpool(_client_id_for, _bearer(request)) is None:
+        raise HTTPException(status_code=401, detail="Unknown or revoked device")
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        declared = 0
+    if declared > tc.SCREENSHOT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Screenshot too large")
+    buf = bytearray()
     async for chunk in request.stream():
-        data += chunk
-        if len(data) > tc.SCREENSHOT_MAX_BYTES:
+        buf += chunk
+        if len(buf) > tc.SCREENSHOT_MAX_BYTES:
             raise HTTPException(status_code=413, detail="Screenshot too large")
+    data = bytes(buf)
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise HTTPException(status_code=400, detail="Expected a PNG")
 
@@ -397,14 +417,19 @@ def browser_ticket(request: Request, db: DbSession):
 
 
 @device_router.post("/signed-out", status_code=status.HTTP_204_NO_CONTENT)
-def device_signed_out(request: Request, db: DbSession):
-    """The device signed itself out (idle timeout). Revoke its sessions; the
-    agent resets the browser itself, so no restart command is queued."""
+def device_signed_out(request: Request, db: DbSession, body: Optional[ThinClientSignedOutIn] = None):
+    """The device reset its browser (idle timeout, or a restart command). Revoke
+    its sessions; the agent resets the browser itself, so no restart command is
+    queued. Agents before 1.1.1 send no reason; theirs was always "idle"
+    unless a command asked for the reset."""
     client = _device(db, request)
     who = client.session_username
+    reason = (body.reason if body else "") or "idle"
     tc.revoke_sessions(db, client, reset_browser=False)
     if who:
-        _audit(db, "thin_client.idle_signout", detail=f"{client.name}: {who}", request=request)
+        action = "thin_client.idle_signout" if reason == "idle" else "thin_client.browser_reset"
+        detail = f"{client.name}: {who}" + ("" if reason == "idle" else f" ({reason})")
+        _audit(db, action, detail=detail, request=request)
 
 
 @device_router.get("/agent")
@@ -499,10 +524,13 @@ def bind_browser(ticket: str, request: Request, db: DbSession):
     """Swap a one-time ticket for the httpOnly ``cove_tc`` cookie and land on the
     SPA. Fails closed: a kiosk that can't bind shows an error instead of an
     unscoped login page."""
-    if not _rate_ok(request, "tc-bind"):
-        raise HTTPException(status_code=429, detail="Too many attempts")
     client = tc.consume_ticket(db, ticket)
     if client is None:
+        # Only failures count toward the limit: a ticket is 256 random bits, so
+        # the limit isn't what protects it, and charging every bind to the
+        # source IP let junk requests lock out real kiosks behind the same NAT.
+        if not _rate_ok(request, "tc-bind"):
+            raise HTTPException(status_code=429, detail="Too many attempts")
         return HTMLResponse(_BIND_FAILED, status_code=403)
     client.bound_at = tc.now_utc()
     db.commit()

@@ -39,13 +39,21 @@ wait_network() {
 
 while true; do
   if ! wait_network; then
-    whiptail --backtitle "$BT" --title "// NO NETWORK" --yesno \
-      "\nNo network. Plug in a cable (or check the connection), then retry.\n\nRetry now?" 12 $W || exec bash
+    # Never a shell: this runs as root on tty1 before the device is enrolled,
+    # so a shell here would let anyone at the keyboard plant something.
+    whiptail --backtitle "$BT" --title "// NO NETWORK" --yes-button "Retry" --no-button "Power off" --yesno \
+      "\nNo network. Plug in a cable (or check the connection), then retry." 12 $W || systemctl poweroff
     continue
   fi
   URL=$(whiptail --backtitle "$BT" --title "// COVE ADDRESS" --inputbox \
     "\nThe address of your Cove server:" 10 $W "${COVE_URL:-https://}" 3>&1 1>&2 2>&3) || continue
   URL="${URL%/}"
+  case "$URL" in
+    https://*) ;;
+    *) whiptail --backtitle "$BT" --title "// ADDRESS" --msgbox \
+         "\nUse Cove's https:// address. Over plain http the device couldn't trust what it installs." 11 $W
+       continue ;;
+  esac
   CODE="$COVE_CODE"
   if [ -z "$CODE" ]; then
     CODE=$(whiptail --backtitle "$BT" --title "// ENROLMENT CODE" --inputbox \

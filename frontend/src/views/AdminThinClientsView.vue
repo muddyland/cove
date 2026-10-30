@@ -80,10 +80,10 @@
           </div>
           <div>
             <dt>System</dt>
-            <dd>
+            <dd :title="systemSummary(c)">
               {{ c.state.os || '—' }}
-              <span v-if="c.state.upgradable" class="warn">· {{ c.state.upgradable }} update{{ c.state.upgradable === 1 ? '' : 's' }}</span>
-              <span v-if="c.state.reboot_required" class="warn">· reboot needed</span>
+              <span v-if="c.state.upgradable" class="warn">&nbsp;· {{ c.state.upgradable }} update{{ c.state.upgradable === 1 ? '' : 's' }}</span>
+              <span v-if="c.state.reboot_required" class="warn">&nbsp;· reboot needed</span>
             </dd>
           </div>
           <div>
@@ -459,7 +459,11 @@ async function loadShot(c: ThinClient) {
     const blob = await thinClientsApi.screenshot(c.id)
     if (!blob) return
     // A data: URL, not an object URL: Cove's CSP has no blob: in img-src.
-    shots.value = { ...shots.value, [c.id]: await toDataUrl(blob) }
+    // Await BEFORE spreading: `{ ...shots.value, [id]: await x }` reads
+    // shots.value first, so two loads in flight overwrote each other and a
+    // device's thumbnail (and its open Screen dialog) stayed empty.
+    const url = await toDataUrl(blob)
+    shots.value = { ...shots.value, [c.id]: url }
   } catch {
     delete shotStamp[c.id]
   }
@@ -497,6 +501,14 @@ function displaySummary(c: ThinClient) {
   return outs
     .map(o => [o.make && o.make !== 'Unknown' ? o.model || o.make : o.name, o.mode].filter(Boolean).join(' '))
     .join(', ')
+}
+function systemSummary(c: ThinClient) {
+  const n = c.state.upgradable
+  return [
+    c.state.os || '—',
+    n ? `${n} update${n === 1 ? '' : 's'}` : '',
+    c.state.reboot_required ? 'reboot needed' : '',
+  ].filter(Boolean).join(' · ')
 }
 const COMMAND_LABELS: Record<ThinClientCommandKind, string> = {
   screen_on: 'Wake screen',
@@ -818,7 +830,7 @@ async function saveSettings() {
   position: relative; aspect-ratio: 16 / 9; overflow: hidden; cursor: pointer;
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-  color: var(--text-faint); font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 11px;
 }
 .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .shot .scan {
@@ -851,7 +863,7 @@ async function saveSettings() {
 
 .facts { margin: 0; display: grid; gap: 3px; font-family: var(--font-mono); font-size: 11.5px; }
 .facts > div { display: grid; grid-template-columns: 64px 1fr; gap: 8px; min-width: 0; }
-.facts dt { color: var(--text-faint); text-transform: uppercase; letter-spacing: 1px; font-size: 10px; line-height: 18px; }
+.facts dt { color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-size: 10px; line-height: 18px; }
 .facts dd { margin: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 18px; }
 .facts dd svg { vertical-align: -2px; color: var(--accent); }
 .err-row dd { color: var(--red); }
@@ -889,7 +901,12 @@ async function saveSettings() {
 }
 .form input:focus, .form select:focus, .form textarea:focus { outline: none; border-color: var(--accent); }
 .form input[type='range'] { accent-color: var(--accent); }
-.form small { color: var(--text-faint); font-size: 11px; line-height: 1.4; }
+/* Same look as ToggleRow's hints, so every help line in the dialog matches
+   (labels are uppercase mono; their help text isn't). */
+.form small {
+  color: var(--text-muted); font-size: 11px; line-height: 1.5;
+  font-family: system-ui, -apple-system, sans-serif; text-transform: none; letter-spacing: normal;
+}
 .form .val { color: var(--accent); margin-left: 6px; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; }
 .row label { flex: 1; min-width: 160px; }

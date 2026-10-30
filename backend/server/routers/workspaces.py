@@ -447,11 +447,13 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     )
     if body.use_gluetun:
         _check_gluetun_single_connection(db, user.id, g_profile_id)
+    # The zone limit first: the checks below name the zone or reveal its
+    # settings, which a user limited away from it mustn't learn.
+    zone_access.require_zone(db, user, body.zone_id, action="run workspaces")
     _validate_docker(db, body.use_docker, body.zone_id, user)
     _validate_gpu(body.gpu_accel, body.pixelflux_wayland)
 
     _validate_zone(db, body.zone_id)
-    zone_access.require_zone(db, user, body.zone_id, action="run")
     _check_name_unique(db, user.id, body.name)
 
     ws = Workspace(
@@ -597,8 +599,8 @@ def clone_workspace(
     )
     if src.use_gluetun:
         _check_gluetun_single_connection(db, user.id, g_profile_id)
+    zone_access.require_zone(db, user, src.zone_id, action="run workspaces")
     _validate_docker(db, src.use_docker, src.zone_id)
-    zone_access.require_zone(db, user, src.zone_id, action="run")
 
     clone = Workspace(
         user_id=user.id,
@@ -678,8 +680,8 @@ def migrate_workspace(
         raise HTTPException(
             status_code=409, detail="Stop the workspace before migrating so its files are at rest"
         )
+    zone_access.require_zone(db, ws.user, target, action="move workspaces")
     _validate_zone(db, target)
-    zone_access.require_zone(db, ws.user, target, action="move")
     if ws.use_docker:
         # A DinD workspace would arrive somewhere its nested daemon can't start,
         # and with the Docker toggle hidden from its edit form.
@@ -736,6 +738,8 @@ def gpu_policy(user: CurrentUser, db: DbSession, zone_id: int = 0):
     """
     from server import settings_store
 
+    if not zone_access.may_use(db, user, zone_id):
+        return GpuPolicyOut(enabled=False)  # nothing to learn about a forbidden zone
     return GpuPolicyOut(enabled=settings_store.get_zone_gpu_accel(db, zone_id))
 
 
@@ -774,6 +778,8 @@ def docker_policy(user: CurrentUser, db: DbSession, zone_id: int = 0):
     """
     from server import settings_store
 
+    if not zone_access.may_use(db, user, zone_id):
+        return DockerPolicyOut(enabled=False)
     return DockerPolicyOut(enabled=settings_store.get_zone_docker(db, zone_id))
 
 
@@ -1158,7 +1164,7 @@ def container_logs(
 
 
 @router.post("/{ws_id}/stream-auth", response_model=StreamAuthOut)
-def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
+def stream_auth(ws_id: int, request: Request, user: CurrentUser, db: DbSession):
     """Mint the iframe URL the SPA uses to open a workspace stream.
 
     Subdomain mode: returns ``//{host}/?__cove_t=<token>`` where the one-time
@@ -1176,7 +1182,13 @@ def stream_auth(ws_id: int, user: CurrentUser, db: DbSession):
 
     # One-time, short-lived bootstrap token for the URL — swapped for a fresh
     # stream cookie by ForwardAuth on first hit, then dead.
-    token = create_stream_bootstrap_token(user.id, ws.public_id)
+    from server import thin_clients
+    from server.routers.auth import _token_payload
+
+    # From a thin client, the stream is part of that device session: it ends
+    # when the device is signed out or its session cap passes.
+    claims = thin_clients.device_claims(db, _token_payload(request))
+    token = create_stream_bootstrap_token(user.id, ws.public_id, **claims)
     host = settings.workspace_host(ws.public_id)
     return StreamAuthOut(url=f"//{host}/?__cove_t={token}")
 

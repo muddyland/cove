@@ -116,6 +116,8 @@ client)", "Firefox on Linux") and since when. **Take it back here** moves the
 stream back, and the other screen then shows the same message. The workspace
 keeps running throughout; only the screen showing it changes.
 
+<img src="../screenshots/session-moved.png" width="70%" alt="Session moved: the workspace is now open on Chrome on Linux since 12:35 AM, with Back and Take it back here buttons" />
+
 ## Moving files in and out
 
 - **Drop files onto the stream** to copy them into the workspace: they land in

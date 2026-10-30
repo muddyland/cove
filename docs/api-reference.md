@@ -183,8 +183,8 @@ is accepted nowhere else.
 | POST | `/api/admin/integration-tokens` | admin | `{"name", "scope": "read"\|"control"}` → `201` with the plaintext `token`, shown this once. Only its sha256 is stored. |
 | DELETE | `/api/admin/integration-tokens/{id}` | admin | Revoke a token. |
 | GET | `/api/admin/integration-tokens/home-assistant.zip` | admin | The Home Assistant custom component (`custom_components/cove/…`). `404` when the build doesn't include it. |
-| GET | `/api/integration/v1/status` | read | Users, workspaces (by state), zones (online, counts, summed workspace CPU/memory) and enrolled thin clients (online, session, workspace on screen, screen, volume, updates…), plus the token's name and scope. |
-| GET | `/api/integration/v1/thin-clients/{public_id}/screenshot.png` | read | The latest screenshot (`404` if none). |
+| GET | `/api/integration/v1/status` | read | Users, workspaces (by state), zones (online, counts, summed workspace CPU/memory) and enrolled thin clients (online, session, workspace on screen, screen, volume, updates…), plus the token's name and scope. Tokens are revoked when their creator is deleted or loses admin. |
+| GET | `/api/integration/v1/thin-clients/{public_id}/screenshot.png` | control | The latest screenshot (`404` if none). |
 | POST | `/api/integration/v1/thin-clients/{public_id}/commands` | control | Queue `screen_on`, `screen_off`, `restart_browser`, `identify`, `screenshot`, `reboot`, `poweroff`, `set_volume` (`{"level": 0..150}`) or `set_mute` (`{"muted": bool}`) → `202`. Anything else is a `400`. |
 | POST | `/api/integration/v1/thin-clients/{public_id}/signout` | control | Revoke the device's sessions and reset its browser. |
 | POST | `/api/integration/v1/thin-clients/{public_id}/keep-awake` | control | `{"minutes"}` (0 clears it). |

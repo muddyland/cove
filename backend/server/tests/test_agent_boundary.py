@@ -381,3 +381,84 @@ def test_agent_forward_auth_subpath_verifies_relayed_token(monkeypatch):
         assert missing.status_code == 401
     finally:
         get_settings.cache_clear()
+
+
+# ── proxy: paths the policy sees must be the paths the daemon serves ───────
+
+def _raw_request(app, method: str, raw_path: str, body: bytes = b"", query: bytes = b"", headers=()):
+    """Drive the ASGI app with an exact raw path. TestClient (httpx) resolves dot
+    segments before sending, which would hide exactly the bug under test."""
+    import asyncio
+    from urllib.parse import unquote
+
+    sent = []
+    msgs = [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive():
+        return msgs.pop(0) if msgs else {"type": "http.disconnect"}
+
+    async def send(m):
+        sent.append(m)
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method,
+        "scheme": "http", "path": unquote(raw_path), "raw_path": raw_path.encode(),
+        "query_string": query, "root_path": "",
+        "headers": [(b"host", b"agent"), (b"content-type", b"application/json"), *headers],
+        "client": ("10.0.0.9", 1), "server": ("agent", 80),
+    }
+    asyncio.run(app(scope, receive, send))
+    return next(m["status"] for m in sent if m["type"] == "http.response.start")
+
+
+_EVIL_CREATE = json.dumps({"Image": "alpine", "HostConfig": {"Privileged": True, "Binds": ["/:/host"]}}).encode()
+
+
+@pytest.mark.parametrize("raw", [
+    "/v1.41/_ping/../containers/create",
+    "/v1.41/_ping/..%2fcontainers/create",
+    "/v1.41/_ping/..%2Fcontainers/create",
+    "/v1.41/_ping/%2e%2e/containers/create",
+    "/v1.41/_ping%2f..%2fcontainers/create",
+    "/v1.41/images/./../containers/create",
+    "/v1.41//containers/create",
+    "/v1.41/_ping/..%5ccontainers/create",
+    "/v1.41/_ping/%252e%252e/containers/create",
+])
+def test_proxy_refuses_dot_segment_smuggling(upstream, raw):
+    """A path that resolves to /containers/create upstream must not be checked
+    as something else (/_ping, /images) and slip past the create policy."""
+    c, hits = upstream
+    status = _raw_request(c.app, "POST", raw, _EVIL_CREATE, b"name=evil")
+    assert status in (400, 403), (raw, status)
+    assert not any("containers/create" in h for h in hits), hits
+
+
+def test_proxy_still_serves_canonical_docker_paths(upstream):
+    c, hits = upstream
+    # The plain create is still policy-checked (and refused for this body).
+    assert _raw_request(c.app, "POST", "/v1.41/containers/create", _EVIL_CREATE, b"name=evil") == 403
+    # Image refs keep their literal slashes and an encoded @ (docker-py quotes
+    # with safe="/:"), so they must still pass.
+    assert _raw_request(c.app, "GET", "/v1.41/images/registry.example/app/cove:main/json") == 200
+    assert _raw_request(c.app, "GET", "/v1.41/images/alpine%40sha256:abcd/json") == 200
+    assert hits == ["GET /images/registry.example/app/cove:main/json", "GET /images/alpine@sha256:abcd/json"]
+
+
+def test_cn_pin_exemptions_are_exact(monkeypatch):
+    """The CN-exempt internal paths must not let a prefixed path skip the pin."""
+    monkeypatch.setenv("COVE_AGENT_MODE", "1")
+    monkeypatch.setenv("COVE_AGENT_EXPECTED_CLIENT_CN", "cove-cp-abc")
+    get_settings.cache_clear()
+    try:
+        app = main.create_app()
+        assert _raw_request(app, "GET", "/api/health") == 200
+        # Without the CP's cert: anything past an exempt prefix is refused.
+        assert _raw_request(app, "GET", "/api/health/../v1.41/containers/json") == 400
+        assert _raw_request(app, "GET", "/api/healthz") == 403
+        assert _raw_request(app, "GET", "/agent/healthcheck") == 403
+        assert _raw_request(app, "GET", "/v1.41/containers/json") == 403
+        # The error page keeps its /{status} suffix.
+        assert _raw_request(app, "GET", "/__cove_error/502") == 200
+    finally:
+        get_settings.cache_clear()

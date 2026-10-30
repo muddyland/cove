@@ -140,9 +140,13 @@ function slugify(text: string): string {
     .replace(/\s/g, '-')
 }
 
-/** marked doesn't emit heading ids, and external links should leave the modal. */
+/** marked doesn't emit heading ids, and external links should leave the modal.
+ *  Screenshots referenced as `../screenshots/…` live in the repo for GitLab's
+ *  rendering only (the image doesn't ship them), so drop repo-relative images
+ *  rather than show broken ones; the surrounding text never depends on them. */
 function postProcess(html: string): string {
   return html
+    .replace(/<img\b[^>]*\bsrc="(?!https?:|data:)[^"]*"[^>]*>/g, '')
     .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (_m, lvl: string, inner: string) => {
       const id = slugify(inner.replace(/<[^>]*>/g, ''))
       return `<h${lvl} id="${id}">${inner}</h${lvl}>`

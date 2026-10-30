@@ -2481,6 +2481,11 @@ class DockerManager:
             logger.warning("Teardown after failed launch of %s: %s", ws_id, exc)
 
     def stop_workspace(self, ws_id: int) -> None:
+        # Whichever path stops it (owner, admin, auto-halt), no page holds its
+        # stream any more.
+        from server import stream_leases
+
+        stream_leases.forget(ws_id)
         db = self._get_db()
         try:
             ws = db.get(Workspace, ws_id)
@@ -2554,6 +2559,10 @@ class DockerManager:
         When ``purge_storage`` is set, also delete the workspace's persistent
         home directory (otherwise it is left on disk for reuse).
         """
+        from server import stream_leases
+
+        # The id may be reused by the next workspace: its lease must not carry over.
+        stream_leases.forget(ws_id)
         db = self._get_db()
         try:
             ws = db.get(Workspace, ws_id)

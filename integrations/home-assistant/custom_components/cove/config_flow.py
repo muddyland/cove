@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from ipaddress import ip_address
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -32,6 +33,21 @@ def _clean_url(url: str) -> str | None:
     return url
 
 
+def _plain_http_ok(url: str) -> bool:
+    """Plain http:// only to this machine: anywhere else the token, which can
+    reboot and sign out every thin client, would cross the network in clear."""
+    parts = urlsplit(url)
+    if parts.scheme == "https":
+        return True
+    host = parts.hostname or ""
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class CoveConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -51,6 +67,8 @@ class CoveConfigFlow(ConfigFlow, domain=DOMAIN):
             url = _clean_url(user_input[CONF_URL])
             if url is None:
                 errors[CONF_URL] = "invalid_url"
+            elif not _plain_http_ok(url):
+                errors[CONF_URL] = "insecure_url"
             else:
                 status, errors = await self._check(url, user_input[CONF_API_TOKEN], user_input[CONF_VERIFY_SSL])
                 if status:
@@ -75,6 +93,8 @@ class CoveConfigFlow(ConfigFlow, domain=DOMAIN):
             url = _clean_url(user_input[CONF_URL])
             if url is None:
                 errors[CONF_URL] = "invalid_url"
+            elif not _plain_http_ok(url):
+                errors[CONF_URL] = "insecure_url"
             else:
                 status, errors = await self._check(url, user_input[CONF_API_TOKEN], user_input[CONF_VERIFY_SSL])
                 if status:

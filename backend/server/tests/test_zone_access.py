@@ -57,7 +57,7 @@ def test_restricted_user_sees_and_launches_only_allowed_zones(client):
 
     assert [z["id"] for z in client.get("/api/zones", headers=auth_header(token)).json()] == [lan]
     refused = _launch(client, token, 0, "local")
-    assert refused.status_code == 403 and "Local" in refused.json()["detail"]
+    assert refused.status_code == 403 and "run workspaces on that zone" in refused.json()["detail"]
     assert _launch(client, token, lan, "lan").status_code == 201
 
     # Restricted to nothing: no zone at all.
@@ -132,3 +132,47 @@ def test_create_user_with_a_limit(client):
     assert r.json()["allowed_zone_ids"] == [lan]
     me = client.get("/api/auth/me", headers=auth_header(login(client, "carol", "password123").json()["access_token"]))
     assert me.json()["zones_restricted"] is True
+
+
+def test_forbidden_zone_is_never_named_or_described(client):
+    """A limited user probing zone ids learns nothing: the limit is checked
+    before readiness (which names the zone), and its settings read as off."""
+    admin, _ = setup_admin(client)
+    lan = _zone()
+    with SessionLocal() as db:
+        secret = Zone(name="Secret-LAN-Box", status="pending", endpoint_host="s.example")
+        db.add(secret)
+        db.commit()
+        secret_id = secret.id
+    bob, token = _bob(client, admin)
+    _limit(client, admin, bob["id"], [lan])
+
+    r = _launch(client, token, secret_id, "probe")
+    assert r.status_code == 403 and "Secret" not in r.text
+    r = client.post("/api/workspaces", json={"name": "d", "image_id": add_image(name="img-d"),
+                                             "zone_id": secret_id, "use_docker": True},
+                    headers=auth_header(token))
+    assert r.status_code == 403 and "Secret" not in r.text
+    for path in ("gpu-policy", "docker-policy"):
+        r = client.get(f"/api/workspaces/{path}?zone_id={secret_id}", headers=auth_header(token))
+        assert r.status_code == 200 and r.json() == {"enabled": False}, path
+    assert client.get(f"/api/images/availability?zone_id={secret_id}",
+                      headers=auth_header(token)).status_code == 404
+
+
+def test_limited_user_cannot_add_files_to_a_forbidden_zone(client):
+    admin, _ = setup_admin(client)
+    lan = _zone()
+    bob, token = _bob(client, admin)
+    _limit(client, admin, bob["id"], [lan])
+    h = auth_header(token)
+    r = client.post("/api/files/upload?zone_id=0", files={"file": ("a.txt", b"x")}, data={"path": ""}, headers=h)
+    assert r.status_code == 403
+    r = client.post("/api/files/copy?zone_id=0", json={"src": "a.txt", "dst_dir": ""}, headers=h)
+    assert r.status_code == 403
+    # Reading what's already there is still allowed (it's their data).
+    assert client.get("/api/files?zone_id=0", headers=h).status_code == 200
+    # Unrestricted users are unaffected.
+    _limit(client, admin, bob["id"], [], restricted=False)
+    r = client.post("/api/files/upload?zone_id=0", files={"file": ("a.txt", b"x")}, data={"path": ""}, headers=h)
+    assert r.status_code == 201, r.text

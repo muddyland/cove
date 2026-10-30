@@ -34,7 +34,8 @@
     "error": {
       "cannot_connect": "Can't reach Cove at that address, or something other than Cove answered.",
       "invalid_auth": "Cove doesn't recognise that token.",
-      "invalid_url": "Enter a full http:// or https:// address."
+      "invalid_url": "Enter a full https:// address.",
+      "insecure_url": "Use Cove's https:// address. Plain http:// would send the token unencrypted."
     },
     "abort": {
       "already_configured": "This Cove is already set up.",

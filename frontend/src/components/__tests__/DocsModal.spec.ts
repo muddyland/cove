@@ -107,6 +107,20 @@ describe('DocsModal', () => {
     expect(wrapper.find('.back-btn').exists()).toBe(true)
   })
 
+  it('drops repo-relative screenshots (not shipped in the image) but keeps the text', async () => {
+    const wrapper = await open(USER_DOCS)
+    vi.mocked(docsApi.get).mockResolvedValue(doc('README', [
+      '# Index', '',
+      '![Thin clients](../screenshots/thin-clients.png)', '',
+      '<img src="../screenshots/session-moved.png" width="70%" alt="Session moved" />', '',
+      'Text stays.',
+    ].join('\n')))
+    await wrapper.findAll('.rail-item').find(b => b.text() === 'Cove Documentation')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.markdown-body img')).toHaveLength(0)
+    expect(wrapper.find('.markdown-body').text()).toContain('Text stays.')
+  })
+
   it('honours the initial prop so the workspace screen opens the quick reference', async () => {
     const wrapper = await open(USER_DOCS, '__quick')
     expect(wrapper.find('.quick').exists()).toBe(true)

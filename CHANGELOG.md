@@ -2,6 +2,87 @@
 
 ## Unreleased
 
+- **Admin pages: fixes from a visual check.** Thin client thumbnails no
+  longer go missing when several load at once (the same race could drop an
+  image's update check). The thin client page's help text, labels and the
+  settings dialog's hints are readable (they used the theme's decoration
+  colour, 2.8:1) and look the same throughout. The System line is spaced and
+  shows its full text on hover. For an account with no zone it may use, the
+  launch wizard no longer says "Ready to launch" under the explanation, and
+  Launch is disabled. Admin → Integrations now says that screenshots need
+  **Control** and that tokens go with their creator's admin rights. The
+  in-app Help skips the screenshots added to the docs (they're shown on
+  GitLab; the image doesn't ship them).
+- **Security: smaller fixes from the same review.**
+  - *Home Assistant:* thin client screenshots now need a **Control** token
+    (a **Read** token used to fetch them, showing what someone had on screen),
+    and taking one is audited. Integration tokens are revoked when the admin
+    who created them is deleted or loses admin rights. The integration refuses
+    a plain `http://` Cove address (except `localhost`), and its diagnostics
+    download no longer contains who is signed in where. Re-download the
+    integration from **Admin → Integrations** to get these. Status polls reuse
+    a fresh Docker stats sample instead of re-sampling every container each
+    time a workspace starts or stops.
+  - *Zone limits:* a limited account can no longer upload or copy files into
+    a zone it may not use (it can still download and delete what's there).
+    Launch, clone and migrate check the limit before anything that names the
+    zone, the GPU and Docker policy endpoints read as off for such a zone, and
+    the error no longer names it.
+  - *Thin clients:* the screenshot upload checks the device token before
+    reading the body. Only failed binds count toward the bind rate limit, so
+    junk requests can't lock out kiosks behind the same address. A policy
+    change's audit entry lists the changed values (for example new allowed
+    hosts). A device name can no longer splice values into the install script.
+    The install USB requires an `https://` Cove address, and its first-boot
+    screen offers **Power off** instead of a root shell when there's no
+    network.
+  - *Session moved:* stopping or deleting a workspace (from any path, including
+    auto-halt and an admin's halt) forgets which screen held it, so a reused
+    workspace id or the Home Assistant status never shows a stale holder.
+- **Security: thin client sessions end properly.** Found in a review of the
+  new thin client code:
+  - *The session cap never reset the kiosk.* When **Longest session** passed,
+    Cove stopped accepting the session's tokens but never told the device, so
+    the browser kept its profile, and the identity provider's cookie in it. The
+    next person to press *Sign in with SSO* was signed in as the previous user.
+    Cove now signs the device out at the cap, the same way as an admin's **Sign
+    out**: it revokes the device's tokens and restarts the browser on a wiped
+    profile. Signing in again after the cap also restarts the session clock;
+    before, the same user signing in again had idle sign-out switched off.
+  - *A stale binding gave an ordinary session.* A kiosk browser whose binding
+    cookie was revoked (signed out while the agent was offline), expired (30
+    days without a restart) or whose device was deleted could still sign in.
+    It got a normal session that no device sign-out, idle timer or cap ever
+    ended. Such a browser is now refused (`403`) until the agent re-binds it.
+    The binding cookie lasts 400 days, and Cove re-binds an idle device weekly.
+  - *Stream cookies outlived the device session.* A workspace opened on a kiosk
+    now gets a stream cookie tied to that device session, which ends with it.
+  - *Kiosk user to root.* The agent (root) changed ownership through the kiosk
+    user's `~/.pki`, and wrote `~/.bash_profile` through a temp file, both
+    following symlinks. Code running as the kiosk user could use either to take
+    over a root-owned file. The NSS import now runs as the kiosk user, and the
+    agent's writes never follow symlinks. Agent **1.1.1**, which thin clients
+    install by themselves.
+  - *Longest session = Cove default* now means Cove's normal sign-in lifetime
+    (`COVE_REFRESH_TOKEN_DAYS`), not "no cap".
+  - Audit: the session cap is logged as `thin_client.session_cap`. Browser
+    resets other than the idle timeout (*Restart browser*, rebind) are logged
+    as `thin_client.browser_reset` with the reason, instead of
+    `thin_client.idle_signout`.
+- **Security: zone agents refuse paths that change on the way to Docker.**
+  The agent's Docker proxy checked a request's path as written, but forwarded
+  it with dot segments resolved. A path like `/_ping/..%2fcontainers/create`
+  was therefore checked as a ping and served as a container create, which
+  skipped the create policy (privileged containers, host binds). That gives
+  root on the zone host to anyone holding the control plane's client
+  certificate, which is exactly what the agent policy exists to stop. The agent now
+  refuses any path with dot or empty segments, backslashes, or encoded
+  slashes, dots or percent signs (`400`), and the client-certificate pin
+  exempts only its exact internal paths instead of every path that starts
+  with one. docker-py never sends such paths, so nothing legitimate changes.
+  **Operator action:** after deploying, run **Admin → Zones → Update agent**
+  on every zone.
+
 - **Home Assistant integration.** **Admin → Integrations** mints tokens for
   Home Assistant and offers its integration as a download (unzip into Home
   Assistant's config folder). It adds Cove as a device with user and workspace

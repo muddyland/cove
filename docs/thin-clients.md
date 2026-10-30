@@ -46,6 +46,9 @@ reaching Cove.
 2. Cove shows an **enrolment code** (`XXXX-XXXX-XXXX-XXXX`) and an install
    one-liner. The code works **once**, and expires after 1 hour by default (24
    hours or 7 days if you choose, for example for an install USB).
+
+   <img src="../screenshots/thin-client-enroll.png" width="60%" alt="The Enroll dialog: a one-time code valid for 1 hour, the install one-liner pinned to Cove's certificate, and Copy command and Copy code buttons" />
+
 3. On the machine, as root:
 
    ```bash
@@ -92,7 +95,7 @@ they touch a disk.
 
 | Option | |
 |---|---|
-| `--cove-url` | Required. Prefilled on first boot. |
+| `--cove-url` | Required, and must be `https://` (use `--ca-file` for a self-signed Cove). Prefilled on first boot. |
 | `--code` | Bake in an enrolment code (mint it with a 7-day lifetime). First boot then needs no typing. If the code has expired or been used, first boot asks for a new one. |
 | `--ssh-key` | Installs SSH with key-only logins for the `coveadmin` account. |
 | `--password` | Password for `coveadmin` (sudo). Generated and printed if omitted. |
@@ -107,7 +110,12 @@ in a `debian:trixie` container (Docker).
 > boots the stick before you can enrol their machine in its place. Leave
 > `--code` out for a stick you keep around.
 
+First boot never drops to a shell: with no network it offers **Retry** or
+**Power off**, and it accepts only an `https://` address.
+
 ## 4. Managing thin clients
+
+![Admin → Thin clients: a device waiting to enrol and two online kiosks with their screenshots, session, screen, display, audio, system and agent](../screenshots/thin-clients.png)
 
 Each card in **Admin → Thin clients** shows the last screenshot, whether the
 device is online, who is signed in, whether the screen is on (and how long it
@@ -128,10 +136,16 @@ reboot, and the agent version. A device that misses a few check-ins shows
 | **Reboot / Power off** | After a confirmation. |
 | **Activity** | The last 50 commands, with their output. Commands from Home Assistant show as `integration:<token name>`. |
 
+Click a screenshot to see it full size, and take a new one from there.
+
+<img src="../screenshots/thin-client-screen.png" width="80%" alt="A thin client's Screen dialog: the full-size screenshot of an XFCE desktop streamed from Cove, with Take a new one" />
+
 Home Assistant can show these devices and drive most of these actions, plus
 volume and mute. See [Home Assistant](home-assistant.md).
 
 ### Settings
+
+<img src="../screenshots/thin-client-settings.png" width="60%" alt="A thin client's settings dialog, Display tab: screen-off idle time, on-hours, audio keeps it awake, rotation, scale, brightness and volume" />
 
 Changes apply within seconds on an online device, and when it next checks in
 otherwise.
@@ -198,10 +212,19 @@ differs is that the session belongs to the **device**:
   `/thin-client/bind?ticket=…`. That sets an httpOnly cookie naming the device.
   The device token itself never enters the browser. A browser that fails to
   bind is restarted. The page fails closed and never falls back to an unscoped
-  login.
+  login: a browser whose binding is revoked, expired or whose device is gone
+  can't sign in at all ("This screen's thin client binding has expired") until
+  the agent restarts it with a fresh one.
+- The binding lasts far longer than any session, and Cove re-binds a device
+  nobody is using once a week, so it never lapses under a kiosk.
 - Every token minted in that browser carries the device's id and the time the
-  sign-in started. Cove accepts them only while the device is enrolled, until
-  the device is signed out, and never past the **longest session** cap.
+  sign-in started, and so do the stream cookies of workspaces opened there.
+  Cove accepts them only while the device is enrolled, until the device is
+  signed out, and never past the **longest session** cap.
+- When the cap passes, the device is signed out like any other way: Cove
+  revokes its tokens and tells it to restart the browser on a wiped profile
+  (`thin_client.session_cap` in the audit log). *Cove default* means Cove's
+  normal sign-in lifetime (`COVE_REFRESH_TOKEN_DAYS`, 7 days), never "forever".
 - Signing out there, by the idle timeout, the SPA's *Log out*, an admin's
   **Sign out**, or deleting the device, revokes that device's sessions and
   nothing else. A normal *Log out* elsewhere, or **Users → Revoke sessions**,
@@ -209,8 +232,11 @@ differs is that the session belongs to the **device**:
 - Every sign-out also wipes the browser profile, so nothing (cookies, stream
   tokens, cached pages) is left for the next person.
 
-Idle sign-outs appear in the audit log as `thin_client.idle_signout`. Logging
-out on a kiosk appears as `logout.thin_client`.
+Idle sign-outs appear in the audit log as `thin_client.idle_signout`, other
+browser resets with someone signed in (a *Restart browser* command, a rebind)
+as `thin_client.browser_reset` with the reason, and the session cap as
+`thin_client.session_cap`. Logging out on a kiosk appears as
+`logout.thin_client`.
 
 ## 6. Updates in detail
 
@@ -236,6 +262,10 @@ out on a kiosk appears as `logout.thin_client`.
   you already give Cove over its zones. To pin a device's agent, set
   `"allow_agent_update": false` in `/etc/cove-thin-client/config.json`. Cove can
   then still manage it, but not replace its code.
+- **The agent never acts as root inside the kiosk user's home.** The NSS
+  database is written as the `kiosk` user, and files the agent writes there are
+  replaced without following symlinks, so code running as `kiosk` (a browser
+  exploit) can't turn the agent into a way to root.
 - **The kiosk is for honest users.** No key bindings beyond volume, no consoles, URL
   allowlisting and no DevTools stop casual escapes. Someone with physical access
   and time can still boot other media or enter GRUB's recovery mode. Set a BIOS
