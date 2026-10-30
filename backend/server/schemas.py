@@ -39,6 +39,9 @@ class UserOut(BaseModel):
     # False: every zone. True: only allowed_zone_ids (see Admin -> Users).
     zones_restricted: bool = False
     allowed_zone_ids: list[int] = []
+    # Per-account workspace caps: None follows the deployment default, 0 = none.
+    max_workspaces: Optional[int] = None
+    max_running: Optional[int] = None
     auth_provider: str
     created_at: datetime
     last_login_at: Optional[datetime]
@@ -445,6 +448,8 @@ class AdminUserCreate(BaseModel):
     docker_allowed: bool = False
     zones_restricted: bool = False
     allowed_zone_ids: list[int] = []
+    max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
+    max_running: Optional[int] = Field(default=None, ge=0, le=1000)
 
 
 class AdminUserUpdate(BaseModel):
@@ -455,6 +460,18 @@ class AdminUserUpdate(BaseModel):
     # Both optional: send either or both to change the user's zone limit.
     zones_restricted: Optional[bool] = None
     allowed_zone_ids: Optional[list[int]] = None
+    # Explicit null resets to the deployment default; leaving it out keeps the
+    # current value (the router checks model_fields_set).
+    max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
+    max_running: Optional[int] = Field(default=None, ge=0, le=1000)
+
+
+class WorkspaceLimitsOut(BaseModel):
+    """The caller's caps and usage; 0 means no limit."""
+    max_workspaces: int
+    max_running: int
+    workspaces: int
+    running: int
 
 
 # ── App settings ──────────────────────────────────────────────────────────────
@@ -475,6 +492,8 @@ class AppSettingsOut(BaseModel):
     workspace_docker: bool
     dind_image: str
     trash_retention_days: int
+    default_max_workspaces: int = 0
+    default_max_running: int = 0
 
 
 class EnvEntry(BaseModel):
@@ -545,6 +564,8 @@ class AppSettingsUpdate(BaseModel):
     workspace_docker: Optional[bool] = None
     dind_image: Optional[str] = None
     trash_retention_days: Optional[int] = None
+    default_max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
+    default_max_running: Optional[int] = Field(default=None, ge=0, le=1000)
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

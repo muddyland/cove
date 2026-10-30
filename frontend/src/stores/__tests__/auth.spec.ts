@@ -27,6 +27,8 @@ const adminUser: User = {
   docker_allowed: false,
   zones_restricted: false,
   allowed_zone_ids: [],
+  max_workspaces: null,
+  max_running: null,
   auth_provider: 'local',
   created_at: '2026-01-01T00:00:00Z',
   last_login_at: null,

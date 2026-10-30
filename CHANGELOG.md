@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Workspace limits per account.** Admin → Settings sets how many workspaces
+  each account may have and how many may run at once (default: no limit), and
+  Admin → Users overrides either for one account. Launching, cloning or
+  starting past a limit is refused with a message naming the limit; the
+  dashboard shows "2 of 3 running" and disables **Launch** at the cap. A
+  workspace that's starting counts toward the running limit, one that's
+  stopping doesn't, and two starts racing for the last slot can't both get
+  it. Admins are never limited.
 - **Admin pages: fixes from a visual check.** Thin client thumbnails no
   longer go missing when several load at once (the same race could drop an
   image's update check). The thin client page's help text, labels and the

@@ -4,12 +4,22 @@
       <div>
         <h2>// WORKSPACES</h2>
         <p class="subtitle">
-          {{ store.items.length }} workspace{{ store.items.length !== 1 ? 's' : '' }}
-          <template v-if="store.items.length"> · {{ running.length }} running</template>
+          <template v-if="limits?.max_workspaces">{{ store.items.length }} of {{ limits.max_workspaces }} workspaces</template>
+          <template v-else>{{ store.items.length }} workspace{{ store.items.length !== 1 ? 's' : '' }}</template>
+          <template v-if="limits?.max_running"> · {{ slotsUsed }} of {{ limits.max_running }} running</template>
+          <template v-else-if="store.items.length"> · {{ running.length }} running</template>
+        </p>
+        <p v-if="atTotalCap" class="subtitle cap-note">
+          That's as many workspaces as your account may have. Delete one to launch another.
         </p>
       </div>
       <div class="header-actions">
-        <NeonButton variant="primary" @click="showLaunch = true"><Plus :size="15" /> LAUNCH</NeonButton>
+        <NeonButton
+          variant="primary"
+          :disabled="atTotalCap"
+          :title="atTotalCap ? `Your account may have at most ${limits?.max_workspaces} workspaces` : undefined"
+          @click="showLaunch = true"
+        ><Plus :size="15" /> LAUNCH</NeonButton>
       </div>
     </div>
 
@@ -72,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import WorkspaceCard from '@/components/WorkspaceCard.vue'
 import LaunchWizard from '@/components/LaunchWizard.vue'
@@ -84,6 +94,8 @@ import { useZonesStore } from '@/stores/zones'
 import { useThinClientStore } from '@/stores/thinClient'
 import { useRouter } from 'vue-router'
 import { fmtBytes, parseTs } from '@/utils/workspaceStatus'
+import { workspacesApi } from '@/api/workspaces'
+import type { WorkspaceLimits } from '@/types'
 
 const store = useWorkspacesStore()
 const zonesStore = useZonesStore()
@@ -110,6 +122,17 @@ const running = computed(() => store.items.filter(ws => ws.status === 'running')
 const starting = computed(() =>
   store.items.filter(ws => ws.status === 'creating' || (ws.status === 'running' && !ws.connectable)),
 )
+// The account's caps (0 = none). Usage is counted from the live list, so the
+// numbers move with every poll; the caps themselves only change when an admin
+// edits them, so they're re-read when the number of workspaces changes.
+const limits = ref<WorkspaceLimits | null>(null)
+const slotsUsed = computed(() => store.items.filter(ws => ws.status === 'creating' || ws.status === 'running').length)
+const atTotalCap = computed(() => !!limits.value?.max_workspaces && store.items.length >= limits.value.max_workspaces)
+function loadLimits() {
+  workspacesApi.limits().then(l => { limits.value = l }).catch(() => {})
+}
+watch(() => store.items.length, loadLimits)
+
 const totals = computed(() => {
   let cpu = 0
   let mem = 0
@@ -128,6 +151,7 @@ onMounted(() => {
     .then(() => thinClient.maybeAutoOpen(store.items, router, id => store.start(id)))
     .catch(() => {})
   zonesStore.fetch()
+  loadLimits()
 })
 onUnmounted(() => store.stopPolling())
 </script>
@@ -146,6 +170,7 @@ h2 {
   text-shadow: var(--glow-sm);
 }
 .subtitle { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.cap-note { color: var(--amber); }
 .header-actions { display: flex; gap: 8px; }
 
 .section { margin-bottom: 32px; }

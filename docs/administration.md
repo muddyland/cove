@@ -16,6 +16,8 @@ limits they started with.
 | **Default CPU limit (cores)** | `0` (unlimited) | Caps each new workspace container's CPU; fractions allowed. |
 | **Default memory limit (MB)** | `0` (unlimited) | Caps each new workspace container's RAM. |
 | **Process limit (pids)** | `8192` | Caps processes + threads per workspace container (a fork bomb otherwise exhausts the host). `0` = unlimited. |
+| **Workspaces per account** | `0` (no limit) | How many workspaces each account may have. Override per account under Admin → Users. Admins are never limited. |
+| **Running at once per account** | `0` (no limit) | How many of an account's workspaces may run at the same time (one that's starting counts; one that's stopping doesn't). Override per account under Admin → Users. |
 | **Max runtime (hours)** | `24` (`0` = unlimited) | Running workspaces older than this are auto-stopped. |
 | **Force-disable sudo** | off | Applies `no-new-privileges` to **all** workspaces, overriding the per-launch "Allow sudo". |
 | **GPU acceleration** (master toggle) | off | Allows workspaces to use host-GPU hardware video encode (each workspace must still opt in, and needs Wayland streaming). See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). Remote zones inherit this and the two GPU settings below unless their own zone settings override them. |
@@ -62,6 +64,14 @@ reported only as present/absent — never shown.
   Ticking no zones leaves the account unable to run any workspace. Admins
   always have every zone. The **Zones** column in the list shows each
   account's limit.
+- **Workspace limits** (per user): how many workspaces the account may have,
+  and how many may run at once. Leave a field empty to follow the default from
+  Admin → Settings, enter `0` for no limit, or a number to cap it. Past the cap,
+  launching, cloning or starting another workspace is refused with a message
+  saying which limit was hit; existing workspaces are never removed. The
+  dashboard shows the account "2 of 3 running" and disables **Launch** when it
+  has all the workspaces it may. Admins are never limited, and an admin can
+  still start a user's workspace past that user's limit.
 - Usernames may not begin with `.`, `_` or `cove-` — those prefixes name Cove's
   own directories under the storage root.
 

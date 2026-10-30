@@ -42,6 +42,23 @@
           <p v-if="!form.allowed_zone_ids.length" class="hint warn">No zones ticked: this account can't run any workspace.</p>
         </div>
       </div>
+      <fieldset class="limits" :disabled="form.is_admin">
+        <legend>Workspace limits</legend>
+        <div class="limit-row">
+          <label>
+            Workspaces
+            <input v-model="form.max_workspaces" type="number" min="0" max="1000" placeholder="Default" />
+          </label>
+          <label>
+            Running at once
+            <input v-model="form.max_running" type="number" min="0" max="1000" placeholder="Default" />
+          </label>
+        </div>
+        <p class="hint">
+          <template v-if="form.is_admin">Admins are never limited.</template>
+          <template v-else>Empty: the default from Admin → Settings. 0: no limit.</template>
+        </p>
+      </fieldset>
       <div v-if="error" class="form-error">{{ error }}</div>
       <div class="form-actions">
         <NeonButton type="button" variant="secondary" @click="open = false">Cancel</NeonButton>
@@ -74,7 +91,15 @@ const error = ref('')
 const form = reactive({
   username: '', password: '', is_admin: false, docker_allowed: false,
   zones_restricted: false, allowed_zone_ids: [] as number[],
+  // Strings so "empty" (= the deployment default) survives the round trip.
+  max_workspaces: '' as string | number, max_running: '' as string | number,
 })
+
+function limitValue(v: string | number): number | null {
+  if (v === '' || v === null || v === undefined) return null
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+}
 
 watch(() => props.editUser, (u) => {
   form.username = u?.username ?? ''
@@ -83,6 +108,8 @@ watch(() => props.editUser, (u) => {
   form.docker_allowed = !!u?.docker_allowed
   form.zones_restricted = !!u?.zones_restricted
   form.allowed_zone_ids = [...(u?.allowed_zone_ids ?? [])]
+  form.max_workspaces = u?.max_workspaces ?? ''
+  form.max_running = u?.max_running ?? ''
 }, { immediate: true })
 
 // Zones to choose from (Local first). Loaded when the modal opens.
@@ -105,6 +132,8 @@ async function handleSubmit() {
       docker_allowed: form.docker_allowed,
       zones_restricted: form.zones_restricted,
       allowed_zone_ids: form.zones_restricted ? form.allowed_zone_ids : [],
+      max_workspaces: limitValue(form.max_workspaces),
+      max_running: limitValue(form.max_running),
     }
     if (form.password) payload.password = form.password
     await props.onSubmit(payload)
@@ -126,4 +155,9 @@ async function handleSubmit() {
 .zone-list label { font-size: 13px; }
 .zone-status { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--amber); margin-left: 4px; }
 .hint.warn { color: var(--amber); }
+.limits { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px 10px; margin: 0; }
+.limits legend { padding: 0 6px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); }
+.limits[disabled] { opacity: 0.6; }
+.limit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.limit-row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-muted); }
 </style>

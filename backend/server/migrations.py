@@ -266,6 +266,15 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0055_user_zones_restricted",
         "ALTER TABLE user ADD COLUMN zones_restricted BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # Per-user workspace caps (NULL follows the deployment default).
+    (
+        "0056_user_max_workspaces",
+        "ALTER TABLE user ADD COLUMN max_workspaces INTEGER",
+    ),
+    (
+        "0057_user_max_running",
+        "ALTER TABLE user ADD COLUMN max_running INTEGER",
+    ),
 ]
 
 

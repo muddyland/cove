@@ -39,6 +39,8 @@ const baseSettings: AppSettings = {
   workspace_docker: false,
   dind_image: 'docker:dind',
   trash_retention_days: 30,
+  default_max_workspaces: 0,
+  default_max_running: 0,
 }
 
 describe('AdminSettingsView', () => {
@@ -79,6 +81,8 @@ describe('AdminSettingsView', () => {
       workspace_docker: false,
       dind_image: 'docker:dind',
       trash_retention_days: 30,
+      default_max_workspaces: 0,
+      default_max_running: 0,
     })
     const wrapper = mount(AdminSettingsView)
     await flushPromises()

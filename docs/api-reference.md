@@ -37,6 +37,7 @@ cookies.
 | GET | `/api/workspaces` | auth | List your own workspaces. |
 | POST | `/api/workspaces` | auth | Create and launch a workspace. |
 | GET | `/api/workspaces/stats` | auth | Live CPU/memory of your running workspaces. |
+| GET | `/api/workspaces/limits` | auth | Your workspace caps and usage: `{max_workspaces, max_running, workspaces, running}` (`0` = no limit). Launch, clone and start return `409` past a cap. |
 | GET | `/api/workspaces/lan-policy` | auth | LAN egress policy (toggle + subnets) for the launch modal. |
 | GET | `/api/workspaces/gpu-policy?zone_id=` | auth | Whether GPU acceleration is on for that zone (default `0`): the master toggle, or a remote zone's override. |
 | GET | `/api/workspaces/docker-policy?zone_id=` | auth | Whether Docker-in-Docker is available on that zone (default `0`): the master toggle, plus the zone's own opt-in on a remote zone. |
@@ -112,7 +113,7 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 | Method | Path | Purpose |
 |---|---|---|
 | GET / POST | `/api/admin/users` | List / create users. |
-| PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. `zones_restricted` + `allowed_zone_ids` set the user's zone limit (either may be sent alone; unknown zone ids are a `400`). |
+| PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. `zones_restricted` + `allowed_zone_ids` set the user's zone limit (either may be sent alone; unknown zone ids are a `400`). `max_workspaces` / `max_running`: a number caps it, `0` is no limit, an explicit `null` follows the default, and leaving the field out keeps it. |
 | POST | `/api/admin/users/{id}/revoke-sessions` | Sign the user out everywhere (every token issued before now stops working). |
 | GET | `/api/admin/sessions` | List every user's running/starting workspaces. |
 | DELETE | `/api/admin/sessions/{id}` | Stop one of them (the workspace is kept; it used to be deleted). `400` unless running/starting. |

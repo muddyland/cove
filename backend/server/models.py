@@ -48,6 +48,10 @@ class User(Base):
     zones_restricted: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+    # Workspace caps (server.workspace_limits). None: the deployment default
+    # (Admin -> Settings); 0: no limit; N: at most N.
+    max_workspaces: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_running: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"

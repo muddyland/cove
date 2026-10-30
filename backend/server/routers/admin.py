@@ -76,6 +76,8 @@ def create_user(body: AdminUserCreate, user: AdminUser, db: DbSession, request: 
         auth_provider="local",
         is_admin=body.is_admin,
         docker_allowed=body.docker_allowed,
+        max_workspaces=body.max_workspaces,
+        max_running=body.max_running,
     )
     db.add(new_user)
     db.flush()
@@ -123,6 +125,11 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
         target.tokens_valid_from = datetime.now(timezone.utc)
     if body.docker_allowed is not None:
         target.docker_allowed = body.docker_allowed
+    # Explicit null = back to the deployment default, so check fields_set.
+    if "max_workspaces" in body.model_fields_set:
+        target.max_workspaces = body.max_workspaces
+    if "max_running" in body.model_fields_set:
+        target.max_running = body.max_running
     if body.zones_restricted is not None or body.allowed_zone_ids is not None:
         zone_access.set_allowed(
             db,
@@ -551,5 +558,9 @@ def update_app_settings(
             settings_store.KEY_TRASH_RETENTION_DAYS,
             str(max(0, body.trash_retention_days)),
         )
+    if body.default_max_workspaces is not None:
+        settings_store.set_setting(db, settings_store.KEY_DEFAULT_MAX_WORKSPACES, str(body.default_max_workspaces))
+    if body.default_max_running is not None:
+        settings_store.set_setting(db, settings_store.KEY_DEFAULT_MAX_RUNNING, str(body.default_max_running))
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

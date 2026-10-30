@@ -29,6 +29,8 @@ def test_settings_defaults(client):
         "workspace_docker": False,
         "dind_image": "docker:dind",
         "trash_retention_days": 30,
+        "default_max_workspaces": 0,
+        "default_max_running": 0,
     }
 
 
@@ -55,6 +57,8 @@ def test_settings_put_updates_both(client):
         "workspace_docker": False,
         "dind_image": "docker:dind",
         "trash_retention_days": 30,
+        "default_max_workspaces": 0,
+        "default_max_running": 0,
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()

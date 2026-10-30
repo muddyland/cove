@@ -6,6 +6,9 @@ export interface User {
   /** False: every zone. True: only allowed_zone_ids. Admins always have every zone. */
   zones_restricted: boolean
   allowed_zone_ids: number[]
+  /** Per-account workspace caps: null follows the deployment default, 0 = no limit. */
+  max_workspaces: number | null
+  max_running: number | null
   auth_provider: string
   created_at: string
   last_login_at: string | null
@@ -19,6 +22,16 @@ export interface UserFormPayload {
   docker_allowed: boolean
   zones_restricted: boolean
   allowed_zone_ids: number[]
+  max_workspaces: number | null
+  max_running: number | null
+}
+
+/** The caller's workspace caps and usage; 0 = no limit. */
+export interface WorkspaceLimits {
+  max_workspaces: number
+  max_running: number
+  workspaces: number
+  running: number
 }
 
 export interface AuthConfig {
@@ -341,6 +354,8 @@ export interface AppSettings {
   workspace_docker: boolean
   dind_image: string
   trash_retention_days: number
+  default_max_workspaces: number
+  default_max_running: number
 }
 
 export interface EnvEntry {

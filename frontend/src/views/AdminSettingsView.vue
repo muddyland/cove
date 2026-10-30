@@ -117,6 +117,23 @@
             </p>
           </div>
 
+          <div class="form-row">
+            <div class="form-group">
+              <label>Workspaces per account</label>
+              <input v-model.number="form.default_max_workspaces" type="number" min="0" max="1000" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label>Running at once per account</label>
+              <input v-model.number="form.default_max_running" type="number" min="0" max="1000" placeholder="0" />
+            </div>
+          </div>
+          <p class="hint">
+            How many workspaces each account may have, and how many of them may run at the same
+            time. 0 = no limit. Override them for one account under Admin → Users; admins are never
+            limited. Existing workspaces past a new limit stay, but no new one can be added (or
+            started) until the account is back under it.
+          </p>
+
           <h4 id="set-network" class="section-h">Network</h4>
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_lan_access" />
@@ -301,6 +318,8 @@ const form = reactive({
   workspace_docker: false,
   dind_image: 'docker:dind',
   trash_retention_days: 30,
+  default_max_workspaces: 0,
+  default_max_running: 0,
 })
 
 onMounted(async () => {
@@ -321,6 +340,8 @@ onMounted(async () => {
     form.workspace_docker = settings.workspace_docker
     form.dind_image = settings.dind_image
     form.trash_retention_days = settings.trash_retention_days
+    form.default_max_workspaces = settings.default_max_workspaces
+    form.default_max_running = settings.default_max_running
     snapshot.value = JSON.stringify(form)
   } catch (e: any) {
     error.value = e.message
@@ -358,6 +379,8 @@ async function handleSave() {
       workspace_docker: form.workspace_docker,
       dind_image: form.dind_image,
       trash_retention_days: form.trash_retention_days,
+      default_max_workspaces: form.default_max_workspaces || 0,
+      default_max_running: form.default_max_running || 0,
     })
     form.tailscale_image = updated.tailscale_image
     form.gluetun_image = updated.gluetun_image
@@ -374,6 +397,8 @@ async function handleSave() {
     form.workspace_docker = updated.workspace_docker
     form.dind_image = updated.dind_image
     form.trash_retention_days = updated.trash_retention_days
+    form.default_max_workspaces = updated.default_max_workspaces
+    form.default_max_running = updated.default_max_running
     snapshot.value = JSON.stringify(form)
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
@@ -387,6 +412,8 @@ async function handleSave() {
 
 <style scoped>
 @import '@/styles/tables.css';
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-row .form-group { margin-bottom: 0; }
 
 /* Two columns that use the width on desktop (the long form gets the bigger
    share), one column on narrow screens. */

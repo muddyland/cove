@@ -34,6 +34,10 @@ KEY_DIND_IMAGE = "dind_image"
 # How long soft-deleted files stay in the file-browser trash before the periodic
 # purge sweep removes them for good (0 = keep until manually emptied).
 KEY_TRASH_RETENTION_DAYS = "trash_retention_days"
+# Workspace caps every account gets unless an admin overrides them per account
+# (server.workspace_limits). 0 = no limit.
+KEY_DEFAULT_MAX_WORKSPACES = "default_max_workspaces"
+KEY_DEFAULT_MAX_RUNNING = "default_max_running"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
@@ -70,6 +74,9 @@ DEFAULT_WORKSPACE_DOCKER = False
 DEFAULT_DIND_IMAGE = "docker:dind"
 # Keep trashed files for 30 days by default, then auto-purge.
 DEFAULT_TRASH_RETENTION_DAYS = 30
+# No caps by default: existing deployments keep behaving as before.
+DEFAULT_DEFAULT_MAX_WORKSPACES = 0
+DEFAULT_DEFAULT_MAX_RUNNING = 0
 
 
 def get_setting(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -263,6 +270,24 @@ def get_trash_retention_days(db: Session) -> int:
         return DEFAULT_TRASH_RETENTION_DAYS
 
 
+def _get_count(db: Session, key: str, default: int) -> int:
+    raw = get_setting(db, key)
+    if raw is None:
+        return default
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def get_default_max_workspaces(db: Session) -> int:
+    return _get_count(db, KEY_DEFAULT_MAX_WORKSPACES, DEFAULT_DEFAULT_MAX_WORKSPACES)
+
+
+def get_default_max_running(db: Session) -> int:
+    return _get_count(db, KEY_DEFAULT_MAX_RUNNING, DEFAULT_DEFAULT_MAX_RUNNING)
+
+
 def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
@@ -280,4 +305,6 @@ def get_all(db: Session) -> dict:
         "workspace_docker": get_workspace_docker(db),
         "dind_image": get_dind_image(db),
         "trash_retention_days": get_trash_retention_days(db),
+        "default_max_workspaces": get_default_max_workspaces(db),
+        "default_max_running": get_default_max_running(db),
     }
