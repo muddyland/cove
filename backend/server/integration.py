@@ -5,8 +5,12 @@ bearer secret stored only as a sha256, and it works on ``/api/integration/v1``
 and nowhere else: it is not a JWT, so the session dependencies reject it, and
 the integration endpoints accept nothing but it. Two scopes:
 
-* ``read`` — the snapshot below and thin client screenshots.
-* ``control`` — also thin client commands, sign-out and keep-awake.
+* ``read`` — the snapshot below.
+* ``control`` — also thin client screenshots (what's on someone's screen),
+  commands, sign-out and keep-awake.
+
+A token acts with the authority of the admin who minted it, so it is revoked
+when that account is deleted or stops being an admin.
 
 Home Assistant polls the snapshot over Cove's one HTTPS entrypoint, so nothing
 new is exposed: no inbound port, no webhook into Home Assistant.
@@ -46,8 +50,9 @@ CONTROL_COMMANDS = (
     "set_volume",
     "set_mute",
 )
-# Commands that interrupt whoever is at the device, so they're audited.
-AUDITED_COMMANDS = ("restart_browser", "reboot", "poweroff")
+# Commands that interrupt whoever is at the device, or capture their screen,
+# so they're audited.
+AUDITED_COMMANDS = ("restart_browser", "reboot", "poweroff", "screenshot")
 # last_used_at is written at most this often, not on every poll.
 _TOUCH_EVERY = timedelta(minutes=1)
 # Docker stats take ~1 s per container; reuse a sample for this long so several
@@ -68,6 +73,23 @@ def find_token(db: Session, token: str) -> Optional[IntegrationToken]:
     if not token or not token.startswith(TOKEN_PREFIX):
         return None
     return db.scalar(select(IntegrationToken).where(IntegrationToken.token_hash == hash_token(token)))
+
+
+def revoke_tokens_of(db: Session, username: str) -> list[str]:
+    """Delete every token minted by ``username``; returns their names."""
+    rows = db.scalars(select(IntegrationToken).where(IntegrationToken.created_by == username)).all()
+    names = [r.name for r in rows]
+    for r in rows:
+        db.delete(r)
+    if rows:
+        db.commit()
+    return names
+
+
+def rename_creator(db: Session, old: str, new: str) -> None:
+    """Keep tokens tied to their creator across a username change."""
+    for r in db.scalars(select(IntegrationToken).where(IntegrationToken.created_by == old)).all():
+        r.created_by = new
 
 
 def touch(db: Session, row: IntegrationToken, ip: Optional[str]) -> None:
@@ -132,9 +154,13 @@ def _workspace_stats(running: list[Workspace]) -> dict[int, dict]:
     global _stats_cache
     key = frozenset(ws.id for ws in running)
     with _stats_lock:
-        taken, cached_key, cached = _stats_cache
-        if cached_key == key and time.monotonic() - taken < _STATS_TTL:
-            return cached
+        taken, _, cached = _stats_cache
+        # Reuse a fresh sample even when the set of running workspaces changed
+        # since: otherwise every start/stop (or a poller timing its requests
+        # around them) forces a full re-sample of every container. A workspace
+        # that started since just has no stats until the next sample.
+        if time.monotonic() - taken < _STATS_TTL:
+            return {ws_id: data for ws_id, data in cached.items() if ws_id in key}
         from server.docker_manager import get_docker_manager
 
         out: dict[int, dict] = {}
@@ -236,7 +262,9 @@ def snapshot(db: Session) -> dict:
     running = [ws for ws in workspaces if ws.status == "running" and ws.container_id]
     stats = _workspace_stats(running)
     owners = dict(db.execute(select(User.id, User.username)).all())
-    ws_names = {ws.id: (ws.name, owners.get(ws.user_id, "")) for ws in workspaces}
+    # Only running workspaces can be on a screen; a lease left on a stopped one
+    # is stale and mustn't show up as what a device is showing.
+    ws_names = {ws.id: (ws.name, owners.get(ws.user_id, "")) for ws in workspaces if ws.status == "running"}
 
     zones_out = []
     for zone in db.scalars(select(Zone).order_by(Zone.id)).all():

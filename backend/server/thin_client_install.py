@@ -7,6 +7,7 @@ policy, systemd units — lives in the agent, so updating the agent from Cove al
 updates how the device is set up.
 """
 
+import re
 import shlex
 
 _TEMPLATE = r"""#!/usr/bin/env bash
@@ -97,9 +98,12 @@ echo ">> Done. This machine now boots straight into Cove."
 def render_install_script(*, cp_url: str, code: str, name: str, ca_pem: str = "") -> str:
     # The name is shown in a comment only; strip newlines so it can't break out.
     safe_name = name.replace("\n", " ").replace("\r", " ")
-    return (
-        _TEMPLATE.replace("__CP_URL__", shlex.quote(cp_url))
-        .replace("__CODE__", shlex.quote(code))
-        .replace("__NAME__", safe_name)
-        .replace("__CA_PEM__", shlex.quote(ca_pem.strip()))
-    )
+    values = {
+        "__CP_URL__": shlex.quote(cp_url),
+        "__CODE__": shlex.quote(code),
+        "__NAME__": safe_name,
+        "__CA_PEM__": shlex.quote(ca_pem.strip()),
+    }
+    # One pass: a value (say, a device named "__CA_PEM__") is never itself
+    # searched for placeholders, so it can't splice another value in.
+    return re.sub("|".join(map(re.escape, values)), lambda m: values[m.group(0)], _TEMPLATE)

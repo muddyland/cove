@@ -17,11 +17,13 @@ new is exposed.
    `configuration.yaml`). It adds `custom_components/cove`. Restart Home
    Assistant.
 3. Back in **Admin → Integrations**, click **New token**. Pick **Control** to
-   control thin clients, or **Read** for status only. Copy the token: Cove shows
-   it once.
+   control thin clients and see their screenshots, or **Read** for status only.
+   Copy the token: Cove shows it once.
 4. In Home Assistant, go to **Settings → Devices & services → Add integration →
-   Cove**. Enter Cove's address (for example `https://cove.example.com`) and the
-   token.
+   Cove**. Enter Cove's `https://` address (for example
+   `https://cove.example.com`) and the token. Plain `http://` is refused, except
+   to the same machine (`localhost`), because the token would cross the
+   network unencrypted.
 
    Untick **Verify the TLS certificate** only for a Cove on your own network
    with a self-signed certificate (the LAN TLS overlay).
@@ -58,7 +60,6 @@ Home Assistant.
 | Workspace on screen | The workspace the screen is showing right now. |
 | Playing audio | Something is playing on the device. |
 | Volume level | The output volume (percent; up to 150). |
-| Screenshot | The last screenshot. Press **Take screenshot** to refresh it. |
 | Idle time | Seconds since the last keyboard, mouse or touch input. Disabled by default: it changes on every poll. |
 | Last seen, Booted, Updates available, Reboot required, Agent version, Browser running | Diagnostics. IP address and Last error are there too, disabled by default. |
 
@@ -66,6 +67,7 @@ With a **Control** token, also:
 
 | Entity | Does |
 |---|---|
+| Screenshot (image) | The last screenshot. Press **Take screenshot** to refresh it. |
 | Screen (switch) | On wakes the screen; off blanks it until someone touches it. The device's own idle timer still applies. |
 | Mute (switch), Volume (slider) | Set the output. Setting a volume also unmutes. |
 | Keep awake (switch) | Treat the device as active (no screen-off, no idle sign-out) for up to 24 hours, until switched off. |
@@ -121,19 +123,26 @@ device page.
   open workspaces, read files, or reach any admin endpoint, and a sign-in
   session can't be used in its place.
 - **Read** sees counts, names of users signed in on thin clients, workspace
-  names on screen, device addresses and screenshots. Give it to anything you
-  would let see the Admin → Thin clients page.
-- **Control** can also queue `screen_on`, `screen_off`, `set_volume`,
-  `set_mute`, `identify`, `screenshot`, `restart_browser`, `reboot` and
-  `poweroff`, sign a device out, and set keep-awake. It can't read device logs
-  or run system updates; those stay in Admin → Thin clients.
+  names on screen and device addresses: who is at which screen. Give it to
+  anything you would let see that, and remember Home Assistant keeps history.
+- **Control** can also see and take screenshots (what someone has on their
+  screen), queue `screen_on`, `screen_off`, `set_volume`, `set_mute`,
+  `identify`, `screenshot`, `restart_browser`, `reboot` and `poweroff`, sign a
+  device out, and set keep-awake. It can't read device logs or run system
+  updates; those stay in Admin → Thin clients.
+- A token acts with the authority of the admin who created it. Cove revokes it
+  when that account is deleted or is no longer an admin (each revocation is in
+  the audit log), so create long-lived tokens from an account that stays.
 - Only the token's sha256 is stored. **Admin → Integrations** shows when and
   from where each token was last used. Revoking one stops it at once, and Home
   Assistant then asks for a new token (*Reconfigure* on the integration).
 - Every command shows in the device's *Activity* list as
-  `integration:<token name>`. Reboot, power off and browser restarts, sign-outs,
-  and creating or revoking tokens also go to the audit log. Screen and volume
-  changes don't, so a motion automation can't flood it.
+  `integration:<token name>`. Screenshots, reboot, power off and browser
+  restarts, sign-outs, and creating or revoking tokens also go to the audit log.
+  Screen and volume changes don't, so a motion automation can't flood it.
+- **Download diagnostics** in Home Assistant redacts the token, Cove's address,
+  device addresses and host names, and who is signed in where, so it is safe to
+  attach to a bug report.
 
 ## API
 
@@ -143,7 +152,7 @@ can use them too.
 | Method | Path | Scope | Purpose |
 |---|---|---|---|
 | GET | `/api/integration/v1/status` | read | Users, workspaces, zones and thin clients in one JSON document, plus the token's own name and scope. |
-| GET | `/api/integration/v1/thin-clients/{id}/screenshot.png` | read | The latest screenshot (`404` if none). |
+| GET | `/api/integration/v1/thin-clients/{id}/screenshot.png` | control | The latest screenshot (`404` if none). |
 | POST | `/api/integration/v1/thin-clients/{id}/commands` | control | `{"kind", "args"}`. For example `{"kind": "set_volume", "args": {"level": 60}}` or `{"kind": "set_mute", "args": {"muted": true}}`. `202` once queued. |
 | POST | `/api/integration/v1/thin-clients/{id}/signout` | control | Sign the device out. |
 | POST | `/api/integration/v1/thin-clients/{id}/keep-awake` | control | `{"minutes": 0..1440}` (0 clears it). |
@@ -162,7 +171,7 @@ curl -s -H "Authorization: Bearer $COVE_TOKEN" https://cove.example.com/api/inte
   Assistant host, and whether a proxy in front of Cove asks for a login. Cove
   must answer with JSON. With a self-signed certificate, untick **Verify the
   TLS certificate**.
-- **Controls missing**: the token is **Read**. Create a **Control** token and
+- **Controls or screenshots missing**: the token is **Read**. Create a **Control** token and
   enter it under the integration's *Reconfigure*.
 - **Volume or Mute does nothing**: the device runs an agent older than 1.1.0.
   Agents update themselves within a minute of Cove being updated, so check

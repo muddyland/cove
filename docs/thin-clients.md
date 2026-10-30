@@ -92,7 +92,7 @@ they touch a disk.
 
 | Option | |
 |---|---|
-| `--cove-url` | Required. Prefilled on first boot. |
+| `--cove-url` | Required, and must be `https://` (use `--ca-file` for a self-signed Cove). Prefilled on first boot. |
 | `--code` | Bake in an enrolment code (mint it with a 7-day lifetime). First boot then needs no typing. If the code has expired or been used, first boot asks for a new one. |
 | `--ssh-key` | Installs SSH with key-only logins for the `coveadmin` account. |
 | `--password` | Password for `coveadmin` (sudo). Generated and printed if omitted. |
@@ -106,6 +106,9 @@ in a `debian:trixie` container (Docker).
 > **Treat a baked-in code like a password** until it has been used: anyone who
 > boots the stick before you can enrol their machine in its place. Leave
 > `--code` out for a stick you keep around.
+
+First boot never drops to a shell: with no network it offers **Retry** or
+**Power off**, and it accepts only an `https://` address.
 
 ## 4. Managing thin clients
 

@@ -5,8 +5,10 @@ a list of zones (``User.zones_restricted`` + ``user_zone`` rows), for example to
 keep a LAN zone for themselves. Admins always have every zone.
 
 A limit applies wherever a workspace is placed or run: launch, clone, migrate
-and start. The check is always against the workspace's *owner*, so an admin
-acting on someone's workspace can't put it where its owner isn't allowed.
+and start, and to adding files to a zone's storage (upload, copy). The check is
+always against the workspace's *owner*, so an admin acting on someone's
+workspace can't put it where its owner isn't allowed. A forbidden zone is never
+named to the user, and its settings read as off.
 """
 
 from typing import Optional
@@ -31,14 +33,14 @@ def may_use(db: Session, user: User, zone_id: int) -> bool:
 
 
 def require_zone(db: Session, owner: User, zone_id: int, *, action: str = "use") -> None:
-    """403 unless ``owner`` may use ``zone_id``."""
+    """403 unless ``owner`` may use ``zone_id``. Checked before anything else
+    about the zone, and without naming it, so a limited user can't map zones
+    they aren't allowed by probing ids."""
     if may_use(db, owner, zone_id):
         return
-    zone = db.get(Zone, zone_id)
-    name = zone.name if zone else f"#{zone_id}"
     raise HTTPException(
         status_code=403,
-        detail=f"{owner.username} isn't allowed to {action} workspaces on zone '{name}'. "
+        detail=f"{owner.username} isn't allowed to {action} on that zone. "
         "An admin can change that under Admin → Users.",
     )
 

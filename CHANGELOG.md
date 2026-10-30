@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **Security: smaller fixes from the same review.**
+  - *Home Assistant:* thin client screenshots now need a **Control** token
+    (a **Read** token used to fetch them, showing what someone had on screen),
+    and taking one is audited. Integration tokens are revoked when the admin
+    who created them is deleted or loses admin rights. The integration refuses
+    a plain `http://` Cove address (except `localhost`), and its diagnostics
+    download no longer contains who is signed in where. Re-download the
+    integration from **Admin → Integrations** to get these. Status polls reuse
+    a fresh Docker stats sample instead of re-sampling every container each
+    time a workspace starts or stops.
+  - *Zone limits:* a limited account can no longer upload or copy files into
+    a zone it may not use (it can still download and delete what's there).
+    Launch, clone and migrate check the limit before anything that names the
+    zone, the GPU and Docker policy endpoints read as off for such a zone, and
+    the error no longer names it.
+  - *Thin clients:* the screenshot upload checks the device token before
+    reading the body. Only failed binds count toward the bind rate limit, so
+    junk requests can't lock out kiosks behind the same address. A policy
+    change's audit entry lists the changed values (for example new allowed
+    hosts). A device name can no longer splice values into the install script.
+    The install USB requires an `https://` Cove address, and its first-boot
+    screen offers **Power off** instead of a root shell when there's no
+    network.
+  - *Session moved:* stopping or deleting a workspace (from any path, including
+    auto-halt and an admin's halt) forgets which screen held it, so a reused
+    workspace id or the Home Assistant status never shows a stale holder.
 - **Security: thin client sessions end properly.** Found in a review of the
   new thin client code:
   - *The session cap never reset the kiosk.* When **Longest session** passed,

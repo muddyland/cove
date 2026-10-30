@@ -44,6 +44,11 @@ async def test_user_flow_errors(hass: HomeAssistant, aioclient_mock) -> None:
     result = await _start(hass, **{CONF_URL: "cove.example.com"})
     assert result["errors"] == {CONF_URL: "invalid_url"}
 
+    # Plain http:// would send the token in clear across the network.
+    for url in ("http://cove.example.com", "http://192.168.1.5:8080"):
+        result = await _start(hass, **{CONF_URL: url})
+        assert result["errors"] == {CONF_URL: "insecure_url"}, url
+
 
 async def test_same_server_twice_aborts(hass: HomeAssistant, aioclient_mock, status, entry) -> None:
     entry.add_to_hass(hass)

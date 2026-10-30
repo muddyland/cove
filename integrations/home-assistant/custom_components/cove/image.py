@@ -21,6 +21,9 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: CoveConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
+    # Screenshots need a Control token: they show what someone has on screen.
+    if (coordinator.data or {}).get("token", {}).get("scope") != "control":
+        return
     add_device_entities(
         coordinator,
         async_add_entities,

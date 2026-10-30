@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, s
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 
-from server import settings_store, storage_local
+from server import settings_store, storage_local, zone_access
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.models import TrashEntry, User, Zone
@@ -126,6 +126,9 @@ def upload_file(
     file: UploadFile = File(...),
     zone_id: int = 0,
 ):
+    # Adding data needs the zone (reading, tidying and deleting what's already
+    # there doesn't, so a user limited away from a zone can still fetch it).
+    zone_access.require_zone(db, user, zone_id, action="add files")
     client = _agent_client(db, zone_id)
     if client is None:
         max_bytes = get_settings().max_upload_mb * 1024 * 1024
@@ -208,6 +211,7 @@ def download_archive(user: CurrentUser, db: DbSession, path: str = "", zone_id: 
 def copy_path(
     user: CurrentUser, db: DbSession, request: Request, body: FileOp, zone_id: int = 0
 ):
+    zone_access.require_zone(db, user, zone_id, action="add files")
     client = _agent_client(db, zone_id)
     if client is None:
         result = storage_local.copy(_user_base(user), body.src, body.dst_dir)

@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from server import zone_access
 from server.catalog import (
     _build_specs,
     fetch_linuxserver_images,
@@ -125,6 +126,8 @@ def images_pull_status(user: AdminUser, db: DbSession, zone_id: int = 0):
 def images_availability(user: CurrentUser, db: DbSession, zone_id: int = 0):
     """Same answer as /pull-status, for enabled images only, readable by any
     user — the launch wizard warns when a pick still has to be downloaded."""
+    if not zone_access.may_use(db, user, zone_id):
+        raise HTTPException(status_code=404, detail="Zone not found")
     images = db.scalars(select(WorkspaceImage).where(WorkspaceImage.enabled.is_(True))).all()
     if not images:
         return {}

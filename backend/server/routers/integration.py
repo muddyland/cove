@@ -139,7 +139,9 @@ def status_snapshot(token: ReadToken, db: DbSession):
 
 
 @router.get("/thin-clients/{public_id}/screenshot.png")
-def screenshot(public_id: str, token: ReadToken, db: DbSession):
+def screenshot(public_id: str, token: ControlToken, db: DbSession):
+    # Control only: a screenshot shows what someone has on their screen, which
+    # is more than the counters a read token is for.
     client = _client(db, public_id)
     if not client.screenshot_png:
         raise HTTPException(status_code=404, detail="No screenshot yet")

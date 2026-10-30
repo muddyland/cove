@@ -10,7 +10,12 @@ from homeassistant.core import HomeAssistant
 
 from .coordinator import CoveConfigEntry
 
-REDACT = {CONF_API_TOKEN, CONF_URL, "ips", "hostname", "instance_id"}
+# Network details, and who is where: diagnostics get pasted into public bug
+# reports, so they must not say which person sits at which screen.
+REDACT = {
+    CONF_API_TOKEN, CONF_URL, "ips", "hostname", "instance_id",
+    "session_username", "workspace_name", "workspace_owner", "location", "last_error",
+}
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: CoveConfigEntry) -> dict[str, Any]:

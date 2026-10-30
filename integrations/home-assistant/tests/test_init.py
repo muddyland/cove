@@ -75,7 +75,8 @@ async def test_read_only_token_has_no_controls(hass: HomeAssistant, aioclient_mo
     await _setup(hass, entry, aioclient_mock, status)
     registry = er.async_get(hass)
     platforms = {e.domain for e in er.async_entries_for_config_entry(registry, entry.entry_id)}
-    assert platforms == {"sensor", "binary_sensor", "image"}
+    # No screenshots either: they need a Control token.
+    assert platforms == {"sensor", "binary_sensor"}
 
 
 async def test_controls_queue_commands(hass: HomeAssistant, aioclient_mock, status, entry) -> None:

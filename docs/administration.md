@@ -52,7 +52,10 @@ reported only as present/absent — never shown.
 - **Limit to specific zones** (per user, off by default): restrict the account
   to the zones you tick, Local included, for example to keep a LAN zone for
   yourself. The account's zone pickers offer only those zones, and launching,
-  starting, cloning or migrating a workspace anywhere else is refused. That
+  starting, cloning or migrating a workspace anywhere else is refused, as is
+  adding files to another zone's storage (upload, copy; the account can still
+  download and delete what it has there). Errors never name a zone the account
+  can't use. That
   applies even when an admin acts on the account's workspace, because the
   limit follows the workspace's owner. Existing workspaces on a zone the
   account loses are kept, but can't start until migrated to an allowed zone.

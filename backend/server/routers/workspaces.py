@@ -447,11 +447,13 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     )
     if body.use_gluetun:
         _check_gluetun_single_connection(db, user.id, g_profile_id)
+    # The zone limit first: the checks below name the zone or reveal its
+    # settings, which a user limited away from it mustn't learn.
+    zone_access.require_zone(db, user, body.zone_id, action="run workspaces")
     _validate_docker(db, body.use_docker, body.zone_id, user)
     _validate_gpu(body.gpu_accel, body.pixelflux_wayland)
 
     _validate_zone(db, body.zone_id)
-    zone_access.require_zone(db, user, body.zone_id, action="run")
     _check_name_unique(db, user.id, body.name)
 
     ws = Workspace(
@@ -597,8 +599,8 @@ def clone_workspace(
     )
     if src.use_gluetun:
         _check_gluetun_single_connection(db, user.id, g_profile_id)
+    zone_access.require_zone(db, user, src.zone_id, action="run workspaces")
     _validate_docker(db, src.use_docker, src.zone_id)
-    zone_access.require_zone(db, user, src.zone_id, action="run")
 
     clone = Workspace(
         user_id=user.id,
@@ -678,8 +680,8 @@ def migrate_workspace(
         raise HTTPException(
             status_code=409, detail="Stop the workspace before migrating so its files are at rest"
         )
+    zone_access.require_zone(db, ws.user, target, action="move workspaces")
     _validate_zone(db, target)
-    zone_access.require_zone(db, ws.user, target, action="move")
     if ws.use_docker:
         # A DinD workspace would arrive somewhere its nested daemon can't start,
         # and with the Docker toggle hidden from its edit form.
@@ -736,6 +738,8 @@ def gpu_policy(user: CurrentUser, db: DbSession, zone_id: int = 0):
     """
     from server import settings_store
 
+    if not zone_access.may_use(db, user, zone_id):
+        return GpuPolicyOut(enabled=False)  # nothing to learn about a forbidden zone
     return GpuPolicyOut(enabled=settings_store.get_zone_gpu_accel(db, zone_id))
 
 
@@ -774,6 +778,8 @@ def docker_policy(user: CurrentUser, db: DbSession, zone_id: int = 0):
     """
     from server import settings_store
 
+    if not zone_access.may_use(db, user, zone_id):
+        return DockerPolicyOut(enabled=False)
     return DockerPolicyOut(enabled=settings_store.get_zone_docker(db, zone_id))
 
 

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 
-from server import settings_store, zone_access
+from server import integration, settings_store, zone_access
 from server.config import get_settings
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace, Zone
@@ -92,11 +92,13 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    demoted = False
     if body.username is not None and body.username != target.username:
         validate_username(body.username)
         existing = db.scalar(select(User).where(User.username == body.username))
         if existing:
             raise HTTPException(status_code=409, detail="Username already taken")
+        integration.rename_creator(db, target.username, body.username)
         target.username = body.username
     if body.is_admin is not None:
         # Never let the last admin be demoted — it would lock the instance out of
@@ -109,6 +111,7 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
             )
             if not other_admins:
                 raise HTTPException(status_code=400, detail="Cannot remove the last admin")
+            demoted = True
         target.is_admin = body.is_admin
     if body.password is not None:
         # SSO (OIDC) accounts have no local password; refuse to set one rather
@@ -130,7 +133,16 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
     db.commit()
     db.refresh(target)
     _audit(db, "admin.user.update", detail=target.username, user=admin, request=request)
+    if demoted:
+        _revoke_integration_tokens(db, target.username, "no longer an admin", admin, request)
     return target
+
+
+def _revoke_integration_tokens(db, username: str, why: str, admin, request: Request) -> None:
+    """Integration tokens act with their creator's admin authority: they go
+    when that authority does."""
+    for name in integration.revoke_tokens_of(db, username):
+        _audit(db, "admin.integration_token.revoke", detail=f"{name} ({username} {why})", user=admin, request=request)
 
 
 @router.post("/users/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)
@@ -166,6 +178,7 @@ def delete_user(user_id: int, admin: AdminUser, db: DbSession, bg: BackgroundTas
     db.delete(target)
     db.commit()
     _audit(db, "admin.user.delete", detail=username, user=admin, request=request)
+    _revoke_integration_tokens(db, username, "deleted", admin, request)
 
 
 @router.get("/sessions", response_model=list[WorkspaceOut])
