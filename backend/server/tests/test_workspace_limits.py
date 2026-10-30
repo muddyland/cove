@@ -23,8 +23,8 @@ def _user(client, admin, name="bob", **limits):
 
 
 def _launch(client, token, name):
-    return client.post("/api/workspaces", json={"name": name, "image_id": add_image(name=f"img-{uuid.uuid4().hex[:8]}")},
-                       headers=auth_header(token))
+    image_id = add_image(name=f"img-{uuid.uuid4().hex[:8]}")
+    return client.post("/api/workspaces", json={"name": name, "image_id": image_id}, headers=auth_header(token))
 
 
 def _defaults(client, admin, **values):
