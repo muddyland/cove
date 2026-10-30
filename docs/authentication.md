@@ -37,6 +37,44 @@ Cove issues signed (HS256) JSON Web Tokens delivered as **httpOnly cookies**:
 - The API also accepts an `Authorization: Bearer <token>` header as an alternative to the cookie.
 - **Refresh:** the SPA silently rotates the session via the refresh cookie. **Logout** revokes all of a user's outstanding tokens (it stamps a `tokens_valid_from` marker) and clears the cookies. Changing your password does the same, ending other sessions.
 
+## Local network only accounts
+
+Tick **Local network only** on an account (Admin → Users) and it works only
+from your own network: signing in (password or SSO), refreshing a session,
+every API call and opening a workspace stream are all refused from anywhere
+else, with *"This account can only be used from the local network."* A leaked
+password, or a session cookie stolen from a laptop, is then useless from the
+internet. A browser that leaves the network (a laptop taken out of the house)
+is signed out on its next request. The message only appears after a correct
+password, so it doesn't tell a guesser that the account exists.
+
+What counts as the local network is set in **Admin → Settings → Sign-in**:
+
+- **LAN networks**: default `10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10`.
+  `172.16.0.0/12` is left out because Docker can present visitors from the
+  internet (IPv6 ones in particular) as its bridge gateway, `172.17.0.1`; add
+  your own range if your LAN uses it.
+- **Trusted proxies**: anything in front of Cove's Traefik (another reverse
+  proxy, a tunnel). Cove skips their addresses to find each visitor's own. See
+  [Deployment → Behind another reverse proxy](deployment.md#behind-another-reverse-proxy).
+
+The page shows the address Cove sees for your own connection and whether it
+counts as local. **Check it once from a phone off the Wi-Fi**: it must say
+*outside the local network*. If it says local, every visitor looks local to
+Cove (typically a tunnel or proxy that isn't listed) and the setting protects
+nothing.
+
+Cove errs towards refusing. A request is local only if its address is in the
+LAN networks, isn't itself a trusted proxy (Cove can't see past it), and no
+other address the request carries for its visitor (`X-Forwarded-For`,
+`CF-Connecting-IP`, `True-Client-IP`, `Forwarded`) is outside them. Those
+headers can't make a request look local; a client faking them only locks
+itself out.
+
+Cove won't let you lock yourself out: it refuses to turn the setting on for
+your own account from outside the network, or to save network settings under
+which your current connection would stop counting as local.
+
 ## OIDC / SSO
 
 Cove speaks standard OpenID Connect (authorization-code flow) and is **not tied

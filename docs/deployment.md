@@ -280,6 +280,14 @@ attacker's failed logins lock everyone out for the rate-limit window. Add to the
 - --entrypoints.websecure.forwardedHeaders.trustedIPs=10.0.0.5/32
 ```
 
+Then add the same address under **Admin → Settings → Sign-in → Trusted
+proxies**, so Cove skips it and finds each visitor's own address. Both are
+needed for [Local network only](authentication.md#local-network-only-accounts)
+accounts: without Traefik's setting Cove only sees the proxy (and refuses
+those accounts everywhere); without Cove's, it takes the proxy's address for
+the visitor. The same goes for a tunnel such as Cloudflare Tunnel: its
+connector is the proxy.
+
 Workspace streams are long-lived WebSockets carrying live video, so the upstream
 proxy must pass them through unbuffered with long timeouts. With Nginx Proxy
 Manager or plain nginx defaults, streams freeze and burst over the internet. See

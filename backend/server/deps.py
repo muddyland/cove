@@ -107,6 +107,13 @@ def _get_current_user(
     if not _check_revocation(user, payload):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
 
+    if user.lan_only:
+        # A session of a LAN-only account works only from the LAN: a stolen
+        # cookie or bearer token is useless from the internet.
+        from server import lan_access
+
+        lan_access.require(db, user, request)
+
     return user
 
 

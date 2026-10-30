@@ -17,6 +17,8 @@ limits they started with.
 | **Default memory limit (MB)** | `0` (unlimited) | Caps each new workspace container's RAM. |
 | **Process limit (pids)** | `8192` | Caps processes + threads per workspace container (a fork bomb otherwise exhausts the host). `0` = unlimited. |
 | **Workspaces per account** | `0` (no limit) | How many workspaces each account may have. Override per account under Admin → Users. Admins are never limited. |
+| **LAN networks** | `10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10` | Where **Local network only** accounts may be used from. See [Authentication](authentication.md#local-network-only-accounts). |
+| **Trusted proxies** | _(none)_ | Proxies or tunnels in front of Cove's Traefik, skipped to find each visitor's address (rate limits, audit log, LAN-only). |
 | **Running at once per account** | `0` (no limit) | How many of an account's workspaces may run at the same time (one that's starting counts; one that's stopping doesn't). Override per account under Admin → Users. |
 | **Max runtime (hours)** | `24` (`0` = unlimited) | Running workspaces older than this are auto-stopped. |
 | **Force-disable sudo** | off | Applies `no-new-privileges` to **all** workspaces, overriding the per-launch "Allow sudo". |
@@ -64,6 +66,10 @@ reported only as present/absent — never shown.
   Ticking no zones leaves the account unable to run any workspace. Admins
   always have every zone. The **Zones** column in the list shows each
   account's limit.
+- **Local network only** (per user, off by default): the account can only be
+  used from the LAN networks set under Settings → Sign-in. See
+  [Authentication → Local network only accounts](authentication.md#local-network-only-accounts).
+  The list shows **LAN only** next to the role.
 - **Workspace limits** (per user): how many workspaces the account may have,
   and how many may run at once. Leave a field empty to follow the default from
   Admin → Settings, enter `0` for no limit, or a number to cap it. Past the cap,

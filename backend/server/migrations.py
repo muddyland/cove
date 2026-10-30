@@ -275,6 +275,10 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0057_user_max_running",
         "ALTER TABLE user ADD COLUMN max_running INTEGER",
     ),
+    (
+        "0058_user_lan_only",
+        "ALTER TABLE user ADD COLUMN lan_only BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

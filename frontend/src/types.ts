@@ -9,6 +9,8 @@ export interface User {
   /** Per-account workspace caps: null follows the deployment default, 0 = no limit. */
   max_workspaces: number | null
   max_running: number | null
+  /** Sign-in, sessions and streams only from the LAN networks (Admin → Settings). */
+  lan_only: boolean
   auth_provider: string
   created_at: string
   last_login_at: string | null
@@ -24,6 +26,16 @@ export interface UserFormPayload {
   allowed_zone_ids: number[]
   max_workspaces: number | null
   max_running: number | null
+  lan_only: boolean
+}
+
+/** What Cove sees of the admin's own request (Admin → Settings → Sign-in). */
+export interface NetworkCheck {
+  client_ip: string
+  is_lan: boolean
+  forwarded_for: string[]
+  claimed: string[]
+  warning: string | null
 }
 
 /** The caller's workspace caps and usage; 0 = no limit. */
@@ -356,6 +368,8 @@ export interface AppSettings {
   trash_retention_days: number
   default_max_workspaces: number
   default_max_running: number
+  signin_lan_networks: string
+  trusted_proxies: string
 }
 
 export interface EnvEntry {

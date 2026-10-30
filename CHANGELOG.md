@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Local network only accounts.** Tick **Local network only** on an account
+  (Admin → Users) and it can only sign in, keep a session, call the API and
+  open workspaces from your own network, so a leaked password or stolen
+  session is useless from the internet. Admin → Settings → Sign-in sets which
+  networks count as local and which proxies sit in front of Cove, and shows
+  how Cove sees your own connection. **Operator action:** if Cove is behind
+  another reverse proxy or a tunnel, add it under **Trusted proxies** before
+  using this (and in Traefik's `forwardedHeaders.trustedIPs`), then check from
+  a phone off the Wi-Fi that Cove reports *outside the local network*.
 - **Workspace limits per account.** Admin → Settings sets how many workspaces
   each account may have and how many may run at once (default: no limit), and
   Admin → Users overrides either for one account. Launching, cloning or

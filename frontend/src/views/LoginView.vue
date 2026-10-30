@@ -13,7 +13,8 @@
       </a>
 
       <!-- OIDC-only mode: redirecting to the IdP; local form is hidden. -->
-      <div v-if="auth.oidcOnly" class="redirect-note">// redirecting to {{ auth.oidcProviderName }}…</div>
+      <div v-if="auth.oidcOnly && error" class="form-error">⚠ {{ error }}</div>
+      <div v-else-if="auth.oidcOnly" class="redirect-note">// redirecting to {{ auth.oidcProviderName }}…</div>
 
       <template v-else>
         <div v-if="auth.oidcEnabled" class="divider"><span>— OR —</span></div>
@@ -39,13 +40,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import NeonButton from '@/components/NeonButton.vue'
 import { LogIn } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const username = ref('')
 const password = ref('')
@@ -54,6 +56,12 @@ const loading = ref(false)
 const oidcLoginUrl = '/api/auth/oidc/login'
 
 onMounted(() => {
+  // Sent back here because this account is local network only (an SSO sign-in
+  // from outside, or a session that left the LAN).
+  if (route.query.error === 'lan_only') {
+    error.value = 'This account can only be used from the local network.'
+    return // and don't bounce straight back to the IdP: that would loop
+  }
   // OIDC-only: skip the page and go straight to the IdP. The button remains as a
   // fallback if the redirect is blocked.
   if (auth.oidcOnly && auth.oidcEnabled) {

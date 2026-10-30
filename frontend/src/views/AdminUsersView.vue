@@ -24,7 +24,10 @@
           <tr v-for="u in users" :key="u.id">
             <td>{{ u.username }}</td>
             <td><span class="badge">{{ u.auth_provider }}</span></td>
-            <td>{{ u.is_admin ? 'Admin' : 'User' }}<span v-if="u.docker_allowed && !u.is_admin" class="muted"> · docker</span></td>
+            <td>
+              {{ u.is_admin ? 'Admin' : 'User' }}<span v-if="u.docker_allowed && !u.is_admin" class="muted"> · docker</span>
+              <span v-if="u.lan_only" class="muted" title="Local network only"> · LAN only</span>
+            </td>
             <td :class="{ muted: !u.zones_restricted || u.is_admin }">{{ zoneSummary(u) }}</td>
             <td>{{ u.last_login_at ? formatDate(u.last_login_at) : '—' }}</td>
             <td class="actions">

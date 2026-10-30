@@ -42,6 +42,14 @@
           <p v-if="!form.allowed_zone_ids.length" class="hint warn">No zones ticked: this account can't run any workspace.</p>
         </div>
       </div>
+      <div class="form-group checkbox">
+        <label><input type="checkbox" v-model="form.lan_only" /> Local network only</label>
+        <p class="hint">
+          This account can only sign in, keep a session and open workspaces from the local network
+          (the LAN networks in Admin → Settings → Sign-in), so a leaked password or session is
+          useless from the internet.
+        </p>
+      </div>
       <fieldset class="limits" :disabled="form.is_admin">
         <legend>Workspace limits</legend>
         <div class="limit-row">
@@ -93,6 +101,7 @@ const form = reactive({
   zones_restricted: false, allowed_zone_ids: [] as number[],
   // Strings so "empty" (= the deployment default) survives the round trip.
   max_workspaces: '' as string | number, max_running: '' as string | number,
+  lan_only: false,
 })
 
 function limitValue(v: string | number): number | null {
@@ -110,6 +119,7 @@ watch(() => props.editUser, (u) => {
   form.allowed_zone_ids = [...(u?.allowed_zone_ids ?? [])]
   form.max_workspaces = u?.max_workspaces ?? ''
   form.max_running = u?.max_running ?? ''
+  form.lan_only = !!u?.lan_only
 }, { immediate: true })
 
 // Zones to choose from (Local first). Loaded when the modal opens.
@@ -134,6 +144,7 @@ async function handleSubmit() {
       allowed_zone_ids: form.zones_restricted ? form.allowed_zone_ids : [],
       max_workspaces: limitValue(form.max_workspaces),
       max_running: limitValue(form.max_running),
+      lan_only: form.lan_only,
     }
     if (form.password) payload.password = form.password
     await props.onSubmit(payload)

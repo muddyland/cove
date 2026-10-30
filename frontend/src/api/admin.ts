@@ -1,5 +1,8 @@
 import { api } from './client'
-import type { AppSettings, AuditEntry, AuditFacets, AuditQuery, EnvSummary, PruneResult, StorageInfo, User, UserFormPayload, Workspace } from '@/types'
+import type {
+  AppSettings, AuditEntry, AuditFacets, AuditQuery, EnvSummary, NetworkCheck, PruneResult, StorageInfo, User,
+  UserFormPayload, Workspace,
+} from '@/types'
 
 export const adminApi = {
   users: {
@@ -32,6 +35,8 @@ export const adminApi = {
   env: {
     get: () => api.get<EnvSummary>('/admin/env'),
   },
+  /** What Cove sees of this request: client address, LAN or not, proxy warnings. */
+  networkCheck: () => api.get<NetworkCheck>('/admin/network-check'),
   storage: {
     get: () => api.get<StorageInfo>('/admin/storage'),
     prune: (zone_id: number, deep: boolean) =>

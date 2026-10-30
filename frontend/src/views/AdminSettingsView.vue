@@ -175,6 +175,39 @@
             such as Kali or webtop typically need <code>sudo</code>.
           </p>
 
+          <h4 id="set-signin" class="section-h">Sign-in</h4>
+          <div class="form-group">
+            <label>LAN networks</label>
+            <input v-model="form.signin_lan_networks" type="text" autocomplete="off"
+                   placeholder="10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10" />
+            <p class="hint">
+              Where accounts marked <strong>Local network only</strong> (Admin → Users) may sign in
+              from. Comma separated IPv4/IPv6 CIDRs; invalid entries are dropped on save.
+              <code>172.16.0.0/12</code> isn't in the default because Docker can show visitors from
+              the internet as its bridge gateway (<code>172.17.0.1</code>); add your own range if
+              your LAN uses it.
+            </p>
+          </div>
+          <div class="form-group">
+            <label>Trusted proxies</label>
+            <input v-model="form.trusted_proxies" type="text" autocomplete="off" placeholder="none" />
+            <p class="hint">
+              Reverse proxies or tunnels in front of Cove's Traefik, so Cove sees each visitor's own
+              address instead of the proxy's. List them in Traefik's
+              <code>forwardedHeaders.trustedIPs</code> too (see Deployment). Leave empty when
+              browsers reach Cove's Traefik directly.
+            </p>
+          </div>
+          <div class="netcheck" v-if="netCheck">
+            <span>This connection: <code>{{ netCheck.client_ip }}</code></span>
+            <span :class="netCheck.is_lan ? 'ok' : 'warn'">{{ netCheck.is_lan ? 'local network' : 'outside the local network' }}</span>
+            <p v-if="netCheck.warning" class="hint warn">{{ netCheck.warning }}</p>
+            <p class="hint">
+              Saved settings apply here. Check from a phone off the Wi-Fi too: it must show
+              <em>outside</em>, or Local network only won't protect anything.
+            </p>
+          </div>
+
           <h4 id="set-gpu" class="section-h">GPU</h4>
           <label class="checkbox-row">
             <input type="checkbox" v-model="form.workspace_gpu_accel" />
@@ -273,7 +306,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
-import type { EnvEntry } from '@/types'
+import type { EnvEntry, NetworkCheck } from '@/types'
 
 const ui = useUiStore()
 
@@ -291,6 +324,7 @@ const SECTIONS = [
   { id: 'limits', label: 'Limits' },
   { id: 'network', label: 'Network' },
   { id: 'security', label: 'Security' },
+  { id: 'signin', label: 'Sign-in' },
   { id: 'gpu', label: 'GPU' },
   { id: 'docker', label: 'Docker' },
 ]
@@ -320,9 +354,16 @@ const form = reactive({
   trash_retention_days: 30,
   default_max_workspaces: 0,
   default_max_running: 0,
+  signin_lan_networks: '',
+  trusted_proxies: '',
 })
+const netCheck = ref<NetworkCheck | null>(null)
+function loadNetCheck() {
+  adminApi.networkCheck().then(n => { netCheck.value = n }).catch(() => { netCheck.value = null })
+}
 
 onMounted(async () => {
+  loadNetCheck()
   try {
     const settings = await adminApi.settings.get()
     form.tailscale_image = settings.tailscale_image
@@ -342,6 +383,8 @@ onMounted(async () => {
     form.trash_retention_days = settings.trash_retention_days
     form.default_max_workspaces = settings.default_max_workspaces
     form.default_max_running = settings.default_max_running
+    form.signin_lan_networks = settings.signin_lan_networks
+    form.trusted_proxies = settings.trusted_proxies
     snapshot.value = JSON.stringify(form)
   } catch (e: any) {
     error.value = e.message
@@ -381,6 +424,8 @@ async function handleSave() {
       trash_retention_days: form.trash_retention_days,
       default_max_workspaces: form.default_max_workspaces || 0,
       default_max_running: form.default_max_running || 0,
+      signin_lan_networks: form.signin_lan_networks,
+      trusted_proxies: form.trusted_proxies,
     })
     form.tailscale_image = updated.tailscale_image
     form.gluetun_image = updated.gluetun_image
@@ -399,6 +444,9 @@ async function handleSave() {
     form.trash_retention_days = updated.trash_retention_days
     form.default_max_workspaces = updated.default_max_workspaces
     form.default_max_running = updated.default_max_running
+    form.signin_lan_networks = updated.signin_lan_networks
+    form.trusted_proxies = updated.trusted_proxies
+    loadNetCheck()
     snapshot.value = JSON.stringify(form)
     ui.toast('Settings saved', 'success')
   } catch (e: any) {
@@ -412,6 +460,10 @@ async function handleSave() {
 
 <style scoped>
 @import '@/styles/tables.css';
+.netcheck { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 10px 12px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; }
+.netcheck .hint { flex-basis: 100%; margin: 0; }
+.netcheck .ok { color: var(--green); }
+.netcheck .warn { color: var(--amber); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-row .form-group { margin-bottom: 0; }
 

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 
-from server import integration, settings_store, zone_access
+from server import integration, lan_access, net, settings_store, zone_access
 from server.config import get_settings
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace, Zone
@@ -18,6 +18,7 @@ from server.schemas import (
     EnvEntry,
     EnvSummaryOut,
     HostDisk,
+    NetworkCheckOut,
     PruneRequest,
     PruneResultOut,
     StorageCategory,
@@ -78,6 +79,7 @@ def create_user(body: AdminUserCreate, user: AdminUser, db: DbSession, request: 
         docker_allowed=body.docker_allowed,
         max_workspaces=body.max_workspaces,
         max_running=body.max_running,
+        lan_only=body.lan_only,
     )
     db.add(new_user)
     db.flush()
@@ -130,6 +132,15 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
         target.max_workspaces = body.max_workspaces
     if "max_running" in body.model_fields_set:
         target.max_running = body.max_running
+    if body.lan_only is not None and body.lan_only != target.lan_only:
+        if body.lan_only and target.id == admin.id and not lan_access.request_is_lan(db, request):
+            # The very next request would be refused: don't lock yourself out.
+            raise HTTPException(
+                status_code=400,
+                detail=f"You're connected from outside the local network ({client_ip(request)}), so this "
+                "would sign you out. Turn it on from the LAN, or check Admin → Settings → LAN networks.",
+            )
+        target.lan_only = body.lan_only
     if body.zones_restricted is not None or body.allowed_zone_ids is not None:
         zone_access.set_allowed(
             db,
@@ -461,6 +472,40 @@ def prune_storage(
     )
 
 
+def _save_network_settings(db, admin, request: Request, lan_networks, trusted_proxies) -> None:
+    """Save the LAN networks / trusted proxies, unless that would lock the
+    admin's own LAN-only account out on its very next request."""
+    old_lan = settings_store.get_signin_lan_networks(db)
+    old_proxies = settings_store.get_trusted_proxies(db)
+    if lan_networks is not None:
+        settings_store.set_setting(
+            db, settings_store.KEY_SIGNIN_LAN_NETWORKS, ", ".join(net.parse_networks(lan_networks))
+        )
+    if trusted_proxies is not None:
+        proxies = ", ".join(net.parse_networks(trusted_proxies))
+        settings_store.set_setting(db, settings_store.KEY_TRUSTED_PROXIES, proxies)
+        net.set_trusted_proxies(proxies)
+    if not lan_access.allows(db, admin, request):
+        settings_store.set_setting(db, settings_store.KEY_SIGNIN_LAN_NETWORKS, old_lan)
+        settings_store.set_setting(db, settings_store.KEY_TRUSTED_PROXIES, old_proxies)
+        net.set_trusted_proxies(old_proxies)
+        raise HTTPException(
+            status_code=400,
+            detail="Your account is local network only, and with these settings this connection "
+            f"({client_ip(request)}) wouldn't count as the local network, so you'd be signed out. "
+            "Nothing was changed.",
+        )
+
+
+@router.get("/network-check", response_model=NetworkCheckOut)
+def network_check(admin: AdminUser, db: DbSession, request: Request):
+    """What Cove sees of this request: the client address it uses, whether
+    that counts as the LAN, and a warning when a proxy in front of Cove hides
+    visitors' addresses. Check it from a phone off the Wi-Fi before relying on
+    Local network only."""
+    return NetworkCheckOut(**lan_access.describe(db, request))
+
+
 @router.get("/settings", response_model=AppSettingsOut)
 def get_app_settings(admin: AdminUser, db: DbSession):
     return AppSettingsOut(**settings_store.get_all(db))
@@ -562,5 +607,7 @@ def update_app_settings(
         settings_store.set_setting(db, settings_store.KEY_DEFAULT_MAX_WORKSPACES, str(body.default_max_workspaces))
     if body.default_max_running is not None:
         settings_store.set_setting(db, settings_store.KEY_DEFAULT_MAX_RUNNING, str(body.default_max_running))
+    if body.signin_lan_networks is not None or body.trusted_proxies is not None:
+        _save_network_settings(db, admin, request, body.signin_lan_networks, body.trusted_proxies)
     _audit(db, "admin.settings.update", user=admin, request=request)
     return AppSettingsOut(**settings_store.get_all(db))

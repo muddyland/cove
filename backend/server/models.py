@@ -52,6 +52,9 @@ class User(Base):
     # (Admin -> Settings); 0: no limit; N: at most N.
     max_workspaces: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_running: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Local network only (server.lan_access): sign-in, sessions, the API and
+    # workspace streams all refuse requests from outside the LAN networks.
+    lan_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
 
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"

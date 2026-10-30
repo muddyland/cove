@@ -31,6 +31,8 @@ def test_settings_defaults(client):
         "trash_retention_days": 30,
         "default_max_workspaces": 0,
         "default_max_running": 0,
+        "signin_lan_networks": "10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10",
+        "trusted_proxies": "",
     }
 
 
@@ -59,6 +61,8 @@ def test_settings_put_updates_both(client):
         "trash_retention_days": 30,
         "default_max_workspaces": 0,
         "default_max_running": 0,
+        "signin_lan_networks": "10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10",
+        "trusted_proxies": "",
     }
     # Persisted across requests.
     got = client.get("/api/admin/settings").json()

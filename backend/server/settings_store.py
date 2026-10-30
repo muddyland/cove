@@ -38,6 +38,11 @@ KEY_TRASH_RETENTION_DAYS = "trash_retention_days"
 # (server.workspace_limits). 0 = no limit.
 KEY_DEFAULT_MAX_WORKSPACES = "default_max_workspaces"
 KEY_DEFAULT_MAX_RUNNING = "default_max_running"
+# LAN-only sign-in (server.lan_access): the networks that count as "the local
+# network", and the proxies in front of Cove's Traefik whose X-Forwarded-For
+# hops are skipped to find the real client (server.net).
+KEY_SIGNIN_LAN_NETWORKS = "signin_lan_networks"
+KEY_TRUSTED_PROXIES = "trusted_proxies"
 
 # Defaults.
 DEFAULT_TAILSCALE_IMAGE = "tailscale/tailscale:latest"
@@ -77,6 +82,11 @@ DEFAULT_TRASH_RETENTION_DAYS = 30
 # No caps by default: existing deployments keep behaving as before.
 DEFAULT_DEFAULT_MAX_WORKSPACES = 0
 DEFAULT_DEFAULT_MAX_RUNNING = 0
+# Private ranges a home or office LAN uses. 172.16.0.0/12 and 127.0.0.0/8 are
+# left out on purpose: Docker's userland proxy can present outside clients as
+# the bridge gateway (172.17.0.1). Admins whose LAN is in 172.16/12 add it.
+DEFAULT_SIGNIN_LAN_NETWORKS = "10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10"
+DEFAULT_TRUSTED_PROXIES = ""
 
 
 def get_setting(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -288,6 +298,16 @@ def get_default_max_running(db: Session) -> int:
     return _get_count(db, KEY_DEFAULT_MAX_RUNNING, DEFAULT_DEFAULT_MAX_RUNNING)
 
 
+def get_signin_lan_networks(db: Session) -> str:
+    raw = get_setting(db, KEY_SIGNIN_LAN_NETWORKS)
+    return DEFAULT_SIGNIN_LAN_NETWORKS if raw is None else raw
+
+
+def get_trusted_proxies(db: Session) -> str:
+    raw = get_setting(db, KEY_TRUSTED_PROXIES)
+    return DEFAULT_TRUSTED_PROXIES if raw is None else raw
+
+
 def get_all(db: Session) -> dict:
     return {
         "tailscale_image": get_tailscale_image(db),
@@ -307,4 +327,6 @@ def get_all(db: Session) -> dict:
         "trash_retention_days": get_trash_retention_days(db),
         "default_max_workspaces": get_default_max_workspaces(db),
         "default_max_running": get_default_max_running(db),
+        "signin_lan_networks": get_signin_lan_networks(db),
+        "trusted_proxies": get_trusted_proxies(db),
     }

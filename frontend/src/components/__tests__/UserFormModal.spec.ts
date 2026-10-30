@@ -11,7 +11,7 @@ import UserFormModal from '@/components/UserFormModal.vue'
 
 const bob: User = {
   id: 2, username: 'bob', is_admin: false, docker_allowed: false, zones_restricted: false,
-  allowed_zone_ids: [], max_workspaces: 3, max_running: null, auth_provider: 'local',
+  allowed_zone_ids: [], max_workspaces: 3, max_running: null, lan_only: false, auth_provider: 'local',
   created_at: '2026-10-01T00:00:00Z', last_login_at: null,
 } as User
 
@@ -50,6 +50,16 @@ describe('UserFormModal workspace limits', () => {
     await second.wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(second.onSubmit).toHaveBeenCalledWith(expect.objectContaining({ max_workspaces: 5, max_running: null }))
+  })
+
+  it('sends the Local network only switch', async () => {
+    const { wrapper, onSubmit } = mountForm(bob)
+    await flushPromises()
+    const box = wrapper.findAll('input[type="checkbox"]').find(c => c.element.parentElement?.textContent?.includes('Local network only'))!
+    await box.setValue(true)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ lan_only: true }))
   })
 
   it('disables the limits for admins, who are never limited', async () => {

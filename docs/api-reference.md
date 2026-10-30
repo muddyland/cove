@@ -113,7 +113,7 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 | Method | Path | Purpose |
 |---|---|---|
 | GET / POST | `/api/admin/users` | List / create users. |
-| PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. `zones_restricted` + `allowed_zone_ids` set the user's zone limit (either may be sent alone; unknown zone ids are a `400`). `max_workspaces` / `max_running`: a number caps it, `0` is no limit, an explicit `null` follows the default, and leaving the field out keeps it. |
+| PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. `zones_restricted` + `allowed_zone_ids` set the user's zone limit (either may be sent alone; unknown zone ids are a `400`). `lan_only`: local network only. `max_workspaces` / `max_running`: a number caps it, `0` is no limit, an explicit `null` follows the default, and leaving the field out keeps it. |
 | POST | `/api/admin/users/{id}/revoke-sessions` | Sign the user out everywhere (every token issued before now stops working). |
 | GET | `/api/admin/sessions` | List every user's running/starting workspaces. |
 | DELETE | `/api/admin/sessions/{id}` | Stop one of them (the workspace is kept; it used to be deleted). `400` unless running/starting. |
@@ -122,7 +122,8 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 | GET | `/api/admin/env` | Read-only env summary. |
 | GET | `/api/admin/storage` | Per-zone disk usage: host free space plus a Docker breakdown (images, containers, volumes, build cache) with reclaimable amounts. |
 | POST | `/api/admin/storage/prune` | Reclaim Docker disk on a zone (`{"zone_id": n, "deep": bool}`). Dangling images + build cache by default; `deep` also removes all unused images and stopped containers. Volumes are never touched. `502` if the daemon call fails. |
-| GET / PUT | `/api/admin/settings` | Get / update runtime settings. |
+| GET / PUT | `/api/admin/settings` | Get / update runtime settings. `signin_lan_networks` and `trusted_proxies` are comma separated CIDRs (invalid entries dropped); a change that would lock out the caller's own local-network-only account is a `400`. |
+| GET | `/api/admin/network-check` | What Cove sees of this request: `{client_ip, is_lan, forwarded_for, claimed, warning}`. |
 
 ## Zones — `/api/admin/zones`, `/api/zones`
 

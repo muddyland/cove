@@ -123,6 +123,14 @@ async function request<T>(
   // fall into the error branch below and surface as a thrown ApiError.
   if (resp.status === 304) return null as T
 
+  // A local-network-only account outside the LAN (e.g. a laptop that left the
+  // house): every call is refused, so end the session and say why instead of
+  // failing each panel. Login itself just shows the error inline.
+  if (resp.status === 403 && resp.headers.get('X-Cove-Error') === 'lan-only' && auth.token) {
+    auth.clear()
+    window.location.href = '/app/login?error=lan_only'
+  }
+
   if (!resp.ok) {
     let detail = `HTTP ${resp.status}`
     try {

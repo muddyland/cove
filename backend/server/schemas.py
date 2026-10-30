@@ -42,6 +42,7 @@ class UserOut(BaseModel):
     # Per-account workspace caps: None follows the deployment default, 0 = none.
     max_workspaces: Optional[int] = None
     max_running: Optional[int] = None
+    lan_only: bool = False
     auth_provider: str
     created_at: datetime
     last_login_at: Optional[datetime]
@@ -450,6 +451,7 @@ class AdminUserCreate(BaseModel):
     allowed_zone_ids: list[int] = []
     max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
     max_running: Optional[int] = Field(default=None, ge=0, le=1000)
+    lan_only: bool = False
 
 
 class AdminUserUpdate(BaseModel):
@@ -464,6 +466,7 @@ class AdminUserUpdate(BaseModel):
     # current value (the router checks model_fields_set).
     max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
     max_running: Optional[int] = Field(default=None, ge=0, le=1000)
+    lan_only: Optional[bool] = None
 
 
 class WorkspaceLimitsOut(BaseModel):
@@ -494,6 +497,17 @@ class AppSettingsOut(BaseModel):
     trash_retention_days: int
     default_max_workspaces: int = 0
     default_max_running: int = 0
+    signin_lan_networks: str = ""
+    trusted_proxies: str = ""
+
+
+class NetworkCheckOut(BaseModel):
+    """What Cove sees of the admin's own request (Admin -> Settings)."""
+    client_ip: str
+    is_lan: bool
+    forwarded_for: list[str]
+    claimed: list[str]
+    warning: Optional[str] = None
 
 
 class EnvEntry(BaseModel):
@@ -566,6 +580,8 @@ class AppSettingsUpdate(BaseModel):
     trash_retention_days: Optional[int] = None
     default_max_workspaces: Optional[int] = Field(default=None, ge=0, le=1000)
     default_max_running: Optional[int] = Field(default=None, ge=0, le=1000)
+    signin_lan_networks: Optional[str] = Field(default=None, max_length=4000)
+    trusted_proxies: Optional[str] = Field(default=None, max_length=4000)
 
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────
