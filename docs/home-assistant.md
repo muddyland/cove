@@ -28,6 +28,8 @@ new is exposed.
    Untick **Verify the TLS certificate** only for a Cove on your own network
    with a self-signed certificate (the LAN TLS overlay).
 
+![Admin → Integrations: a Control token used by Home Assistant, a Read token for a dashboard, and a second Control token, each with Revoke](../screenshots/integrations.png)
+
 The integration needs Home Assistant 2026.10 or newer. To update it, download
 the zip again after updating Cove, unzip it over the old folder, and restart
 Home Assistant.

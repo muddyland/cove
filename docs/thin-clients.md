@@ -46,6 +46,9 @@ reaching Cove.
 2. Cove shows an **enrolment code** (`XXXX-XXXX-XXXX-XXXX`) and an install
    one-liner. The code works **once**, and expires after 1 hour by default (24
    hours or 7 days if you choose, for example for an install USB).
+
+   <img src="../screenshots/thin-client-enroll.png" width="60%" alt="The Enroll dialog: a one-time code valid for 1 hour, the install one-liner pinned to Cove's certificate, and Copy command and Copy code buttons" />
+
 3. On the machine, as root:
 
    ```bash
@@ -112,6 +115,8 @@ First boot never drops to a shell: with no network it offers **Retry** or
 
 ## 4. Managing thin clients
 
+![Admin → Thin clients: a device waiting to enrol and two online kiosks with their screenshots, session, screen, display, audio, system and agent](../screenshots/thin-clients.png)
+
 Each card in **Admin → Thin clients** shows the last screenshot, whether the
 device is online, who is signed in, whether the screen is on (and how long it
 has been idle), the monitor and mode, the OS with pending updates or a needed
@@ -131,10 +136,16 @@ reboot, and the agent version. A device that misses a few check-ins shows
 | **Reboot / Power off** | After a confirmation. |
 | **Activity** | The last 50 commands, with their output. Commands from Home Assistant show as `integration:<token name>`. |
 
+Click a screenshot to see it full size, and take a new one from there.
+
+<img src="../screenshots/thin-client-screen.png" width="80%" alt="A thin client's Screen dialog: the full-size screenshot of an XFCE desktop streamed from Cove, with Take a new one" />
+
 Home Assistant can show these devices and drive most of these actions, plus
 volume and mute. See [Home Assistant](home-assistant.md).
 
 ### Settings
+
+<img src="../screenshots/thin-client-settings.png" width="60%" alt="A thin client's settings dialog, Display tab: screen-off idle time, on-hours, audio keeps it awake, rotation, scale, brightness and volume" />
 
 Changes apply within seconds on an online device, and when it next checks in
 otherwise.

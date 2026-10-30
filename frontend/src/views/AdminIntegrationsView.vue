@@ -11,9 +11,10 @@
     </div>
     <p class="hint">
       Tokens for Home Assistant. A token reads Cove's status: users, workspaces,
-      zones and every thin client. With <strong>Control</strong> it can also switch
-      thin client screens, set their volume, sign them out, restart their browser
-      and reboot them. It works only on Cove's integration API, never as a sign-in,
+      zones and every thin client. With <strong>Control</strong> it can also see
+      thin client screenshots, switch their screens, set their volume, sign them
+      out, restart their browser and reboot them. A token is revoked when the admin
+      who created it is deleted or loses admin. It works only on Cove's integration API, never as a sign-in,
       so it can't reach workspaces, files or administration. Home Assistant calls
       Cove over the same HTTPS address you use; nothing new is exposed.
     </p>
@@ -65,7 +66,7 @@
         <label>
           Access
           <select v-model="form.scope">
-            <option value="control">Control: status, plus thin client screens, volume, sign-out, reboot</option>
+            <option value="control">Control: status, plus thin client screenshots, screens, volume, sign-out, reboot</option>
             <option value="read">Read: status only</option>
           </select>
         </label>

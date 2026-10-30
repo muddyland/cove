@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Admin pages: fixes from a visual check.** Thin client thumbnails no
+  longer go missing when several load at once (the same race could drop an
+  image's update check). The thin client page's help text, labels and the
+  settings dialog's hints are readable (they used the theme's decoration
+  colour, 2.8:1) and look the same throughout. The System line is spaced and
+  shows its full text on hover. For an account with no zone it may use, the
+  launch wizard no longer says "Ready to launch" under the explanation, and
+  Launch is disabled. Admin → Integrations now says that screenshots need
+  **Control** and that tokens go with their creator's admin rights. The
+  in-app Help skips the screenshots added to the docs (they're shown on
+  GitLab; the image doesn't ship them).
 - **Security: smaller fixes from the same review.**
   - *Home Assistant:* thin client screenshots now need a **Control** token
     (a **Read** token used to fetch them, showing what someone had on screen),
