@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- **Security: fixes from the pre-release review.** A last review of this
+  release's new features found these; none was in a released version.
+  - *Thin clients need Cove on https://.* Over plain http, the install
+    one-liner, the installer and the agent's self-update could all be swapped
+    by anything on the network path, which gives root on the device. Cove now
+    refuses to hand out an install command (or serve `install.sh`) for an
+    `http://` address (`COVE_THIN_CLIENT_ALLOW_HTTP=true` allows it for a
+    throwaway test setup), and the installer and agent never follow a redirect
+    with the enrolment code or device token.
+  - *A kiosk forgets an SSO sign-in that never reached Cove.* The idle timeout
+    only wiped the browser while someone was signed in to Cove. A sign-in left
+    at the identity provider (abandoned, timed out, or refused afterwards, say
+    for a LAN-only account) kept the provider's cookie, and the next person's
+    *Sign in with SSO* came back as that user. The idle timeout now also wipes
+    a browser that was used since it last started fresh. Revoking a user's
+    sessions (**Revoke sessions**, an admin's password or 2FA reset, deleting
+    the user, or a normal *Log out* elsewhere) now also restarts every kiosk
+    they're signed in on, on a wiped profile. Agent **1.1.2**, which thin
+    clients install by themselves.
+  - *Integration tokens follow their creator's admin rights everywhere.* An SSO
+    admin taken out of the admin group at the identity provider kept working
+    Home Assistant tokens (only Cove's own demote and delete revoked them). The
+    SSO sign-in now revokes them, and every request checks that the token's
+    creator still exists and is an admin.
+  - *A workspace recovering from error can't break the running limit.* The
+    status monitor brings a workspace in error back to running once its desktop
+    answers (a VPN sidecar recovering), without checking the limit, so an
+    account could launch more while one was in error and then have it come
+    back too. It now stays in error, saying its owner is at the running limit.
+  - *Two-factor sign-in:* removing factors is serialised per account, so two
+    removals racing can no longer leave an account that requires 2FA with none.
+    A code typed with non-ASCII digits (Arabic-Indic, full-width) is a wrong
+    code instead of a server error. Passkey sign-in no longer shows which
+    accounts have passkeys when a name is compared with a differently-cased
+    spelling of it.
+
 - **Security: zone agents keep containers off their own network.** The
   agent's create policy checked `HostConfig.NetworkMode` but not
   `NetworkingConfig`, which Docker also uses to attach a new container to any

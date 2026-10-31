@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from server import lan_access, thin_clients
+from server import integration, lan_access, thin_clients
 from server import oidc as oidc_module
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession, _check_revocation, resolve_user_from_token
@@ -319,6 +319,10 @@ def logout(user: CurrentUser, request: Request, db: DbSession):
         user.tokens_valid_from = datetime.now(timezone.utc)
         db.commit()
         _record_audit(db, "logout", user=user, ip=client_ip(request))
+        # That ended the user's kiosk sessions too: wipe those browsers, or the
+        # identity provider's cookie there signs the next person in as them.
+        for name in thin_clients.sign_out_user(db, user.id, by=user.username, reason="user_signout"):
+            _record_audit(db, "logout.thin_client", detail=name, user=user, ip=client_ip(request))
     resp = JSONResponse(content={"ok": True})
     _clear_auth_cookies(resp)
     return resp
@@ -463,7 +467,15 @@ async def oidc_callback(
         db.add(user)
     else:
         if settings.oidc_admin_group:
+            was_admin = user.is_admin
             user.is_admin = oidc_module.is_admin_from_claims(claims)
+            if was_admin and not user.is_admin:
+                # Left the admin group at the IdP: the integration tokens this
+                # account minted go with its admin rights (as on an admin's demote).
+                for name in integration.revoke_tokens_of(db, user.username):
+                    _record_audit(db, "admin.integration_token.revoke",
+                                  detail=f"{name} ({user.username} no longer an admin, SSO group)",
+                                  user=user, ip=client_ip(request))
 
     if not lan_access.allows(db, user, request):
         db.commit()  # keep a just-provisioned account; it just can't sign in from here

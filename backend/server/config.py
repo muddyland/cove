@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # very first download is verified too. Unset when Cove's certificate is
     # publicly trusted (Let's Encrypt).
     thin_client_ca_file: Optional[Path] = None
+    # Thin clients install and update a root agent from Cove, so they need Cove
+    # on https://. Only for a throwaway test setup on plain http: allow it anyway.
+    thin_client_allow_http: bool = False
     # Lifetime of the one-time bootstrap token carried in the ``?__cove_t`` URL.
     # Kept short because it rides in a URL (logs/Referer/history): it is consumed
     # exactly once to set the stream cookie, then useless. Distinct from the

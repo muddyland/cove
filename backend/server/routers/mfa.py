@@ -320,14 +320,20 @@ def _would_strand(db, user: User, removing_totp: bool = False, removing_passkey:
 @router.post("/2fa/totp/disable")
 def totp_disable(body: PasswordConfirmIn, request: Request, user: CurrentUser, db: DbSession):
     _confirm_password(request, user, body.password)
-    if not user.totp_enabled:
-        raise HTTPException(status_code=404, detail="No authenticator app is set up.")
-    if _would_strand(db, user, removing_totp=True):
-        raise HTTPException(status_code=400, detail="Your account requires two-factor sign-in. Add a passkey first.")
-    mfa.disable_totp(user)
-    if not user.passkeys:
-        mfa.reset(db, user)  # no second factor left: the recovery codes go too
-    db.commit()
+    # Under the account lock and re-read, so two removals racing can't each see
+    # the other's factor still there and leave a 2FA-required account with none.
+    with mfa.user_lock(user.id):
+        db.expire(user)
+        if not user.totp_enabled:
+            raise HTTPException(status_code=404, detail="No authenticator app is set up.")
+        if _would_strand(db, user, removing_totp=True):
+            raise HTTPException(
+                status_code=400, detail="Your account requires two-factor sign-in. Add a passkey first."
+            )
+        mfa.disable_totp(user)
+        if not user.passkeys:
+            mfa.reset(db, user)  # no second factor left: the recovery codes go too
+        db.commit()
     _auth()._record_audit(db, "2fa.totp.remove", detail=user.username, user=user, ip=client_ip(request))
     return {"ok": True}
 
@@ -335,10 +341,12 @@ def totp_disable(body: PasswordConfirmIn, request: Request, user: CurrentUser, d
 @router.post("/2fa/recovery-codes")
 def regenerate_recovery_codes(body: PasswordConfirmIn, request: Request, user: CurrentUser, db: DbSession):
     _confirm_password(request, user, body.password)
-    if not user.has_2fa:
-        raise HTTPException(status_code=400, detail="Set up an authenticator app or a passkey first.")
-    codes = mfa.new_recovery_codes(db, user)
-    db.commit()
+    with mfa.user_lock(user.id):
+        db.expire(user)
+        if not user.has_2fa:
+            raise HTTPException(status_code=400, detail="Set up an authenticator app or a passkey first.")
+        codes = mfa.new_recovery_codes(db, user)
+        db.commit()
     _auth()._record_audit(db, "2fa.recovery_codes.new", detail=user.username, user=user, ip=client_ip(request))
     return {"recovery_codes": codes}
 
@@ -365,18 +373,20 @@ def passkey_register(body: PasskeyRegisterIn, request: Request, db: DbSession):
 @router.post("/2fa/passkeys/{passkey_id}/delete")
 def passkey_delete(passkey_id: int, body: PasswordConfirmIn, request: Request, user: CurrentUser, db: DbSession):
     _confirm_password(request, user, body.password)
-    row = db.get(WebAuthnCredential, passkey_id)
-    if row is None or row.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Passkey not found")
-    if _would_strand(db, user, removing_passkey=True):
-        raise HTTPException(
-            status_code=400,
-            detail="Your account requires two-factor sign-in. Add another passkey or an authenticator app first.",
-        )
-    name = row.name
-    user.passkeys.remove(row)
-    if not user.has_2fa:
-        mfa.reset(db, user)
-    db.commit()
+    with mfa.user_lock(user.id):
+        db.expire(user)
+        row = db.get(WebAuthnCredential, passkey_id)
+        if row is None or row.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Passkey not found")
+        if _would_strand(db, user, removing_passkey=True):
+            raise HTTPException(
+                status_code=400,
+                detail="Your account requires two-factor sign-in. Add another passkey or an authenticator app first.",
+            )
+        name = row.name
+        user.passkeys.remove(row)
+        if not user.has_2fa:
+            mfa.reset(db, user)
+        db.commit()
     _auth()._record_audit(db, "2fa.passkey.remove", detail=f"{user.username}: {name}", user=user, ip=client_ip(request))
     return {"ok": True}

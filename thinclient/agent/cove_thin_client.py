@@ -39,7 +39,7 @@ import time
 import urllib.error
 import urllib.request
 
-AGENT_VERSION = "1.1.1"
+AGENT_VERSION = "1.1.2"
 
 ETC = "/etc/cove-thin-client"
 CONFIG = f"{ETC}/config.json"
@@ -867,6 +867,17 @@ class Revoked(Exception):
     pass
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: urllib would follow one to another host (or from
+    https to http) with the device token still in the Authorization header."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 class Api:
     def __init__(self, cp_url, token):
         self.cp = cp_url.rstrip("/")
@@ -879,7 +890,7 @@ class Api:
             headers["Content-Type"] = ctype
         req = urllib.request.Request(self.cp + path, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with _OPENER.open(req, timeout=timeout) as r:
                 payload = r.read()
                 return payload, r.headers
         except urllib.error.HTTPError as e:
@@ -918,6 +929,11 @@ class Agent:
         self.display_synced = False
         self.forced_off = False
         self.idle_signed_out = False
+        # Someone used the browser since it last started fresh. Idle sign-out
+        # then wipes it even without a Cove session: a sign-in that never
+        # reached Cove (an SSO flow abandoned at the identity provider, or
+        # refused afterwards) still leaves the provider's cookie behind.
+        self.browser_used = False
         self.last_error = None
         self.apt_lock = threading.Lock()
         self.upgradable = None
@@ -933,6 +949,7 @@ class Agent:
     def _on_input(self):
         self.forced_off = False
         self.idle_signed_out = False
+        self.browser_used = True
         if not self.display_on:
             self.set_display(True)
 
@@ -985,8 +1002,9 @@ class Agent:
         elif not self.display_on and not self.forced_off and (not off_after or idle < off_after):
             self.set_display(True)
         signout_after = int(self.policy.get("signout_minutes", 30)) * 60
-        if signout_after and self.session_user and not self.idle_signed_out and idle >= signout_after:
-            log.info("idle for %ds: signing %s out", idle, self.session_user)
+        in_use = self.session_user or self.browser_used
+        if signout_after and in_use and not self.idle_signed_out and idle >= signout_after:
+            log.info("idle for %ds: signing %s out", idle, self.session_user or "the browser")
             self.idle_signed_out = True
             self.reset_browser("idle")
 
@@ -1002,6 +1020,7 @@ class Agent:
             except Exception as exc:  # noqa: BLE001
                 log.warning("could not report sign-out (%s): %s", reason, exc)
             self.session_user = None
+            self.browser_used = False
             self.browser.stop()
             self.browser.wipe_profile()
             self._launch()

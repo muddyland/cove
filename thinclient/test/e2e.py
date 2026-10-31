@@ -186,7 +186,7 @@ def main():
     step("starting Cove")
     sh("docker", "network", "create", NET)
     sh("docker", "run", "-d", "--name", COVE, "--network", NET, "--network-alias", "cove",
-       "-p", f"{PORT}:8080", "-e", "COVE_COOKIE_SECURE=false", "-e", "COVE_APP_ORIGIN=http://cove:8080",
+       "-p", f"{PORT}:8080", "-e", "COVE_COOKIE_SECURE=false", "-e", "COVE_THIN_CLIENT_ALLOW_HTTP=true", "-e", "COVE_APP_ORIGIN=http://cove:8080",
        args.image)
     wait_for("Cove health", lambda: api.call("GET", "/api/health")["status"] == "ok", timeout=90)
     api.token = api.call("POST", "/api/auth/setup", {"username": "admin", "password": "password123"})["access_token"]

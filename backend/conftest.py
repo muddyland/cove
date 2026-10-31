@@ -21,6 +21,8 @@ from pathlib import Path
 _TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="cove-test-"))
 os.environ["COVE_DATA_DIR"] = str(_TEST_DATA_DIR)
 os.environ["COVE_COOKIE_SECURE"] = "false"
+# Same reason: thin client installs need https:// unless this is set.
+os.environ["COVE_THIN_CLIENT_ALLOW_HTTP"] = "true"
 # Keep OIDC disabled and the DB unencrypted regardless of the host env.
 os.environ.pop("COVE_OIDC_ISSUER", None)
 os.environ.pop("COVE_DB_ENCRYPTION_KEY", None)

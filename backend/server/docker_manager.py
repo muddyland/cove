@@ -15,6 +15,7 @@ import docker
 import docker.errors
 import docker.tls
 
+from server import workspace_limits
 from server.config import get_settings
 from server.db import SessionLocal
 from server.docker_exec import proxy_safe
@@ -2739,14 +2740,26 @@ class DockerManager:
                         continue  # stream not rendering yet; retry next pass
                     # Past the grace window we promote on the HTTP probe alone, so
                     # an image whose stream we can't capture still comes up.
-                    ws.status = "running"
-                    ws.started_at = now
-                    ws.error_message = None
-                    ws.preview_jpg = frame
-                    # Only a real frame counts: preview_at is what lets clients
-                    # connect before the fallback window (see is_connectable).
-                    ws.preview_at = now if frame else None
-                    db.commit()
+                    with workspace_limits.guard(ws.user_id):
+                        if ws.status == "error" and ws.user is not None:
+                            db.expire_all()
+                            if not workspace_limits.may_resume(db, ws.user):
+                                msg = (
+                                    "Recovered, but its owner is at the running limit. "
+                                    "Stop another workspace, then start this one."
+                                )
+                                if ws.error_message != msg:
+                                    ws.error_message = msg
+                                    db.commit()
+                                continue
+                        ws.status = "running"
+                        ws.started_at = now
+                        ws.error_message = None
+                        ws.preview_jpg = frame
+                        # Only a real frame counts: preview_at is what lets clients
+                        # connect before the fallback window (see is_connectable).
+                        ws.preview_at = now if frame else None
+                        db.commit()
                     self.queue_boot_apps(ws)
                     continue
                 # Still starting: only fail a "creating" one past the (generous)

@@ -28,7 +28,9 @@ from server import settings_store
 from server.models import User, Workspace
 
 # States that hold a running slot. "stopping" has already given its slot back,
-# so stopping one workspace frees room to start another straight away.
+# so stopping one workspace frees room to start another straight away. An
+# "error" workspace holds none; the status monitor can bring one back to
+# "running" when it recovers, but only through ``may_resume`` below.
 RUNNING_STATES = ("creating", "running")
 
 _locks: dict[int, threading.Lock] = {}
@@ -109,6 +111,21 @@ def require_room_to_start(db: Session, owner: User, actor: User) -> None:
     _, running = usage(db, owner.id)
     if running >= max_running:
         raise HTTPException(status_code=409, detail=_running_message(_who(owner, actor), max_running))
+
+
+def may_resume(db: Session, owner: User) -> bool:
+    """Whether a workspace of ``owner``'s that is in error may go back to
+    running on its own (the status monitor, when its GUI starts answering).
+    Call under ``guard(owner.id)``. Without this an account could launch past
+    its running limit while one workspace was in error, then have that one
+    come back too."""
+    if owner.is_admin:
+        return True
+    _, max_running = caps(db, owner)
+    if not max_running:
+        return True
+    _, running = usage(db, owner.id)
+    return running < max_running
 
 
 def _running_message(who: str, cap: int) -> str:

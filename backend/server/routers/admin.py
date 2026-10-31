@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 
 from server import integration, lan_access, net, settings_store, zone_access
+from server import thin_clients as tc
 from server.config import get_settings
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace, Zone
@@ -154,9 +155,20 @@ def update_user(user_id: int, body: AdminUserUpdate, admin: AdminUser, db: DbSes
     db.commit()
     db.refresh(target)
     _audit(db, "admin.user.update", detail=target.username, user=admin, request=request)
+    if body.password is not None:
+        _sign_out_thin_clients(db, target, "password reset", admin, request)
     if demoted:
         _revoke_integration_tokens(db, target.username, "no longer an admin", admin, request)
     return target
+
+
+def _sign_out_thin_clients(db, target: User, why: str, admin, request: Request) -> None:
+    """Revoking a user's tokens must also wipe the kiosks they're signed in on:
+    otherwise the identity provider's cookie in the kiosk browser signs the next
+    person in as them."""
+    for name in tc.sign_out_user(db, target.id, by=admin.username, reason="user_signout"):
+        detail = f"{name}: {target.username} ({why})"
+        _audit(db, "admin.thin_client.signout", detail=detail, user=admin, request=request)
 
 
 def _revoke_integration_tokens(db, username: str, why: str, admin, request: Request) -> None:
@@ -181,6 +193,8 @@ def reset_user_2fa(user_id: int, admin: AdminUser, db: DbSession, request: Reque
     db.commit()
     db.refresh(target)
     _audit(db, "admin.user.reset_2fa", detail=target.username, user=admin, request=request)
+    _sign_out_thin_clients(db, target, "2FA reset", admin, request)
+    db.refresh(target)
     return target
 
 
@@ -194,6 +208,7 @@ def revoke_user_sessions(user_id: int, admin: AdminUser, db: DbSession, request:
     target.tokens_valid_from = datetime.now(timezone.utc)
     db.commit()
     _audit(db, "admin.user.revoke_sessions", detail=target.username, user=admin, request=request)
+    _sign_out_thin_clients(db, target, "signed out everywhere", admin, request)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -214,6 +229,7 @@ def delete_user(user_id: int, admin: AdminUser, db: DbSession, bg: BackgroundTas
     for ws in running:
         bg.add_task(get_docker_manager(ws.zone_id).remove_workspace, ws.id)
     username = target.username
+    _sign_out_thin_clients(db, target, "deleted", admin, request)
     db.delete(target)
     db.commit()
     _audit(db, "admin.user.delete", detail=username, user=admin, request=request)
