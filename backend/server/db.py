@@ -8,6 +8,19 @@ class Base(DeclarativeBase):
     pass
 
 
+def pragma_key_sql(key: str) -> str:
+    """The ``PRAGMA key`` statement for a SQLCipher passphrase.
+
+    The key is a SQL string literal with its single quotes doubled, so a quote
+    in the key can't end the literal: the standard SQLCipher passphrase form,
+    the same as ``PRAGMA key = '...'`` in the ``sqlcipher`` shell. A NUL would
+    cut the key short inside SQLite, so it is refused.
+    """
+    if "\x00" in key:
+        raise RuntimeError("COVE_DB_ENCRYPTION_KEY must not contain a NUL character.")
+    return "PRAGMA key = '" + key.replace("'", "''") + "'"
+
+
 def _create_engine():
     settings = get_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -40,10 +53,10 @@ def _create_engine():
         @event.listens_for(engine, "connect")
         def _set_pragmas_encrypted(conn, _):
             cur = conn.cursor()
-            # PRAGMA key must run first, before any other statement. Bind the key
-            # as a parameter rather than interpolating it so a key containing a
-            # quote cannot corrupt the statement.
-            cur.execute("PRAGMA key = ?", (key,))
+            # PRAGMA key must run first, before any other statement. SQLite
+            # can't bind parameters in a PRAGMA ("near ?: syntax error"), so
+            # the key goes in as a quoted literal (see pragma_key_sql).
+            cur.execute(pragma_key_sql(key))
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()

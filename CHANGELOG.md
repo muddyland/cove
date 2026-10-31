@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **At-rest database encryption works.** With `COVE_DB_ENCRYPTION_KEY` set,
+  every release since 1.0 failed on its first database connection with
+  `near "?": syntax error` and never started: the key was bound as a query
+  parameter, which SQLite doesn't allow in a `PRAGMA`. The key is now sent as a
+  quoted literal (a quote in it is escaped), the standard SQLCipher passphrase
+  form. Deployments without the key (the default) are unaffected. To encrypt
+  an existing database, export it with the `sqlcipher` tool; setting the key on
+  a plain database doesn't convert it.
+
 - **Fix the stream's pointer sitting below the mouse.** Since recent
   Selkies images, the desktop's pointer in a workspace (stream page and thin
   clients) was a constant distance below the browser's mouse: the drawn cursor
