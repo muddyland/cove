@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Security: zone agents keep containers off their own network.** The
+  agent's create policy checked `HostConfig.NetworkMode` but not
+  `NetworkingConfig`, which Docker also uses to attach a new container to any
+  network it names. A create naming the agent's own compose network put a
+  container next to the agent's unfiltered socket proxy: root on the zone host
+  for whoever holds the control plane's client certificate, which is what the
+  policy exists to stop. Network connect likewise checked which container was
+  attached but not to which network. The agent now accepts only Cove workspace
+  networks in both places, refuses legacy links (Cove never uses them), and
+  refuses object paths deeper than docker-py ever sends
+  (`/containers/<a>/<b>/exec`). Present in every release since 1.0.
+  **Operator action:** deploy, then Administration → Zones → **Update agent**
+  on each zone.
+
 - **At-rest database encryption works.** With `COVE_DB_ENCRYPTION_KEY` set,
   every release since 1.0 failed on its first database connection with
   `near "?": syntax error` and never started: the key was bound as a query

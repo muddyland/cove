@@ -187,6 +187,14 @@ def check_create_policy(
     for key in hc:
         if key not in _ALLOWED_HOSTCONFIG_KEYS:
             return f"HostConfig.{key} is not allowed"
+    # Legacy links register extra container names (``<container>/<alias>``)
+    # that path-based checks don't expect. Cove never uses them.
+    if hc.get("links"):
+        return "links are not allowed"
+
+    reason = _networking_config_reason(cfg.get("networkingconfig"))
+    if reason:
+        return reason
 
     if hc.get("privileged"):
         if not allow_dind:
@@ -264,6 +272,40 @@ def check_create_policy(
     return None
 
 
+def _networking_config_reason(nc) -> str | None:
+    """``NetworkingConfig`` attaches the new container to networks by name,
+    alongside (or instead of) ``HostConfig.NetworkMode``. Only Cove workspace
+    networks may be named there: anything else (the agent's own compose network,
+    where the unfiltered socket proxy listens) is a host-root pivot."""
+    if nc is None:
+        return None
+    if not isinstance(nc, dict):
+        return "NetworkingConfig is not an object"
+    for key, value in nc.items():
+        if key == "endpointsconfig":
+            continue
+        # docker-py's containers.run(network=...) also sends
+        # {"<network>": null} here; dockerd ignores keys it doesn't know.
+        if isinstance(key, str) and key.startswith(_NETWORK_PREFIX) and value is None:
+            continue
+        return f"NetworkingConfig.{key} is not allowed"
+    endpoints = nc.get("endpointsconfig") or {}
+    if not isinstance(endpoints, dict):
+        return "EndpointsConfig is not an object"
+    for net, settings in endpoints.items():
+        # Keys were casefolded on load; network create only admits names with
+        # this exact (lowercase) prefix, so a casefolded match is the same network.
+        if not isinstance(net, str) or not net.startswith(_NETWORK_PREFIX):
+            return f"network {net!r} is not a Cove workspace network"
+        if settings is None:
+            continue
+        if not isinstance(settings, dict):
+            return "endpoint settings are not an object"
+        if settings.get("links") or settings.get("driveropts"):
+            return "endpoint links and driver options are not allowed"
+    return None
+
+
 def _device_reason(dev) -> str | None:
     if not isinstance(dev, dict):
         return "device entry is not an object"
@@ -315,12 +357,20 @@ def check_network_create_policy(body: bytes) -> str | None:
     return None
 
 
-def check_network_connect_policy(body: bytes) -> str | None:
+def check_network_connect_policy(body: bytes, network_name: str | None = None) -> str | None:
     """``POST /networks/{id}/connect``: only Traefik (routing) and Cove's own
-    containers may be attached — never the agent, the socket proxies or the updater."""
+    containers may be attached — never the agent, the socket proxies or the updater
+    — and only to a Cove workspace network (``network_name``, resolved by the
+    proxy): connecting even a workspace to the agent's own network would put it
+    next to the unfiltered socket proxy."""
+    if network_name is not None and not network_name.startswith(_NETWORK_PREFIX):
+        return f"network {network_name!r} is not a Cove workspace network"
     cfg = _load(body)
     if isinstance(cfg, str):
         return cfg
+    endpoint = cfg.get("endpointconfig")
+    if isinstance(endpoint, dict) and (endpoint.get("links") or endpoint.get("driveropts")):
+        return "endpoint links and driver options are not allowed"
     name = cfg.get("container")
     if not isinstance(name, str):
         return "container is required"

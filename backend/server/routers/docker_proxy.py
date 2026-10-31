@@ -41,7 +41,7 @@ _HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-e
 
 # Endpoints whose body is streamed straight through (never buffered): an image
 # load is hundreds of MB and carries nothing the policy inspects.
-_STREAM_BODY_SUFFIXES = ("/images/load",)
+_STREAM_BODY_PATHS = ("/images/load",)
 
 _CONTAINER_OP_RE = re.compile(r"^/containers/([^/]+)/([^/]+)$")
 _NETWORK_OP_RE = re.compile(r"^/networks/([^/]+)/([^/]+)$")
@@ -108,6 +108,28 @@ async def _container_name(
     return name.lstrip("/") or None
 
 
+async def _network_name(
+    client: httpx.AsyncClient, upstream_base: str, version: str, ref: str
+) -> str | None:
+    """Resolve a network id-or-name to its name by asking the local daemon."""
+    try:
+        resp = await client.get(f"{upstream_base}{version}/networks/{ref}", timeout=10)
+    except httpx.HTTPError:
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        return resp.json().get("Name") or None
+    except ValueError:
+        return None
+
+
+# Families whose objects are addressed by a single id-or-name segment. A deeper
+# path (``/containers/a/b/exec``) could address a link alias the two-segment
+# checks below never inspect; docker-py never sends one.
+_FLAT_FAMILIES = ("containers", "networks", "volumes", "exec")
+
+
 async def _policy_reason(
     client: httpx.AsyncClient,
     upstream_base: str,
@@ -121,6 +143,9 @@ async def _policy_reason(
     m = _VERSION_RE.match(path)
     version = m.group(0) if m else ""
     allow_dind = get_settings().agent_allow_dind
+    segments = p.strip("/").split("/")
+    if segments[0] in _FLAT_FAMILIES and len(segments) > 3:
+        return "unexpected path"
     if method == "POST" and p == "/containers/create":
         # The daemon takes the container name from the query string; read it
         # the same way (a repeated ``name`` is refused rather than guessed).
@@ -136,7 +161,10 @@ async def _policy_reason(
         return docker_policy.check_network_create_policy(body)
     m = _NETWORK_OP_RE.match(p)
     if m and method == "POST" and m.group(2) == "connect":
-        return docker_policy.check_network_connect_policy(body)
+        net = await _network_name(client, upstream_base, version, m.group(1))
+        if not net:
+            return f"network {m.group(1)!r} not found"
+        return docker_policy.check_network_connect_policy(body, net)
     m = _CONTAINER_OP_RE.match(p)
     if m:
         ref, op = m.group(1), m.group(2)
@@ -175,7 +203,7 @@ def register_docker_proxy(app: FastAPI) -> None:
         }
 
         client = httpx.AsyncClient(timeout=None)
-        stream_body = request.method in ("POST", "PUT") and path.endswith(_STREAM_BODY_SUFFIXES)
+        stream_body = request.method in ("POST", "PUT") and _unversioned(path) in _STREAM_BODY_PATHS
         if stream_body:
             content = request.stream()
         else:
