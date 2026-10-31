@@ -24,6 +24,11 @@
 # covers either order. Marker-guarded (idempotent) and best-effort — a Selkies
 # upgrade that drops the theme variables, or a non-Selkies image, just leaves the
 # stock look. Never fails container init.
+#
+# The same pass also fixes pointer motion in a framed stream (see
+# framed_pointer_fix below). It rides along here rather than in a script of its
+# own because a zone mounts helper scripts from its agent's staged copy: a new
+# file would mount as an empty directory on a zone whose agent predates it.
 set -u
 
 MARKER="COVE-CYBERPUNK"
@@ -243,4 +248,38 @@ if [ "${seen_dashboard}" != 1 ]; then
 elif [ "${patched}" != 1 ]; then
   echo "[cove] selkies theme: dashboard already themed or theme variables not found"
 fi
+
+# --- Pointer motion in a framed stream ----------------------------------------
+# Selkies sends pointer motion from `pointerrawupdate` where the browser has it
+# (secure contexts in Chromium and Firefox). Inside an iframe, Chromium reports
+# that event's clientX/clientY in the TOP page's coordinates, while mousemove,
+# pointermove and clicks use the iframe's own. Cove always frames the stream
+# under its top bar, so the desktop's pointer sat one top-bar height below the
+# browser's: hover, menus and the server-drawn cursor were offset while clicks
+# landed right. Removing `onpointerrawupdate` from the framed page makes Selkies
+# take its own fallback (motion from pointermove/mousemove, as on plain HTTP).
+# The capture listener drops the event for any listener added without that
+# feature check. A stream opened directly (not framed) keeps the raw path.
+FIX_MARKER="COVE-FRAMED-POINTER"
+framed_pointer_fix() {
+  printf '%s' '<script>/* COVE-FRAMED-POINTER: Chromium gives pointerrawupdate top-page coordinates in an iframe */(function(){if(window===window.top)return;try{delete window.onpointerrawupdate}catch(e){}window.addEventListener("pointerrawupdate",function(e){e.stopImmediatePropagation()},true)})();</script>'
+}
+for dir in \
+  /usr/share/selkies/selkies-dashboard \
+  /usr/share/selkies/selkies-dashboard-wish \
+  /usr/share/selkies/web
+do
+  index="${dir}/index.html"
+  [ -f "${index}" ] || continue
+  grep -q "${FIX_MARKER}" "${index}" 2>/dev/null && continue
+  grep -q '<head>' "${index}" 2>/dev/null || continue
+  # First thing in <head>: classic scripts run before the dashboard's module
+  # scripts, so Selkies' feature check already sees the property gone.
+  tmp="${index}.cove.$$"
+  if awk -v fix="$(framed_pointer_fix)" '!done && sub(/<head>/, "<head>" fix) { done = 1 } { print }' \
+      "${index}" >"${tmp}" 2>/dev/null && grep -q "${FIX_MARKER}" "${tmp}"; then
+    cat "${tmp}" >"${index}" && echo "[cove] selkies pointer: framed-stream fix applied to ${index}"
+  fi
+  rm -f "${tmp}"
+done
 exit 0

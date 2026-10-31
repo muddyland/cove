@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Fix the stream's pointer sitting below the mouse.** Since recent
+  Selkies images, the desktop's pointer in a workspace (stream page and thin
+  clients) was a constant distance below the browser's mouse: the drawn cursor
+  looked too high, hover and menus reacted to the spot below, and submenus
+  (e.g. the desktop's right-click → arrange icons) couldn't be reached, while
+  clicks landed where the mouse was. Cause: Selkies now sends pointer motion
+  from `pointerrawupdate`, and inside an iframe Chromium reports that event's
+  coordinates relative to the top page instead of the frame, so motion was off
+  by the height of Cove's top bar. Clicks use other events and were right. The
+  Selkies init script Cove mounts (`install-cove-theme.sh`) now adds a small
+  script to the dashboard's `index.html` that turns `pointerrawupdate` off when
+  the stream is framed, so Selkies falls back to `pointermove`/`mousemove`.
+  A stream opened directly, outside Cove, is unchanged. **Operator action:**
+  deploy, then Administration → Zones → **Update agent** on each zone; each
+  workspace gets the fix the next time it starts (restart running ones).
+
 - **Two-factor sign-in: authenticator apps, passkeys and security keys.**
   Local accounts can add a code from an authenticator app, a passkey, or a
   USB / NFC security key (Preferences → Two-factor sign-in), with ten
