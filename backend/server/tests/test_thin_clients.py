@@ -459,6 +459,10 @@ def test_session_cap_ends_kiosk_sessions(client):
          "tc": dev["public_id"], "sst": (now - timedelta(hours=2)).timestamp()},
         settings.get_secret_key(), algorithm=settings.jwt_algorithm,
     )
+    # Replace the sign-in's refresh cookie rather than adding a second one
+    # beside it (httpx2 2.16 keeps both, and sends the real one).
+    for cookie in [c for c in kiosk.cookies.jar if c.name == settings.cookie_refresh_name]:
+        kiosk.cookies.jar.clear(cookie.domain, cookie.path, cookie.name)
     kiosk.cookies.set(settings.cookie_refresh_name, stale, path="/api/auth")
     assert kiosk.post("/api/auth/refresh").status_code == 401
 

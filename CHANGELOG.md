@@ -262,6 +262,27 @@
 - **The login page focuses the username field**, so you can start typing
   straight away (handy on a kiosk).
 
+### Security and maintenance
+
+- **Backend dependencies:** FastAPI 0.162.0 (from 0.137.1; Starlette stays at
+  1.10.0), pydantic-settings 2.16.2, docker 7.2.0, python-multipart 0.0.33 and
+  sqlcipher3-binary 0.6.0, which bundles SQLCipher 4.12 instead of 4.6 (the
+  file format is unchanged: databases written by either version open in the
+  other). Test-only: pytest 9.2.0, httpx2 2.16.0, pytest-asyncio 1.4.1. No
+  known advisories in the backend before or after.
+- **Frontend:** Vue 3.5.44, marked 18.1.2, @vue/test-utils 2.5.1 and an
+  in-range refresh of the lockfile. CI's frontend jobs move from Node 20, which
+  is end-of-life, to Node 22, the version the Dockerfile already builds with.
+- **Held back on purpose:** SQLAlchemy 2.1, bcrypt 5 (it raises on passwords
+  over 72 bytes where 4.x truncated them, so it needs its own change), httpx
+  0.28 (it deprecates the `verify`/`cert` arguments the zone mTLS client
+  uses), and the frontend's new major versions (Vite 8, Pinia 4, Vue Router 5,
+  TypeScript 7, vue-tsc 3, vite-plugin-pwa 2, lucide 1, jsdom 29).
+- **Known, build-time only:** moderate advisories in glob and minimatch and a
+  low one in deepmerge, pulled in by workbox-build, vue-tsc and jake. Their
+  fixes are on major versions those parents don't accept yet; none of them
+  ships in the image.
+
 ## 1.3.1 — Pillow security fixes and remote-zone repairs
 
 - **GPU workspaces on remote zones use the render node's real group.** Before a
