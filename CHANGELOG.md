@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — thin clients, two-factor sign-in and Home Assistant
 
 - **Security: fixes from the pre-release review.** A last review of this
   release's new features found these; none was in a released version.
