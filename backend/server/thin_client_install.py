@@ -56,13 +56,22 @@ import hashlib, json, os, socket, urllib.request
 cp, code, etc, lib = (os.environ[k] for k in ("CP_URL", "CODE", "ETC", "LIB"))
 ua = {"User-Agent": "cove-thin-client-installer/1"}
 
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    # Never follow a redirect with the enrolment code or device token.
+    def redirect_request(self, *args):
+        return None
+
+
+urlopen = urllib.request.build_opener(NoRedirect).open
+
 req = urllib.request.Request(
     f"{cp}/api/thin-client/enroll?code={code}",
     data=json.dumps({"hostname": socket.gethostname()}).encode(),
     headers={**ua, "Content-Type": "application/json"},
     method="POST",
 )
-with urllib.request.urlopen(req, timeout=30) as r:
+with urlopen(req, timeout=30) as r:
     resp = json.load(r)
 
 token_path = os.path.join(etc, "device.token")
@@ -78,7 +87,7 @@ req = urllib.request.Request(
     f"{cp}/api/thin-client/agent",
     headers={**ua, "Authorization": "Bearer " + resp["device_token"]},
 )
-with urllib.request.urlopen(req, timeout=60) as r:
+with urlopen(req, timeout=60) as r:
     data, want = r.read(), r.headers.get("X-Agent-Sha256", "")
 if hashlib.sha256(data).hexdigest() != want:
     raise SystemExit("Agent download failed its checksum")

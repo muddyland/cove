@@ -179,6 +179,16 @@ def upstream(monkeypatch):
             return {"Name": "/" + ref}
         return JSONResponse({"message": "no such container"}, status_code=404)
 
+    networks = {"n0agent": "cove-agent_default"}
+
+    @app.get("/v1.41/networks/{ref}")
+    def network_inspect(ref: str):
+        if ref in networks:
+            return {"Name": networks[ref]}
+        if ref.startswith("cove-"):
+            return {"Name": ref}
+        return JSONResponse({"message": "no such network"}, status_code=404)
+
     @app.api_route("/v1.41/{rest:path}", methods=["GET", "POST", "PUT", "DELETE"])
     async def catch(rest: str, request: Request):
         hits.append(f"{request.method} /{rest}")
@@ -424,6 +434,14 @@ _EVIL_CREATE = json.dumps({"Image": "alpine", "HostConfig": {"Privileged": True,
     "/v1.41//containers/create",
     "/v1.41/_ping/..%5ccontainers/create",
     "/v1.41/_ping/%252e%252e/containers/create",
+    # An encoded ? or # would end the path once the decoded path is forwarded
+    # (checked as "/containers/create?", served as a create). Refused today
+    # because request.url keeps the raw escapes; keep it that way.
+    "/v1.41/containers/create%3F",
+    "/v1.41/containers/create%3f",
+    "/v1.41/containers/create%23",
+    "/v1.41/containers/create%3F/images/load",
+    "/v1.41/containers/create%3Fx=/images/load",
 ])
 def test_proxy_refuses_dot_segment_smuggling(upstream, raw):
     """A path that resolves to /containers/create upstream must not be checked
@@ -462,3 +480,76 @@ def test_cn_pin_exemptions_are_exact(monkeypatch):
         assert _raw_request(app, "GET", "/__cove_error/502") == 200
     finally:
         get_settings.cache_clear()
+
+
+# ── networks: nothing may join the agent's own network ──────────────────────
+
+def _create_body(**extra):
+    body = {"Image": "alpine", "HostConfig": {"NetworkMode": "bridge"}}
+    body.update(extra)
+    return json.dumps(body).encode()
+
+
+@pytest.mark.parametrize("nc", [
+    {"EndpointsConfig": {"cove-agent_default": {}}},
+    {"EndpointsConfig": {"cove-ws-net-1": {}, "cove-agent_default": {}}},
+    {"EndpointsConfig": {"n0agent": {}}},
+    {"EndpointsConfig": {"cove-ws-net-1": {"Links": ["cove-agent-updater:x"]}}},
+    {"EndpointsConfig": {"cove-ws-net-1": {"DriverOpts": {"x": "y"}}}},
+    {"Other": {}},
+    "cove-agent_default",
+])
+def test_create_policy_refuses_joining_other_networks(nc):
+    assert check_create_policy(_create_body(NetworkingConfig=nc)) is not None
+
+
+def test_create_policy_refuses_links():
+    body = json.dumps({"Image": "alpine", "HostConfig": {"Links": ["cove-agent-updater:x"]}}).encode()
+    assert "links" in check_create_policy(body)
+
+
+def test_create_policy_allows_docker_py_workspace_network():
+    """The exact body ``containers.run(network=...)`` sends still passes."""
+    import docker
+
+    api = docker.APIClient(base_url="tcp://127.0.0.1:1", version="1.41")
+    sent = {}
+    api.create_container_from_config = lambda config, name=None, platform=None: sent.update(config) or {"Id": "x"}
+    from docker.models.containers import _create_container_args
+
+    kwargs = _create_container_args(
+        {"image": "img", "network": "cove-ws-net-5", "version": "1.41", "name": "cove-ws-5"}
+    )
+    api.create_container(**kwargs)
+    # docker-py sends {"cove-ws-net-5": null} here (dockerd ignores it); the
+    # EndpointsConfig form is what create_networking_config builds.
+    assert "NetworkingConfig" in sent
+    assert check_create_policy(json.dumps(sent).encode(), name="cove-ws-5") is None
+    proper = {**sent, "NetworkingConfig": {"EndpointsConfig": {"cove-ws-net-5": {"Aliases": ["ws"]}}}}
+    assert check_create_policy(json.dumps(proper).encode(), name="cove-ws-5") is None
+    sneaky = {**sent, "NetworkingConfig": {"cove-agent_default": None}}
+    assert check_create_policy(json.dumps(sneaky).encode(), name="cove-ws-5") is not None
+
+
+def test_proxy_refuses_connecting_to_the_agents_network(upstream):
+    c, hits = upstream
+    ws = json.dumps({"Container": "cove-ws-7"})
+    assert c.post("/v1.41/networks/n0agent/connect", content=ws).status_code == 403
+    assert c.post("/v1.41/networks/cove-agent_default/connect", content=ws).status_code == 403
+    assert c.post("/v1.41/networks/nope/connect", content=ws).status_code == 403
+    assert not any("connect" in h for h in hits), hits
+    assert c.post("/v1.41/networks/cove-ws-net-7/connect", content=ws).status_code == 200
+    assert hits == ["POST /networks/cove-ws-net-7/connect"]
+
+
+@pytest.mark.parametrize("path", [
+    "/v1.41/containers/cove-ws-7/x/exec",
+    "/v1.41/containers/cove-ws-7/x/archive",
+    "/v1.41/networks/cove-ws-net-7/x/connect",
+    "/v1.41/containers/create/images/load",
+])
+def test_proxy_refuses_deeper_object_paths(upstream, path):
+    c, hits = upstream
+    r = c.post(path, content=json.dumps({"Cmd": ["sh"], "Container": "cove-ws-7"}))
+    assert r.status_code in (403, 404), (path, r.status_code)
+    assert hits == [], hits

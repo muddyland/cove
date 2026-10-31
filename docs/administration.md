@@ -20,7 +20,7 @@ limits they started with.
 | **Require two-factor sign-in for every local account** | off | Every local account without a second factor sets one up at its next sign-in. |
 | **LAN networks** | `10.0.0.0/8, 192.168.0.0/16, fc00::/7, fe80::/10` | Where **Local network only** accounts may be used from. See [Authentication](authentication.md#local-network-only-accounts). |
 | **Trusted proxies** | _(none)_ | Proxies or tunnels in front of Cove's Traefik, skipped to find each visitor's address (rate limits, audit log, LAN-only). |
-| **Running at once per account** | `0` (no limit) | How many of an account's workspaces may run at the same time (one that's starting counts; one that's stopping doesn't). Override per account under Admin → Users. |
+| **Running at once per account** | `0` (no limit) | How many of an account's workspaces may run at the same time (one that's starting counts; one that's stopping or in error doesn't, and one in error only comes back on its own while there's room). Override per account under Admin → Users. |
 | **Max runtime (hours)** | `24` (`0` = unlimited) | Running workspaces older than this are auto-stopped. |
 | **Force-disable sudo** | off | Applies `no-new-privileges` to **all** workspaces, overriding the per-launch "Allow sudo". |
 | **GPU acceleration** (master toggle) | off | Allows workspaces to use host-GPU hardware video encode (each workspace must still opt in, and needs Wayland streaming). See [Workspaces → GPU acceleration](workspaces.md#gpu-acceleration). Remote zones inherit this and the two GPU settings below unless their own zone settings override them. |

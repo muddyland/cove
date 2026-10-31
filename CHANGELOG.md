@@ -1,6 +1,65 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — thin clients, two-factor sign-in and Home Assistant
+
+- **Security: fixes from the pre-release review.** A last review of this
+  release's new features found these; none was in a released version.
+  - *Thin clients need Cove on https://.* Over plain http, the install
+    one-liner, the installer and the agent's self-update could all be swapped
+    by anything on the network path, which gives root on the device. Cove now
+    refuses to hand out an install command (or serve `install.sh`) for an
+    `http://` address (`COVE_THIN_CLIENT_ALLOW_HTTP=true` allows it for a
+    throwaway test setup), and the installer and agent never follow a redirect
+    with the enrolment code or device token.
+  - *A kiosk forgets an SSO sign-in that never reached Cove.* The idle timeout
+    only wiped the browser while someone was signed in to Cove. A sign-in left
+    at the identity provider (abandoned, timed out, or refused afterwards, say
+    for a LAN-only account) kept the provider's cookie, and the next person's
+    *Sign in with SSO* came back as that user. The idle timeout now also wipes
+    a browser that was used since it last started fresh. Revoking a user's
+    sessions (**Revoke sessions**, an admin's password or 2FA reset, deleting
+    the user, or a normal *Log out* elsewhere) now also restarts every kiosk
+    they're signed in on, on a wiped profile. Agent **1.1.2**, which thin
+    clients install by themselves.
+  - *Integration tokens follow their creator's admin rights everywhere.* An SSO
+    admin taken out of the admin group at the identity provider kept working
+    Home Assistant tokens (only Cove's own demote and delete revoked them). The
+    SSO sign-in now revokes them, and every request checks that the token's
+    creator still exists and is an admin.
+  - *A workspace recovering from error can't break the running limit.* The
+    status monitor brings a workspace in error back to running once its desktop
+    answers (a VPN sidecar recovering), without checking the limit, so an
+    account could launch more while one was in error and then have it come
+    back too. It now stays in error, saying its owner is at the running limit.
+  - *Two-factor sign-in:* removing factors is serialised per account, so two
+    removals racing can no longer leave an account that requires 2FA with none.
+    A code typed with non-ASCII digits (Arabic-Indic, full-width) is a wrong
+    code instead of a server error. Passkey sign-in no longer shows which
+    accounts have passkeys when a name is compared with a differently-cased
+    spelling of it.
+
+- **Security: zone agents keep containers off their own network.** The
+  agent's create policy checked `HostConfig.NetworkMode` but not
+  `NetworkingConfig`, which Docker also uses to attach a new container to any
+  network it names. A create naming the agent's own compose network put a
+  container next to the agent's unfiltered socket proxy: root on the zone host
+  for whoever holds the control plane's client certificate, which is what the
+  policy exists to stop. Network connect likewise checked which container was
+  attached but not to which network. The agent now accepts only Cove workspace
+  networks in both places, refuses legacy links (Cove never uses them), and
+  refuses object paths deeper than docker-py ever sends
+  (`/containers/<a>/<b>/exec`). Present in every release since 1.0.
+  **Operator action:** deploy, then Administration → Zones → **Update agent**
+  on each zone.
+
+- **At-rest database encryption works.** With `COVE_DB_ENCRYPTION_KEY` set,
+  every release since 1.0 failed on its first database connection with
+  `near "?": syntax error` and never started: the key was bound as a query
+  parameter, which SQLite doesn't allow in a `PRAGMA`. The key is now sent as a
+  quoted literal (a quote in it is escaped), the standard SQLCipher passphrase
+  form. Deployments without the key (the default) are unaffected. To encrypt
+  an existing database, export it with the `sqlcipher` tool; setting the key on
+  a plain database doesn't convert it.
 
 - **Fix the stream's pointer sitting below the mouse.** Since recent
   Selkies images, the desktop's pointer in a workspace (stream page and thin
@@ -261,6 +320,27 @@
   already in use". The overrides now replace the base port list.
 - **The login page focuses the username field**, so you can start typing
   straight away (handy on a kiosk).
+
+### Security and maintenance
+
+- **Backend dependencies:** FastAPI 0.162.0 (from 0.137.1; Starlette stays at
+  1.10.0), pydantic-settings 2.16.2, docker 7.2.0, python-multipart 0.0.33 and
+  sqlcipher3-binary 0.6.0, which bundles SQLCipher 4.12 instead of 4.6 (the
+  file format is unchanged: databases written by either version open in the
+  other). Test-only: pytest 9.2.0, httpx2 2.16.0, pytest-asyncio 1.4.1. No
+  known advisories in the backend before or after.
+- **Frontend:** Vue 3.5.44, marked 18.1.2, @vue/test-utils 2.5.1 and an
+  in-range refresh of the lockfile. CI's frontend jobs move from Node 20, which
+  is end-of-life, to Node 22, the version the Dockerfile already builds with.
+- **Held back on purpose:** SQLAlchemy 2.1, bcrypt 5 (it raises on passwords
+  over 72 bytes where 4.x truncated them, so it needs its own change), httpx
+  0.28 (it deprecates the `verify`/`cert` arguments the zone mTLS client
+  uses), and the frontend's new major versions (Vite 8, Pinia 4, Vue Router 5,
+  TypeScript 7, vue-tsc 3, vite-plugin-pwa 2, lucide 1, jsdom 29).
+- **Known, build-time only:** moderate advisories in glob and minimatch and a
+  low one in deepmerge, pulled in by workbox-build, vue-tsc and jake. Their
+  fixes are on major versions those parents don't accept yet; none of them
+  ships in the image.
 
 ## 1.3.1 — Pillow security fixes and remote-zone repairs
 

@@ -250,3 +250,69 @@ def test_volume_and_mute_commands_drive_wpctl():
     calls.clear()
     assert agent.Agent._execute(fake, "set_mute", {"muted": True}) == (True, "muted")
     assert calls == [("set-mute", "@DEFAULT_AUDIO_SINK@", "1")]
+
+
+def _display_agent(session_user=None, browser_used=False, idle=4000):
+    resets = []
+    fake = types.SimpleNamespace(
+        sway=types.SimpleNamespace(available=lambda: True, is_on=lambda: True),
+        display_synced=True, display_on=True, forced_off=False,
+        policy={"screen_off_minutes": 0, "signout_minutes": 30},
+        session_user=session_user, browser_used=browser_used, idle_signed_out=False,
+        effective_idle=lambda: idle, in_on_hours=lambda: True,
+        set_display=lambda on: None, reset_browser=lambda reason: resets.append(reason),
+    )
+    return fake, resets
+
+
+@pytest.mark.parametrize("session_user,browser_used,idle,expected", [
+    ("alice", False, 4000, ["idle"]),   # a Cove session: as before
+    (None, True, 4000, ["idle"]),       # used, but the sign-in never reached Cove
+    (None, False, 4000, []),            # untouched since the last wipe: nothing to clear
+    (None, True, 60, []),               # not idle long enough
+])
+def test_idle_signout_wipes_a_used_browser_without_a_cove_session(session_user, browser_used, idle, expected):
+    fake, resets = _display_agent(session_user, browser_used, idle)
+    agent.Agent._display_tick(fake)
+    assert resets == expected
+    agent.Agent._display_tick(fake)
+    assert resets == expected  # once per idle stretch
+
+
+def test_input_marks_the_browser_used_and_a_reset_clears_it(monkeypatch):
+    fake = types.SimpleNamespace(forced_off=True, idle_signed_out=True, browser_used=False, display_on=True)
+    agent.Agent._on_input(fake)
+    assert fake.browser_used and not fake.idle_signed_out
+
+
+def test_api_never_follows_a_redirect_with_the_device_token():
+    import http.server
+    import threading
+
+    hits = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append((self.path, self.headers.get("Authorization")))
+            if self.path == "/api/thin-client/agent":
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{srv.server_address[1]}/elsewhere")
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"evil")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        api = agent.Api(f"http://127.0.0.1:{srv.server_address[1]}", "ctc_secret")
+        with pytest.raises(agent.urllib.error.HTTPError) as e:
+            api.request("GET", "/api/thin-client/agent")
+        assert e.value.code == 302
+        assert [h[0] for h in hits] == ["/api/thin-client/agent"]
+    finally:
+        srv.shutdown()

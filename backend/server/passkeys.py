@@ -188,7 +188,8 @@ def register(db: Session, request: Request, user: User, state: str, credential: 
 
 # Transport lists as browsers report them (sorted): a USB key, a USB+NFC key,
 # a phone or laptop passkey.
-_FAKE_TRANSPORTS = (["usb"], ["nfc", "usb"], ["hybrid", "internal"], ["internal"])
+# An empty list stands for a real key stored without transports (sent as none).
+_FAKE_TRANSPORTS = (["usb"], ["nfc", "usb"], ["hybrid", "internal"], ["internal"], [])
 _FAKE_ID_LENGTHS = (16, 32, 48, 64)
 
 
@@ -197,7 +198,9 @@ def _fake_credentials(username: str) -> list[tuple[bytes, list[str]]]:
     passkeys, shaped like real ones: one or two, with differing id lengths and
     transports, so the options don't tell which accounts have passkeys."""
     key = get_settings().get_secret_key().encode()
-    seed = hmac.new(key, f"cove-fake-passkey:{username.lower()}".encode(), hashlib.sha256).digest()
+    # Seeded from the name exactly as typed: the account lookup is exact too, so
+    # "bob" and "BOB" both differ whether or not either has passkeys.
+    seed = hmac.new(key, f"cove-fake-passkey:{username}".encode(), hashlib.sha256).digest()
     fakes = []
     for i in range(1 + seed[0] % 2):
         length = _FAKE_ID_LENGTHS[seed[1 + i] % len(_FAKE_ID_LENGTHS)]
@@ -224,7 +227,9 @@ def authentication_options(db: Session, request: Request, username: str) -> dict
         ]
     else:
         allow = [
-            structs.PublicKeyCredentialDescriptor(id=i, transports=[structs.AuthenticatorTransport(t) for t in ts])
+            structs.PublicKeyCredentialDescriptor(
+                id=i, transports=[structs.AuthenticatorTransport(t) for t in ts] or None
+            )
             for i, ts in _fake_credentials(username)
         ]
     options = wa.generate_authentication_options(

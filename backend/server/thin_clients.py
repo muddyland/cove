@@ -194,6 +194,19 @@ def cp_url_for(request_base_url: str) -> str:
     return (get_settings().app_origin or request_base_url).rstrip("/")
 
 
+HTTP_REFUSED = (
+    "Thin clients need Cove on https://: they install and update a root agent from it, and over "
+    "plain http anything on the network path could swap that agent. Serve Cove over HTTPS "
+    "(and set COVE_APP_ORIGIN to its https:// address)."
+)
+
+
+def cp_url_allowed(cp: str) -> bool:
+    """Whether devices may be set up against ``cp``: https only, unless the
+    operator opted into plain http for a test setup."""
+    return cp.lower().startswith("https://") or get_settings().thin_client_allow_http
+
+
 # ── Private certificates ─────────────────────────────────────────────────────
 
 _PEM_RE = re.compile(rb"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.S)
@@ -464,6 +477,21 @@ def revoke_sessions(
     db.commit()
     if reset_browser and client.status == "enrolled":
         queue_command(db, client, "restart_browser", {"reason": reason}, by=by)
+
+
+def sign_out_user(db: Session, user_id: int, *, by: Optional[str] = None, reason: str = "user_signout") -> list[str]:
+    """Sign out every thin client ``user_id`` is signed in on, wiping its browser.
+
+    Revoking a user's tokens alone leaves the kiosk's browser profile, and the
+    identity provider's cookie in it, so the next person's *Sign in with SSO*
+    would come back as this user. Returns the devices' names.
+    """
+    clients = db.scalars(
+        select(ThinClient).where(ThinClient.session_user_id == user_id, ThinClient.status == "enrolled")
+    ).all()
+    for client in clients:
+        revoke_sessions(db, client, by=by, reason=reason)
+    return [c.name for c in clients]
 
 
 def session_cap(client: ThinClient, sst: float) -> Optional[datetime]:

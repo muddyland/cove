@@ -99,7 +99,9 @@ def match_totp(
 ) -> Optional[int]:
     """The time step ``code`` is valid for, or None. Steps at or before
     ``after_step`` are refused, so a code (or an older one) can't be replayed."""
-    code = "".join(ch for ch in (code or "") if ch.isdigit())
+    # ASCII digits only: str.isdigit() also passes "١٢٣" or full-width digits,
+    # which compare_digest refuses with a TypeError (a 500, not a wrong code).
+    code = "".join(ch for ch in (code or "") if ch in "0123456789")
     if len(code) != TOTP_DIGITS:
         return None
     now = int((time.time() if at is None else at) // TOTP_PERIOD)

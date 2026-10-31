@@ -375,14 +375,16 @@ def test_passkey_options_do_not_reveal_accounts(client):
     c = client.post("/api/auth/login/passkey/options", json={"username": "bob"}).json()["options"]
     assert a["allowCredentials"] == b["allowCredentials"]  # stable per name
     assert c["allowCredentials"] != a["allowCredentials"] and a.keys() == c.keys()
-    # Made-up entries look like real ones: transports, and differing counts
-    # and id lengths (a fixed shape would mark the accounts with real keys).
+    # Made-up entries look like real ones: differing counts and id lengths (a
+    # fixed shape would mark the accounts with real keys), and transports
+    # mostly, but not always (a real key may be stored without them).
     seen = []
     for i in range(40):
         auth_router._rate_buckets.clear()
         seen.append(client.post("/api/auth/login/passkey/options", json={"username": f"user{i}"}).json()["options"])
     entries = [e for o in seen for e in o["allowCredentials"]]
-    assert all(e.get("transports") for e in entries)
+    with_transports = [bool(e.get("transports")) for e in entries]
+    assert any(with_transports) and not all(with_transports)
     assert {len(o["allowCredentials"]) for o in seen} == {1, 2}
     assert len({len(unb64u(e["id"])) for e in entries}) > 1
 

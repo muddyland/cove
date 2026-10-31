@@ -133,8 +133,10 @@ device page.
   device out, and set keep-awake. It can't read device logs or run system
   updates; those stay in Admin → Thin clients.
 - A token acts with the authority of the admin who created it. Cove revokes it
-  when that account is deleted or is no longer an admin (each revocation is in
-  the audit log), so create long-lived tokens from an account that stays.
+  when that account is deleted or is no longer an admin, including when an SSO
+  account leaves the admin group (each revocation is in the audit log), and
+  refuses it on every request while its creator isn't an admin. Create
+  long-lived tokens from an account that stays.
 - Only the token's sha256 is stored. **Admin → Integrations** shows when and
   from where each token was last used. Revoking one stops it at once, and Home
   Assistant then asks for a new token (*Reconfigure* on the integration).

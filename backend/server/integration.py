@@ -70,9 +70,22 @@ def hash_token(token: str) -> str:
 
 
 def find_token(db: Session, token: str) -> Optional[IntegrationToken]:
+    """The token row, if the token exists and its creator is still an admin.
+
+    Tokens act with their creator's admin authority. Demoting or deleting an
+    admin through Cove revokes their tokens, but other paths can take admin
+    away too (an SSO sign-in after the user left the admin group), so the
+    creator is checked on every use as well.
+    """
     if not token or not token.startswith(TOKEN_PREFIX):
         return None
-    return db.scalar(select(IntegrationToken).where(IntegrationToken.token_hash == hash_token(token)))
+    row = db.scalar(select(IntegrationToken).where(IntegrationToken.token_hash == hash_token(token)))
+    if row is None or not row.created_by:
+        return None
+    creator = db.scalar(select(User).where(User.username == row.created_by))
+    if creator is None or not creator.is_admin:
+        return None
+    return row
 
 
 def revoke_tokens_of(db: Session, username: str) -> list[str]:

@@ -38,6 +38,10 @@ reaching Cove.
   the [install USB](#3-the-install-usb) do the Debian install for you.
 - The machine must reach Cove's URL over HTTPS. A self-signed or private-CA
   certificate works too (see [Private certificates](#9-private-certificates)).
+  Cove refuses to hand out an install command for a plain `http://` address:
+  the device installs and updates a root agent from Cove, and over http
+  anything on the network path could swap it. (`COVE_THIN_CLIENT_ALLOW_HTTP=true`
+  lifts this for a throwaway test setup only.)
 
 ## 2. Set one up (Debian already installed)
 
@@ -231,10 +235,15 @@ differs is that the session belongs to the **device**:
   normal sign-in lifetime (`COVE_REFRESH_TOKEN_DAYS`, 7 days), never "forever".
 - Signing out there, by the idle timeout, the SPA's *Log out*, an admin's
   **Sign out**, or deleting the device, revokes that device's sessions and
-  nothing else. A normal *Log out* elsewhere, or **Users → Revoke sessions**,
-  still signs the user out everywhere, thin clients included.
+  nothing else. A normal *Log out* elsewhere, **Users → Revoke sessions**, an
+  admin's password or 2FA reset, or deleting the user, still signs the user
+  out everywhere, and every thin client they're signed in on restarts its
+  browser on a wiped profile too.
 - Every sign-out also wipes the browser profile, so nothing (cookies, stream
   tokens, cached pages) is left for the next person.
+- The idle timeout also wipes a browser someone used without a Cove session
+  coming of it, for example an SSO sign-in abandoned at the identity provider:
+  the provider's cookie would otherwise sign the next person in as them.
 
 Idle sign-outs appear in the audit log as `thin_client.idle_signout`, other
 browser resets with someone signed in (a *Restart browser* command, a rebind)

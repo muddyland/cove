@@ -24,8 +24,8 @@ stages:
 variables:
   # Plain images by default; override per project to use a mirror.
   PYTHON_IMAGE: python:3.14-slim
-  # This project is still on node 20.
-  NODE_IMAGE: node:20-alpine
+  # The same major as the Dockerfile's frontend build (Node 20 is end-of-life).
+  NODE_IMAGE: node:22-alpine
   # The thin client agent runs on the device's own Python: Debian 12's 3.11 is
   # the oldest it must support.
   THINCLIENT_PYTHON_IMAGE: python:3.11-slim
