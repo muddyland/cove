@@ -121,6 +121,14 @@ async def lifespan(app: FastAPI):
             logger.warning("Agent: failed to stage helper scripts: %s", exc)
         yield
         return
+    # Earlier releases staged each zone's control-plane client key inside the
+    # directory the central Traefik mounts; take it out of there right away.
+    try:
+        from server.docker_manager import drop_legacy_zone_client_files
+
+        drop_legacy_zone_client_files()
+    except Exception as exc:
+        logger.warning("Could not clean up staged zone client keys: %s", exc)
     # The proxies in front of Cove's Traefik, so client_ip() sees past them.
     try:
         from server import net, settings_store

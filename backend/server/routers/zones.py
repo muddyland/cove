@@ -340,12 +340,10 @@ def delete_zone(zone_id: int, admin: AdminUser, db: DbSession, request: Request)
     public_id = zone.public_id
     db.delete(zone)
     db.commit()
-    from server.docker_manager import _zone_cert_dir, reset_docker_manager
+    from server.docker_manager import remove_zone_cert_files, reset_docker_manager
 
     reset_docker_manager(zone_id)
     # Don't leave the decrypted client/edge keys on disk for a zone that no
     # longer exists.
-    import shutil
-
-    shutil.rmtree(_zone_cert_dir(zone_id), ignore_errors=True)
+    remove_zone_cert_files(zone_id)
     _audit(db, "admin.zone.delete", detail=public_id, user=admin, request=request)

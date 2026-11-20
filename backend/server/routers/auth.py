@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from server import integration, lan_access, thin_clients
+from server import integration, lan_access, stream_consent, thin_clients
 from server import oidc as oidc_module
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession, _check_revocation, resolve_user_from_token
@@ -636,7 +636,21 @@ def _forward_auth_subpath(request, db, uri: str | None):
     """Authenticate a workspace stream served same-origin under /workspace/{id}/.
 
     Same origin as the SPA, so the host-only session cookie is available here.
+    That also means the workspace's own pages run on the app origin with the
+    viewer's session, so two more rules apply here:
+
+    * the stream is only ever loaded inside the SPA's frame: a top-level
+      navigation (a link someone sent, a bookmark) is refused before anything
+      from the workspace is served;
+    * someone other than the owner (an admin) gets through only after
+      confirming in the SPA, which records a ``stream_consent`` grant.
     """
+    if request.headers.get("Sec-Fetch-Dest") == "document":
+        return Response(
+            status_code=403,
+            content="Open this workspace from Cove.",
+            media_type="text/plain",
+        )
     token = request.cookies.get(get_settings().cookie_session_name)
     if not token:
         return Response(status_code=401)
@@ -653,9 +667,14 @@ def _forward_auth_subpath(request, db, uri: str | None):
         return Response(status_code=401)
 
     if _authorize_ws(db, public_id, user):
-        headers = {"X-Cove-User": user.username}
         ws = db.scalar(select(Workspace).where(Workspace.public_id == public_id))
-        if ws is not None and ws.zone_id != 0:
+        if ws is None:
+            return Response(status_code=401)
+        if ws.user_id != user.id and not stream_consent.allowed(user.id, public_id, ws.container_id):
+            _record_audit(db, "stream.deny", detail=f"not confirmed: {uri}", user=user, ip=client_ip(request))
+            return Response(status_code=401)
+        headers = {"X-Cove-User": user.username}
+        if ws.zone_id != 0:
             # Remote zone, subpath mode: the agent's own Traefik re-checks every
             # stream request but holds only the stream-signing key (no session
             # secret, no user DB), and the session cookie is meaningless to it.

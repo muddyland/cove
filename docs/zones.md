@@ -69,7 +69,7 @@ so `VolumesFrom`, volume driver options, `DeviceCgroupRules`, `MaskedPaths`/
 namespaces are all rejected; `volumes/create`, `networks/create`,
 `networks/{id}/connect` and `archive` are policy-checked; `rename` is refused;
 exec is allowed only into workspace/routing-sidecar containers and, for the
-single fixed recreate command, the updater sidecar. Only the listed API families
+single fixed recreate command (no `Env`, `User`, `WorkingDir` or other options), the updater sidecar. Only the listed API families
 are reachable at all, versioned or not. Privileged containers are refused unless
 the zone host opted in to Docker-in-Docker (`COVE_AGENT_ALLOW_DIND`); then exactly
 one privileged shape is accepted, the `cove-dind-<id>` sidecar joined to a
@@ -177,8 +177,10 @@ Docker-in-Docker), so the pinhole is not a broad exposure.
 > The control plane reaches workspace streams by routing the workspace's
 > subdomain/path to the agent's `8443` over mTLS via Traefik's HTTP dynamic
 > provider (`/api/internal/traefik-config`). The central `traefik` service must
-> mount the per-zone client certs — already wired in `docker-compose.yml` as
-> `${COVE_DATA_DIR_HOST:-./data}/zone-certs:/zone-certs:ro`.
+> mount the per-zone relay (edge) certs — already wired in `docker-compose.yml` as
+> `${COVE_DATA_DIR_HOST:-./data}/zone-certs:/zone-certs:ro`. That directory holds
+> only each zone's CA and edge cert/key; the control plane's own client key lives
+> in `data/zone-client-certs`, which is not mounted anywhere.
 
 ---
 
@@ -281,7 +283,9 @@ off.
   pushes the control plane's own image to the zone over the mTLS channel, tags it
   as the image the zone's compose file runs, and recreates `cove-agent`. The
   Health column shows **agent outdated** while the agent runs a different build
-  than the control plane.
+  than the control plane. The zone doesn't verify that image, so whoever holds
+  the control plane's client key is root on the zone (see
+  [Security model](security.md#remote-zones)).
 - **Rotate the control-plane client cert:** `POST /api/admin/zones/{id}/rotate-client-cert`.
   The control plane re-issues its own client cert (same CN, same CA) — no agent
   change needed.
@@ -302,7 +306,7 @@ Control-plane settings (env prefix `COVE_`):
 | `COVE_ZONE_AGENT_IMAGE` | _(unset)_ | The Cove image the agent runs. Unset: the image the control plane container itself runs (`cove:local` if it doesn't run in a container). |
 | `COVE_ZONE_AGENT_IMAGE_FROM_CONTROL_PLANE` | `true` | Installer fetches the image from the control plane (`docker save`/`load`) so a locally-built image needs no registry. Set `false` to have the agent pull a registry ref. |
 | `COVE_ZONE_ENROLL_TOKEN_MINUTES` | `60` | Enrollment-token lifetime. |
-| `COVE_ZONE_CERTS_MOUNT` | `/zone-certs` | Path **inside the Traefik container** where per-zone client certs are mounted. |
+| `COVE_ZONE_CERTS_MOUNT` | `/zone-certs` | Path **inside the Traefik container** where the per-zone relay (edge) certs are mounted. |
 | `COVE_STREAM_SIGNING_KEY` | _(file)_ | Stream-token signing key. Generated as `data_dir/stream.key` on the control plane; **provided to agents** at enrollment. |
 | `COVE_STORAGE_PATH` | _(unset)_ | Workspace storage root — must match on control plane and agents. |
 | `COVE_WORKSPACE_DOMAIN` | _(unset)_ | Subdomain routing; provisioned to agents so they can resolve a workspace from its host. |

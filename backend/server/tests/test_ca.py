@@ -1,6 +1,7 @@
 """Tests for the private CA (zone mTLS) and per-zone cert staging."""
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -98,6 +99,53 @@ def test_stage_zone_certs_roundtrip(tmp_path, monkeypatch):
     assert open(key_path).read() == key_pem  # decrypted back to plaintext
     for p in (cert_path, key_path, ca_path):
         assert oct(os.stat(p).st_mode)[-3:] == "600"
+
+
+def test_control_plane_client_key_stays_out_of_the_traefik_mount(tmp_path, monkeypatch):
+    """``data/zone-certs`` is mounted into the internet-facing Traefik, which
+    needs only the edge (stream relay) cert. The control plane's own client key
+    opens the agent API and Docker proxy, so it's staged elsewhere, and a copy
+    an earlier release left in the mount is removed."""
+    from server import docker_manager
+    from server.security import encrypt_secret
+
+    monkeypatch.setattr(docker_manager, "get_settings", lambda: Settings(data_dir=tmp_path))
+    legacy = tmp_path / "zone-certs" / "7"
+    legacy.mkdir(parents=True)
+    (legacy / "client.key").write_text("old key")
+    (legacy / "client.crt").write_text("old cert")
+
+    zone = SimpleNamespace(
+        id=7,
+        ca_cert_pem="CA",
+        client_cert_pem="CLIENT",
+        client_key_enc=encrypt_secret("CLIENT KEY"),
+        edge_cert_pem="EDGE",
+        edge_key_enc=encrypt_secret("EDGE KEY"),
+    )
+    _, key_path, _ = docker_manager.stage_zone_certs(zone)
+    docker_manager.stage_zone_edge_certs(zone)
+
+    mount = tmp_path / "zone-certs"
+    assert not Path(key_path).is_relative_to(mount)
+    assert sorted(p.name for p in (mount / "7").iterdir()) == ["ca.crt", "edge.crt", "edge.key"]
+    assert oct(os.stat(Path(key_path).parent).st_mode)[-3:] == "700"
+
+
+def test_startup_sweep_removes_legacy_client_keys(tmp_path, monkeypatch):
+    from server import docker_manager
+
+    monkeypatch.setattr(docker_manager, "get_settings", lambda: Settings(data_dir=tmp_path))
+    for zid in ("3", "4"):
+        d = tmp_path / "zone-certs" / zid
+        d.mkdir(parents=True)
+        (d / "client.key").write_text("k")
+        (d / "edge.key").write_text("e")
+    docker_manager.drop_legacy_zone_client_files()
+    assert sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*.key")) == [
+        "zone-certs/3/edge.key",
+        "zone-certs/4/edge.key",
+    ]
 
 
 def test_mtls_handshake_end_to_end(ca_settings, tmp_path):

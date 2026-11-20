@@ -567,10 +567,10 @@ async function loadStreamUrl() {
       }
       return
     }
-    const { url } = await workspacesApi.streamAuth(id)
+    const { url, consent_required } = await workspacesApi.streamAuth(id)
     if (id !== wsId.value) return
     const sameOrigin = url.startsWith('/') && !url.startsWith('//')
-    if (sameOrigin && auth.user && ws.value && ws.value.user_id !== auth.user.id) {
+    if (consent_required || (sameOrigin && auth.user && ws.value && ws.value.user_id !== auth.user.id)) {
       foreignStreamPending.value = url
       return
     }
@@ -584,11 +584,21 @@ async function loadStreamUrl() {
 
 // Manual "RETRY" from the connection-error overlay: drop any stale URL and run
 // the readiness-gated load again from scratch.
-function acceptForeignStream() {
-  const url = foreignStreamPending.value
+async function acceptForeignStream() {
+  // The server enforces the choice: it records the consent, and ForwardAuth
+  // refuses the stream without it.
+  if (!foreignStreamPending.value) return
+  const id = wsId.value
   foreignStreamPending.value = null
-  if (!url) return
-  streamUrl.value = url
+  connecting.value = true
+  try {
+    const { url } = await workspacesApi.streamAuth(id, true)
+    if (id === wsId.value) streamUrl.value = url
+  } catch (e: any) {
+    if (id === wsId.value) streamError.value = e.message || 'Failed to open the stream'
+  } finally {
+    if (id === wsId.value) connecting.value = false
+  }
 }
 
 function retryStream() {

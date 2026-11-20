@@ -14,7 +14,12 @@ so a remote workspace routes and frames identically to a local one. ForwardAuth
 from sqlalchemy import select
 
 from server.config import get_settings
-from server.docker_manager import _zone_has_mtls, ensure_zone_edge_cert, stage_zone_edge_certs
+from server.docker_manager import (
+    SUBPATH_STRIPPED_REQUEST_HEADERS,
+    _zone_has_mtls,
+    ensure_zone_edge_cert,
+    stage_zone_edge_certs,
+)
 from server.models import Workspace, Zone
 
 
@@ -78,6 +83,13 @@ def build_dynamic_config(db) -> dict:
                 "contentTypeNosniff": True,
             }
         }
+        if not settings.workspace_domain:
+            # Subpath mode: Cove's session/refresh cookies and any Bearer header
+            # never leave the edge (see DockerManager._build_traefik_labels).
+            # X-Cove-Stream-Auth must stay: the agent's ForwardAuth needs it.
+            middlewares[hdr]["headers"]["customRequestHeaders"] = {
+                h: "" for h in SUBPATH_STRIPPED_REQUEST_HEADERS
+            }
 
         services[name] = {
             "loadBalancer": {

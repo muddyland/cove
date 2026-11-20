@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from server import settings_store, storage_local, zone_access
@@ -85,8 +85,7 @@ def list_files(user: CurrentUser, db: DbSession, path: str = "", zone_id: int = 
 def download_file(user: CurrentUser, db: DbSession, path: str, zone_id: int = 0):
     client = _agent_client(db, zone_id)
     if client is None:
-        target = storage_local.resolve_download(_user_base(user), path)
-        return FileResponse(str(target), filename=target.name, content_disposition_type="attachment")
+        return storage_local.download_response(_user_base(user), path)
 
     # Stream the file through from the agent, keeping the mTLS client open until
     # the response body is fully sent (closed by the generator's finally).

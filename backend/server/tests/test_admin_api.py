@@ -465,3 +465,86 @@ def test_zone_agent_stack_allows_disk_usage():
 
     sockproxy = _INSTALL_TEMPLATE.split("  sockproxy:", 1)[1].split("  sockproxy-ro:", 1)[0]
     assert "SYSTEM=1" in sockproxy
+
+
+# ── Deleting a user tears their workspaces down first ─────────────────────────
+
+
+def _user_with_workspaces(client):
+    from server.db import SessionLocal
+    from server.models import User, Workspace
+    from server.tests.helpers import add_image
+
+    token, _ = setup_admin(client)
+    image_id = add_image()
+    bob = create_user_via_admin(client, token, "bob")
+    db = SessionLocal()
+    try:
+        rows = [
+            Workspace(user_id=bob["id"], name="running", image_id=image_id, status="running", container_id="a" * 64),
+            # Crashed: no longer "running", but its container is still there.
+            Workspace(user_id=bob["id"], name="crashed", image_id=image_id, status="error", container_id="b" * 64),
+            Workspace(user_id=bob["id"], name="cold", image_id=image_id, status="stopped"),
+        ]
+        db.add_all(rows)
+        db.commit()
+        ids = {w.name: w.id for w in rows}
+        assert db.get(User, bob["id"]) is not None
+    finally:
+        db.close()
+    return token, bob, ids
+
+
+def test_delete_user_tears_down_workspaces_before_deleting_them(client, fake_docker_manager):
+    from server.db import SessionLocal
+    from server.models import Workspace
+
+    token, bob, ids = _user_with_workspaces(client)
+    seen = []
+
+    def teardown(ws):
+        db = SessionLocal()
+        try:
+            # The row (and so the cove-*-<id> names it owns) still exists.
+            seen.append((ws.name, db.get(Workspace, ws.id) is not None))
+        finally:
+            db.close()
+        return True
+
+    fake_docker_manager.teardown_workspace.side_effect = teardown
+    r = client.delete(f"/api/admin/users/{bob['id']}", headers=auth_header(token))
+    assert r.status_code == 204, r.text
+    assert sorted(seen) == [("crashed", True), ("running", True)]
+    fake_docker_manager.remove_workspace.assert_not_called()
+    db = SessionLocal()
+    try:
+        assert db.query(Workspace).filter(Workspace.user_id == bob["id"]).count() == 0
+    finally:
+        db.close()
+
+
+def test_delete_user_audits_a_teardown_that_failed(client, fake_docker_manager):
+    from server.db import SessionLocal
+    from server.models import AuditLog, Workspace
+
+    token, bob, ids = _user_with_workspaces(client)
+    db = SessionLocal()
+    try:
+        expected = sorted(
+            f"bob: workspace {db.get(Workspace, ids[n]).public_id} (cove-ws-{ids[n]}) on zone 0"
+            for n in ("running", "crashed")
+        )
+    finally:
+        db.close()
+    fake_docker_manager.teardown_workspace.return_value = False
+    r = client.delete(f"/api/admin/users/{bob['id']}", headers=auth_header(token))
+    assert r.status_code == 204, r.text
+    db = SessionLocal()
+    try:
+        details = [
+            a.detail
+            for a in db.query(AuditLog).filter(AuditLog.action == "admin.user.delete.teardown_failed")
+        ]
+    finally:
+        db.close()
+    assert sorted(details) == expected

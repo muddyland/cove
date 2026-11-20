@@ -1180,13 +1180,21 @@ def container_logs(
 
 
 @router.post("/{ws_id}/stream-auth", response_model=StreamAuthOut)
-def stream_auth(ws_id: int, request: Request, user: CurrentUser, db: DbSession):
+def stream_auth(
+    ws_id: int, request: Request, user: CurrentUser, db: DbSession, accept_foreign: bool = False
+):
     """Mint the iframe URL the SPA uses to open a workspace stream.
 
     Subdomain mode: returns ``//{host}/?__cove_t=<token>`` where the one-time
     token bootstraps a per-workspace, host-only stream cookie (so the SPA's
     session cookie is never sent to the workspace origin). Subpath mode: returns
     the plain same-origin path (the session cookie authorizes it directly).
+
+    Subpath mode, someone else's workspace (an admin): the stream would run on
+    the app origin with the admin's session, so ForwardAuth refuses it until the
+    admin confirms. Without ``accept_foreign`` the answer only says consent is
+    required; with it, the consent is recorded (and audited) for the
+    workspace's current container.
     """
     ws = _get_workspace_or_404(ws_id, user, db)
     if ws.status != "running":
@@ -1194,7 +1202,15 @@ def stream_auth(ws_id: int, request: Request, user: CurrentUser, db: DbSession):
 
     settings = get_settings()
     if not settings.workspace_domain:
-        return StreamAuthOut(url=f"/workspace/{ws.public_id}/")
+        url = f"/workspace/{ws.public_id}/"
+        if ws.user_id != user.id:
+            if not accept_foreign:
+                return StreamAuthOut(url=url, consent_required=True)
+            from server import stream_consent
+
+            stream_consent.grant(user.id, ws.public_id, ws.container_id)
+            _audit(db, "stream.foreign_open", detail=ws.public_id, user=user, request=request)
+        return StreamAuthOut(url=url)
 
     # One-time, short-lived bootstrap token for the URL — swapped for a fresh
     # stream cookie by ForwardAuth on first hit, then dead.

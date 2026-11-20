@@ -261,7 +261,7 @@ def test_nul_byte_path_is_400(tmp_path):
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as ei:
-        storage_local.resolve(tmp_path.resolve(), "a\x00b")
+        storage_local.list_dir(tmp_path.resolve(), "a\x00b")
     assert ei.value.status_code == 400
 
 

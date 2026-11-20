@@ -94,7 +94,12 @@ export const workspacesApi = {
   preview: (id: number) => api.getBlob(`/workspaces/${id}/preview.jpg`),
   refreshPreview: (id: number) =>
     api.post<{ captured: boolean; preview_at: string | null }>(`/workspaces/${id}/preview/refresh`),
-  streamAuth: (id: number) => api.post<{ url: string }>(`/workspaces/${id}/stream-auth`),
+  // acceptForeign: an admin confirmed opening another user's workspace in
+  // subpath mode (the server records it; the stream is refused without it).
+  streamAuth: (id: number, acceptForeign = false) =>
+    api.post<{ url: string; consent_required?: boolean }>(
+      `/workspaces/${id}/stream-auth${acceptForeign ? '?accept_foreign=true' : ''}`,
+    ),
   streamReady: (id: number) => api.get<{ ready: boolean }>(`/workspaces/${id}/stream-ready`),
   // Which open page holds the stream (Selkies serves one controlling screen).
   claimStream: (id: number, viewerId: string) =>

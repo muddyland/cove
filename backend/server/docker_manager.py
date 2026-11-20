@@ -461,7 +461,14 @@ def copy_workspace_storage(src_ws, dst_ws) -> None:
         raise ValueError(
             "a storage directory already exists for that name — purge it or choose another name"
         )
-    shutil.copytree(src, dst, symlinks=True, ignore_dangling_symlinks=True)
+    # Not shutil.copytree: it reopens every path by name, so a process still
+    # writing the source (a crashed workspace's sidecar, a DinD daemon) could
+    # swap a folder for a symlink mid-copy and have root read the host into the
+    # clone. clone_tree walks descriptors and never follows a link.
+    from server import storage_local
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    storage_local.clone_tree(src_r, dst)
     logger.info("Cloned workspace storage %s -> %s", src_r, dst)
 
 
@@ -805,8 +812,60 @@ class _ChunkReader:
 
 
 def _zone_cert_dir(zone_id: int) -> Path:
+    """Per-zone files the central Traefik reads (mounted into it read-only):
+    the zone's CA and the relay (edge) cert/key. Nothing else goes here."""
     settings = get_settings()
     return Path(settings.data_dir) / "zone-certs" / str(zone_id)
+
+
+def _zone_client_cert_dir(zone_id: int) -> Path:
+    """Per-zone files only the backend reads: the control plane's own client
+    cert/key (``cove-cp-<id>``, accepted on the agent API and Docker proxy).
+
+    Kept out of ``zone-certs``: that directory is mounted into the
+    internet-facing Traefik, and a key readable there would make the separate,
+    stream-only edge cert pointless."""
+    settings = get_settings()
+    return Path(settings.data_dir) / "zone-client-certs" / str(zone_id)
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` as an owner-only file (never world-readable,
+    not even between the write and a chmod)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        os.fchmod(fh.fileno(), 0o600)
+        fh.write(text)
+
+
+def _drop_legacy_client_files(zone_id: int) -> None:
+    """Remove the client cert/key that earlier releases staged next to the edge
+    cert, inside the Traefik mount."""
+    d = _zone_cert_dir(zone_id)
+    for name in ("client.key", "client.crt"):
+        try:
+            (d / name).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def remove_zone_cert_files(zone_id: int) -> None:
+    """Delete every staged cert/key file of a zone (on zone deletion)."""
+    shutil.rmtree(_zone_cert_dir(zone_id), ignore_errors=True)
+    shutil.rmtree(_zone_client_cert_dir(zone_id), ignore_errors=True)
+
+
+def drop_legacy_zone_client_files() -> None:
+    """Startup sweep: no control-plane client key may stay in the Traefik mount,
+    including for zones the backend won't dial again soon."""
+    root = Path(get_settings().data_dir) / "zone-certs"
+    try:
+        children = list(root.iterdir())
+    except FileNotFoundError:
+        return
+    for child in children:
+        if child.is_dir() and not child.is_symlink() and child.name.isdigit():
+            _drop_legacy_client_files(int(child.name))
 
 
 def _zone_has_mtls(zone) -> bool:
@@ -821,18 +880,19 @@ def stage_zone_certs(zone) -> tuple[str, str, str]:
 
     docker-py's TLSConfig (and httpx, for the file/migration proxy) want file
     paths, not in-memory PEMs. The client private key is decrypted at runtime —
-    the host is trusted; the DB copy stays encrypted at rest. Files are owner-only.
+    the host is trusted; the DB copy stays encrypted at rest. Files are owner-only
+    and live outside the directory the central Traefik mounts.
     """
-    d = _zone_cert_dir(zone.id)
+    d = _zone_client_cert_dir(zone.id)
     d.mkdir(parents=True, exist_ok=True)
+    os.chmod(d, 0o700)
     ca = d / "ca.crt"
     cert = d / "client.crt"
     key = d / "client.key"
-    ca.write_text(zone.ca_cert_pem)
-    cert.write_text(zone.client_cert_pem)
-    key.write_text(decrypt_secret(zone.client_key_enc))
-    for p in (ca, cert, key):
-        os.chmod(p, 0o600)
+    _write_private(ca, zone.ca_cert_pem)
+    _write_private(cert, zone.client_cert_pem)
+    _write_private(key, decrypt_secret(zone.client_key_enc))
+    _drop_legacy_client_files(zone.id)
     return str(cert), str(key), str(ca)
 
 
@@ -864,11 +924,10 @@ def stage_zone_edge_certs(zone) -> tuple[str, str, str]:
     ca = d / "ca.crt"
     cert = d / "edge.crt"
     key = d / "edge.key"
-    ca.write_text(zone.ca_cert_pem)
-    cert.write_text(zone.edge_cert_pem)
-    key.write_text(decrypt_secret(zone.edge_key_enc))
-    for p in (ca, cert, key):
-        os.chmod(p, 0o600)
+    _write_private(ca, zone.ca_cert_pem)
+    _write_private(cert, zone.edge_cert_pem)
+    _write_private(key, decrypt_secret(zone.edge_key_enc))
+    _drop_legacy_client_files(zone.id)
     return str(cert), str(key), str(ca)
 
 
@@ -2554,6 +2613,33 @@ class DockerManager:
         finally:
             db.close()
 
+    def teardown_workspace(self, ws: Workspace) -> bool:
+        """Stop and remove every container, sidecar and network of ``ws``, while
+        its row still exists (the names are ``cove-*-<id>``, and an id freed
+        early could already belong to the next workspace). Best-effort: never
+        raises; returns False when something could not be torn down (e.g. the
+        zone is unreachable)."""
+        try:
+            # DinD sidecar first — it shares the workspace container's netns,
+            # so the container can't be removed while it is still attached.
+            self._cleanup_docker_sidecar(ws.id)
+            if ws.container_id:
+                try:
+                    container = self._client.containers.get(ws.container_id)
+                    container.stop(timeout=5)
+                    container.remove()
+                except (docker.errors.NotFound, docker.errors.APIError):
+                    pass
+            self._remove_container_by_name(f"cove-ws-{ws.id}", timeout=5)
+            self._cleanup_tailscale_sidecar(ws.id)
+            self._cleanup_gluetun_sidecar(ws.id)
+            self._cleanup_ws_network(self._ws_network_name(ws.id))
+            _remove_ssh_key(ws.id)
+        except Exception as exc:
+            logger.warning("Best-effort teardown failed for workspace %s: %s", ws.id, exc)
+            return False
+        return True
+
     def remove_workspace(self, ws_id: int, purge_storage: bool = False) -> None:
         """Stop container and delete workspace record.
 
@@ -2573,27 +2659,7 @@ class DockerManager:
             # Otherwise a workspace on an unreachable zone (connection errors are
             # not docker.errors.APIError) can't be purged: the cleanup raises
             # before db.delete and the row reappears on the next poll.
-            try:
-                # DinD sidecar first — it shares the workspace container's netns,
-                # so the container can't be removed while it is still attached.
-                self._cleanup_docker_sidecar(ws.id)
-                if ws.container_id:
-                    try:
-                        container = self._client.containers.get(ws.container_id)
-                        container.stop(timeout=5)
-                        container.remove()
-                    except (docker.errors.NotFound, docker.errors.APIError):
-                        pass
-                self._remove_container_by_name(f"cove-ws-{ws.id}", timeout=5)
-                self._cleanup_tailscale_sidecar(ws.id)
-                self._cleanup_gluetun_sidecar(ws.id)
-                self._cleanup_ws_network(self._ws_network_name(ws.id))
-                _remove_ssh_key(ws.id)
-            except Exception as exc:
-                logger.warning(
-                    "Best-effort teardown failed for workspace %s (deleting record anyway): %s",
-                    ws_id, exc,
-                )
+            self.teardown_workspace(ws)
             if purge_storage:
                 try:
                     delete_workspace_storage(ws)
@@ -3560,6 +3626,15 @@ class DockerManager:
         base[f"traefik.http.routers.{name}.middlewares"] = (
             f"cove-errors@docker,cove-auth@docker,{hdr},{name}-strip"
         )
+        # Subpath mode shares the app origin, so the browser sends Cove's own
+        # credentials with every stream request: the session cookie (which the
+        # API also takes as a Bearer token) and the refresh cookie. ForwardAuth
+        # has already used them by the time this middleware runs; the
+        # workspace container — whose owner may not be the viewer — must never
+        # see them. The relayed stream token is dropped here too: on a zone the
+        # agent's ForwardAuth (before this middleware) is its only consumer.
+        for header in SUBPATH_STRIPPED_REQUEST_HEADERS + (STREAM_AUTH_REQUEST_HEADER,):
+            base[f"traefik.http.middlewares.{hdr}.headers.customRequestHeaders.{header}"] = ""
         base[f"traefik.http.middlewares.{name}-strip.stripprefix.prefixes"] = prefix
         # A router without a TLS section only serves plaintext. On a TLS
         # deployment (prod/lan-tls) that meant subpath streams answered 404 over
@@ -3570,6 +3645,13 @@ class DockerManager:
         if settings.cookie_secure or getattr(ws, "zone_id", 0) != 0:
             base[f"traefik.http.routers.{name}.tls"] = "true"
         return base
+
+
+# Request headers blanked before a subpath-mode stream request reaches the
+# workspace container (an empty custom header makes Traefik remove it).
+SUBPATH_STRIPPED_REQUEST_HEADERS = ("Cookie", "Authorization")
+# routers/auth.STREAM_AUTH_HEADER (not imported: that module imports this one).
+STREAM_AUTH_REQUEST_HEADER = "X-Cove-Stream-Auth"
 
 
 _managers: dict[int, DockerManager] = {}
