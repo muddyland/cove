@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Build: rollup pinned to 4.66.0 for now.** Rollup 4.67.2 added an optional
+  Android x64 binary, `@rollup/rollup-android-x64`, and the internal registry
+  refuses package names younger than 30 days until 2026-11-29. That failed
+  `audit:dependencies`, so main built no image. An npm `overrides` entry holds
+  rollup at 4.66.0, the last release without it; drop the override once the
+  name is allowed. No operator action.
 - **Security: fixes from the post-1.4.0 review.** An external review found one
   critical and several high-severity bugs; all were in released versions.
   - *The file browser could write anywhere as root through a planted symlink
