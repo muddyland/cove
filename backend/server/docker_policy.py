@@ -379,6 +379,12 @@ def check_network_connect_policy(body: bytes, network_name: str | None = None) -
     return f"connecting {name!r} to a workspace network is not allowed"
 
 
+# The exec-create body docker-py builds (casefolded): exec_run(cmd, detach=True).
+_UPDATER_EXEC_KEYS = frozenset(
+    {"container", "user", "privileged", "tty", "attachstdin", "attachstdout", "attachstderr", "cmd", "env"}
+)
+
+
 def check_exec_policy(
     container_name: str, body: bytes, recreate_cmd: list[str], allow_dind: bool = False
 ) -> str | None:
@@ -392,6 +398,18 @@ def check_exec_policy(
     if cfg.get("privileged"):
         return "privileged exec is not allowed"
     if container_name == UPDATER_CONTAINER:
+        # The updater holds the real Docker socket, and the recreate runs
+        # `docker compose` against the agent's compose file, which interpolates
+        # the host's opt-ins (ALLOW_DIND, AGENT_DIR…) from the environment
+        # before the env file. So the command alone isn't enough: an ``Env``
+        # (or a user / working directory) on the exec would change what the
+        # same command does. Only the exact keys docker-py's exec_run sends
+        # are accepted, all at their defaults.
+        unknown = set(cfg) - _UPDATER_EXEC_KEYS
+        if unknown:
+            return f"exec option(s) {sorted(unknown)} are not allowed in the updater"
+        if cfg.get("env") or cfg.get("user") or cfg.get("tty") or cfg.get("attachstdin"):
+            return "only the plain agent-recreate command may run in the updater"
         if cfg.get("cmd") != recreate_cmd:
             return "only the agent-recreate command may run in the updater"
         return None

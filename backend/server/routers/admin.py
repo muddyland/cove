@@ -212,24 +212,42 @@ def revoke_user_sessions(user_id: int, admin: AdminUser, db: DbSession, request:
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, admin: AdminUser, db: DbSession, bg: BackgroundTasks, request: Request):
+def delete_user(user_id: int, admin: AdminUser, db: DbSession, request: Request):
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     if target.id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    # Stop any running workspaces
-    running = db.scalars(
+    username = target.username
+    # Cut the account off first (sessions, thin clients), then tear down every
+    # workspace that has or may have containers, *before* the rows go: the
+    # teardown is keyed by workspace id, and a background task that ran after
+    # the delete found no row and left the containers running for good.
+    target.tokens_valid_from = datetime.now(timezone.utc)
+    db.commit()
+    _sign_out_thin_clients(db, target, "deleted", admin, request)
+    live = db.scalars(
         select(Workspace).where(
             Workspace.user_id == user_id,
-            Workspace.status.in_(["running", "creating", "stopping"]),
+            (Workspace.container_id.is_not(None))
+            | Workspace.status.in_(["running", "creating", "stopping", "migrating"]),
         )
     ).all()
+    from server import stream_leases
     from server.docker_manager import get_docker_manager
-    for ws in running:
-        bg.add_task(get_docker_manager(ws.zone_id).remove_workspace, ws.id)
-    username = target.username
-    _sign_out_thin_clients(db, target, "deleted", admin, request)
+
+    for ws in live:
+        stream_leases.forget(ws.id)
+        try:
+            torn_down = get_docker_manager(ws.zone_id).teardown_workspace(ws)
+        except Exception:  # noqa: BLE001 - e.g. no client for the zone at all
+            torn_down = False
+        if not torn_down:
+            # Unreachable zone: say so in the audit log, so the containers left
+            # on that zone can be found and removed.
+            _audit(db, "admin.user.delete.teardown_failed",
+                   detail=f"{username}: workspace {ws.public_id} (cove-ws-{ws.id}) on zone {ws.zone_id}",
+                   user=admin, request=request)
     db.delete(target)
     db.commit()
     _audit(db, "admin.user.delete", detail=username, user=admin, request=request)

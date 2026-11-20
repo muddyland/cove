@@ -156,6 +156,58 @@ def test_exec_policy():
     assert check_exec_policy("cove-agent-updater", json.dumps({"Cmd": cmd + ["--build"]}).encode(), cmd)
 
 
+def _docker_py_exec_body(cmd, **kwargs) -> bytes:
+    """The exec-create body docker-py really sends for ``exec_run``."""
+    import docker
+
+    sent = {}
+
+    def post_json(url, data=None, **kw):
+        sent["body"] = data
+        return _Resp()
+
+    api = docker.APIClient(base_url="tcp://127.0.0.1:1", version="1.41")
+    api._post_json = post_json
+    api._raise_for_status = lambda resp: None
+    api.exec_create("cove-agent-updater", cmd, **kwargs)
+    return json.dumps(sent["body"]).encode()
+
+
+class _Resp:
+    status_code = 201
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"Id": "x"}
+
+
+def test_updater_exec_accepts_what_agent_update_sends():
+    cmd = list(_RECREATE_CMD)
+    assert check_exec_policy("cove-agent-updater", _docker_py_exec_body(cmd), cmd) is None
+
+
+def test_updater_exec_refuses_anything_that_changes_the_recreate():
+    """``Env: ["ALLOW_DIND=1"]`` would make the recreate turn on privileged
+    containers (compose reads the environment before the env file)."""
+    cmd = list(_RECREATE_CMD)
+    for kwargs in (
+        {"environment": ["ALLOW_DIND=1"]},
+        {"environment": {"AGENT_DIR": "/"}},
+        {"user": "1000"},
+        {"workdir": "/tmp"},
+        {"tty": True},
+        {"stdin": True},
+    ):
+        assert check_exec_policy("cove-agent-updater", _docker_py_exec_body(cmd, **kwargs), cmd), kwargs
+    for extra in ({"WorkingDir": "/"}, {"DetachKeys": "ctrl-x"}, {"ConsoleSize": [1, 1]}):
+        body = json.dumps({"Cmd": cmd, **extra}).encode()
+        assert check_exec_policy("cove-agent-updater", body, cmd), extra
+    # Case variants are folded, not a way around the check.
+    assert check_exec_policy("cove-agent-updater", json.dumps({"Cmd": cmd, "eNv": ["A=1"]}).encode(), cmd)
+
+
 def test_archive_policy():
     assert check_archive_policy("cove-ws-5") is None
     for name in ("cove-agent-updater", "cove-ts-5", "cove-traefik", "cove-agent"):

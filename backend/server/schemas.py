@@ -287,6 +287,9 @@ class StreamAuthOut(BaseModel):
     # carries a one-time ``?__cove_t`` token that bootstraps the per-workspace
     # stream cookie; in subpath mode it is the plain same-origin stream path.
     url: str
+    # Subpath mode, another user's workspace: the stream won't authorize until
+    # the caller confirms (stream-auth again with ``accept_foreign=true``).
+    consent_required: bool = False
 
 
 class StreamReadyOut(BaseModel):

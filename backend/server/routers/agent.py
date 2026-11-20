@@ -12,7 +12,7 @@ from pathlib import Path
 
 import anyio
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from server import storage_local, storage_migrate
@@ -124,8 +124,7 @@ def agent_list_files(username: str, path: str = ""):
 
 @router.get("/files/download")
 def agent_download_file(username: str, path: str):
-    target = storage_local.resolve_download(_agent_user_base(username), path)
-    return FileResponse(str(target), filename=target.name, content_disposition_type="attachment")
+    return storage_local.download_response(_agent_user_base(username), path)
 
 
 @router.post("/files/upload", status_code=status.HTTP_201_CREATED)

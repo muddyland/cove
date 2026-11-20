@@ -1,5 +1,75 @@
 # Changelog
 
+## Unreleased
+
+- **Security: fixes from the post-1.4.0 review.** An external review found one
+  critical and several high-severity bugs; all were in released versions.
+  - *The file browser could write anywhere as root through a planted symlink
+    (critical).* Copy checked the destination name with `exists()`, which is
+    false for a dangling symlink, and `shutil.copy2` then followed it: a user
+    with a workspace could `ln -s /any/new/path /config/out/x.py` and have
+    **Files → Copy** create that file with their content and mode bits, as root
+    on the host (another user's home, or the control-plane container, which is
+    host root). More generally every file operation checked a path and then
+    reopened it by name, so a workspace swapping a folder for a symlink in
+    between could read (`/app/data/secret.key`, which signs every token) or
+    write outside the user's storage; the regression test reproduces that with
+    uploads. `storage_local.py` is rewritten to walk every path from the user's
+    storage folder one component at a time with `O_NOFOLLOW` and act only on
+    the descriptors it opened: new files and folders are created with
+    `O_EXCL` (a planted name gets a ` (2)` suffix instead), copies drop
+    setuid/setgid bits, uploads go to a temporary file renamed into place,
+    downloads are served from the descriptor that was checked, symlinks are
+    copied as links and never followed, and FIFOs and device nodes are never
+    opened (a FIFO used to hang a worker). Paths with `..` are now refused
+    rather than resolved, and a symlinked folder can no longer be browsed into
+    from **Files** (it is listed, as a file). Workspace **Clone** copied the
+    home with `shutil.copytree` the same way (racy against a crashed
+    workspace's still-running sidecar) and now uses the same walk. Same code
+    on zone agents.
+  - *Subpath mode sent the viewer's session to the workspace container.* The
+    `cove_session` cookie (which the API also accepts as a Bearer token) went
+    upstream with every stream request, so a workspace's owner could capture an
+    admin's session when the admin opened it. The per-workspace headers
+    middleware now removes `Cookie` and `Authorization` after ForwardAuth has
+    checked them (and, on a zone, the relayed stream token after the agent's
+    ForwardAuth). A workspace app that relies on its own cookies needs
+    subdomain mode.
+  - *Subpath mode: an admin opening another user's workspace is enforced by the
+    server.* The "belongs to another user" warning was only in the app, so a
+    link to `/workspace/<id>/` ran that user's page on the app origin with the
+    admin's rights. ForwardAuth now refuses a non-owner until they confirm in
+    the app (recorded per workspace container, audited as
+    `stream.foreign_open`), and refuses every top-level navigation to a stream
+    (`Sec-Fetch-Dest: document`): streams load only inside the app's frame.
+  - *The zone agent let an updater exec carry its own environment.* The policy
+    checked the exec's `Cmd` but not its `Env`, and the recreate's
+    `docker compose` reads the host's opt-ins from the environment first, so
+    `Env: ["ALLOW_DIND=1"]` turned on privileged containers on any zone. The
+    updater now accepts only the exact body an agent update sends: no `Env`,
+    `User`, `WorkingDir`, TTY or other options. Agent updates themselves are
+    not verified on the zone, so the control plane's client key remains root on
+    every zone; the security docs now say so.
+  - *The control plane's client key was readable by the edge Traefik.* It was
+    staged in `data/zone-certs`, which is mounted into the internet-facing
+    Traefik, so the separate stream-only edge cert protected nothing. It now
+    lives in `data/zone-client-certs` (not mounted anywhere), and the copies
+    earlier releases left in `zone-certs` are removed at startup.
+  - *Deleting a user left their containers running.* The rows were deleted
+    before the background teardown ran, and the teardown stopped at the missing
+    row. Every workspace with a container (crashed ones included) is now torn
+    down before the user is deleted. A teardown that fails (an unreachable
+    zone) is audited as `admin.user.delete.teardown_failed` with the container
+    name.
+  - **Operator action:** deploy, then **Update** the agent on every zone in
+    Administration → Zones (the exec check and the file-browser rewrite run on
+    the agent). Look for containers left behind by users deleted before this
+    release: `docker ps -a --filter label=cove.user_id` (on each zone too) and
+    remove any whose user no longer exists. If you can't rule out that the
+    `zone-certs` mount was exposed, rotate each zone's control-plane client
+    cert (`POST /api/admin/zones/{id}/rotate-client-cert`); the old one stays
+    valid until it expires, as Cove has no certificate revocation yet.
+
 ## 1.4.0 — thin clients, two-factor sign-in and Home Assistant
 
 - **Security: fixes from the pre-release review.** A last review of this
