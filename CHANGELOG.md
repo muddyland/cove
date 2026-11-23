@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Styled tooltips everywhere.** Every hint in the app (the `title` text on
+  buttons, badges, chips and links) now shows in a Cove-styled tooltip after a
+  short hover or on keyboard focus, instead of the browser's own after about a
+  second. One layer at the app root draws them (`TooltipLayer.vue`), so
+  existing titles work unchanged, multi-line ones keep their lines, and cards
+  or menus that clip their content don't cut them off; it flips below an
+  element near the top of the window. Touch and the stream iframe are left
+  alone; `data-no-tooltip` opts an element out. **Operator action:** none.
+- **Dashboard cards: icon buttons, and where a workspace is in use.** The
+  card's buttons drop their labels: Connect / Start / Restart is an icon
+  taking three quarters of the row, the Actions menu a ⚙ icon in the last
+  quarter, each with a tooltip and named for screen readers. A running workspace
+  whose stream is open somewhere says **In use by** that browser or thin
+  client ("Firefox on Linux", "Desk (thin client)"), from the stream leases
+  Cove already keeps for one-screen-at-a-time, so you know connecting will
+  take it over. The workspace list (`GET /api/workspaces`, and Admin →
+  Sessions) gains `in_use_by` / `in_use_since`. **Operator action:** none.
+=======
 - **Launch a new workspace from inside a stream.** The workspace name's
   quick-switch menu on the stream page ends with **New workspace…**, which
   opens the dashboard's launch dialog over the stream and switches to the new

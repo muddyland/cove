@@ -92,6 +92,34 @@ def test_release_and_stop_forget_the_holder(client):
                       headers=auth_header(token)).json()["holder"] is True
 
 
+def _listed(client, token, ws):
+    return next(w for w in client.get("/api/workspaces", headers=auth_header(token)).json() if w["id"] == ws)
+
+
+def test_workspace_list_says_where_a_running_stream_is_open(client, monkeypatch):
+    from server.tests.helpers import set_workspace_status
+
+    token, _ = setup_admin(client)
+    ws = _workspace(client, token)
+    set_workspace_status(ws, "running")
+    assert _listed(client, token, ws)["in_use_by"] is None
+
+    h = {**auth_header(token), "User-Agent": FIREFOX}
+    client.post(f"/api/workspaces/{ws}/stream-lease", json={"viewer_id": A}, headers=h)
+    row = _listed(client, token, ws)
+    assert row["in_use_by"] == "Firefox on Linux" and row["in_use_since"]
+
+    # A page that stopped checking in (closed without releasing) stops counting.
+    now = stream_leases._now()
+    monkeypatch.setattr(stream_leases, "_now", lambda: now + stream_leases.LEASE_TTL + 1)
+    assert _listed(client, token, ws)["in_use_by"] is None
+    monkeypatch.setattr(stream_leases, "_now", lambda: now)
+
+    # Only a running workspace is "in use".
+    set_workspace_status(ws, "stopped")
+    assert _listed(client, token, ws)["in_use_by"] is None
+
+
 def test_other_users_and_bad_ids_are_refused(client):
     token, _ = setup_admin(client)
     ws = _workspace(client, token)

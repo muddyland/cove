@@ -302,6 +302,9 @@ export interface Workspace {
   pull_progress: PullProgress | null
   // When the user last pushed back the max-runtime auto-halt (see /extend).
   runtime_extended_at: string | null
+  /** Where the stream is open right now ("Firefox on Linux", "Desk (thin client)"), and since when. */
+  in_use_by?: string | null
+  in_use_since?: string | null
 }
 
 export interface PullProgress {

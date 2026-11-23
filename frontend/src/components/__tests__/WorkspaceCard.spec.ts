@@ -1,0 +1,53 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { mount } from '@vue/test-utils'
+import type { Workspace } from '@/types'
+
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+
+import WorkspaceCard from '@/components/WorkspaceCard.vue'
+
+function ws(over: Partial<Workspace> = {}): Workspace {
+  return {
+    id: 1, public_id: 'p1', user_id: 1, name: 'Desk', status: 'running', workspace_type: 'desktop',
+    zone_id: 0, zone_name: 'Local', image_id: 1, image_name: 'Ubuntu', image_logo: null,
+    connectable: true, ephemeral: false, auto_remove: false, use_gluetun: false, use_tailscale: false,
+    created_at: '2026-11-23T10:00:00', started_at: '2026-11-23T10:00:00', stopped_at: null,
+    error_message: null, preview_at: null, favicon_at: null, pull_progress: null, runtime_extended_at: null,
+    ...over,
+  } as unknown as Workspace
+}
+
+const STUBS = {
+  EditWorkspaceModal: true, CloneModal: true, MigrateModal: true, DiagnosticsModal: true,
+  ProotAppsModal: true, ConfirmModal: true,
+}
+
+function mountCard(w: Workspace) {
+  return mount(WorkspaceCard, { props: { ws: w }, global: { stubs: STUBS } })
+}
+
+describe('WorkspaceCard actions row', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('shows icon-only Connect and Actions buttons, named for screen readers', () => {
+    const buttons = mountCard(ws()).findAll('.card-actions > .btn, .card-actions .actions-trigger')
+    expect(buttons.map(b => b.attributes('aria-label'))).toEqual(['Connect', 'Actions'])
+    // Their tooltips (titles, drawn by TooltipLayer).
+    expect(buttons.map(b => b.attributes('title'))).toEqual(['Connect', 'Actions'])
+    for (const b of buttons) expect(b.text().trim()).toBe('')
+    expect(buttons[0].classes()).toContain('primary-action')
+  })
+
+  it('names Start and Restart the same way', () => {
+    expect(mountCard(ws({ status: 'stopped', connectable: false })).find('.primary-action').attributes('aria-label')).toBe('Start')
+    expect(mountCard(ws({ status: 'error', connectable: false })).find('.primary-action').attributes('title')).toBe('Restart')
+  })
+
+  it('says where a running workspace is in use, and nothing otherwise', () => {
+    const inUse = mountCard(ws({ in_use_by: 'Desk (thin client)', in_use_since: '2026-11-23T10:05:00' }))
+    expect(inUse.find('.in-use').text()).toBe('In use by Desk (thin client)')
+    expect(mountCard(ws()).find('.in-use').exists()).toBe(false)
+    expect(mountCard(ws({ status: 'stopped', in_use_by: 'stale' })).find('.in-use').exists()).toBe(false)
+  })
+})
