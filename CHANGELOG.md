@@ -19,6 +19,14 @@
   Cove already keeps for one-screen-at-a-time, so you know connecting will
   take it over. The workspace list (`GET /api/workspaces`, and Admin →
   Sessions) gains `in_use_by` / `in_use_since`. **Operator action:** none.
+=======
+- **Launch a new workspace from inside a stream.** The workspace name's
+  quick-switch menu on the stream page ends with **New workspace…**, which
+  opens the dashboard's launch dialog over the stream and switches to the new
+  workspace once it's launched, so you no longer go back to the grid to start
+  another. It's greyed out when the account has all the workspaces its limit
+  allows, as the dashboard's **Launch** is. Not shown in a per-workspace
+  installed app, which has no quick-switch menu. **Operator action:** none.
 
 - **Sign-in workspace: open a workspace right after signing in, per account.**
   Auto-opening a workspace was a thin client setting only, so it followed the
