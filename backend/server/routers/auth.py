@@ -487,8 +487,10 @@ async def oidc_callback(
     db.refresh(user)
 
     _record_audit(db, "login.oidc", user=user, ip=client_ip(request))
-    # Land in the dashboard app (the SPA lives under /app now).
-    resp = RedirectResponse(url="/app")
+    # Land in the dashboard app (the SPA lives under /app now). signed_in tells
+    # it this is a fresh sign-in, which opens the account's sign-in workspace
+    # (the SPA's own password / 2FA / passkey steps know that already).
+    resp = RedirectResponse(url="/app?signed_in=1")
     resp.delete_cookie("oidc_state", path="/")
     resp.delete_cookie("oidc_nonce", path="/")
     resp.delete_cookie("oidc_verifier", path="/")

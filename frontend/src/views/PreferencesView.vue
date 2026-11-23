@@ -29,6 +29,32 @@
 
       <TwoFactorPanel v-if="isLocalUser" :username="auth.user?.username" :thin-client="!!thinClient.info" />
 
+      <section id="sign-in-workspace" class="panel">
+        <h3>SIGN-IN WORKSPACE</h3>
+        <div class="form">
+          <div class="form-group">
+            <label for="auto-launch">After you sign in, open</label>
+            <select
+              id="auto-launch"
+              :value="autoLaunch ?? ''"
+              :disabled="autoLaunchLocked || autoLaunchSaving"
+              @change="saveAutoLaunch(($event.target as HTMLSelectElement).value || null)"
+            >
+              <option value="">The dashboard</option>
+              <option v-for="w in launchable" :key="w.public_id" :value="w.public_id">{{ w.name }}</option>
+            </select>
+          </div>
+          <p v-if="autoLaunchLocked" class="hint">
+            Your administrator chose this workspace for your account, so it can't be changed or
+            deleted here.
+          </p>
+          <p v-else class="hint">
+            Cove opens this workspace as soon as you sign in, on any browser or thin client, and
+            starts it first if it's halted. The dashboard is still one click away.
+          </p>
+        </div>
+      </section>
+
       <section id="vpn" class="panel">
         <div class="panel-head">
           <h3>VPN PROFILES</h3>
@@ -190,7 +216,8 @@ import { useThinClientStore } from '@/stores/thinClient'
 import { AlertTriangle, Network, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-vue-next'
 import { authApi } from '@/api/auth'
 import { usersApi } from '@/api/users'
-import type { SshKeyConfig, TailscaleProfile, VpnProfile, VpnProvider } from '@/types'
+import { workspacesApi } from '@/api/workspaces'
+import type { SshKeyConfig, TailscaleProfile, VpnProfile, VpnProvider, Workspace } from '@/types'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 
@@ -228,6 +255,27 @@ async function handlePassword() {
     pwError.value = e.message
   } finally {
     pwSaving.value = false
+  }
+}
+
+// --- Sign-in workspace ---
+const myWorkspaces = ref<Workspace[]>([])
+const autoLaunchSaving = ref(false)
+const autoLaunch = computed(() => auth.user?.auto_launch_workspace_id ?? null)
+const autoLaunchLocked = computed(() => !!auth.user?.auto_launch_locked)
+// A workspace that deletes itself when it stops can't be the one (the API says no).
+const launchable = computed(() => myWorkspaces.value.filter(w => !w.auto_remove || w.public_id === autoLaunch.value))
+
+async function saveAutoLaunch(id: string | null) {
+  autoLaunchSaving.value = true
+  try {
+    auth.user = await usersApi.setAutoLaunch(id)
+    const name = myWorkspaces.value.find(w => w.public_id === id)?.name
+    ui.toast(name ? `“${name}” opens when you sign in` : 'The dashboard opens when you sign in', 'success')
+  } catch (e: any) {
+    ui.toast(e?.message || 'Could not save', 'error')
+  } finally {
+    autoLaunchSaving.value = false
   }
 }
 
@@ -345,6 +393,7 @@ function vpnSummary(p: VpnProfile) {
 
 onMounted(async () => {
   usersApi.listVpnProviders().then(p => { providers.value = p }).catch(() => {})
+  workspacesApi.list().then(ws => { myWorkspaces.value = ws }).catch(() => {})
   await Promise.all([loadVpn(), loadTs()])
   // Launch / edit forms link here as #vpn or #tailscale (in a new tab); the
   // panels only exist once rendered, so the browser's own jump misses them.

@@ -287,6 +287,7 @@
               <option value="running">Open the workspace if exactly one is running</option>
               <option value="pinned">Open a pinned workspace</option>
             </select>
+            <small>For accounts without a sign-in workspace of their own (Preferences, or Admin → Users), which always comes first.</small>
           </label>
           <label v-if="draft.auto_open === 'pinned'">
             Pinned workspace

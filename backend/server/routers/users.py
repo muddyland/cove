@@ -5,16 +5,18 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import func, select, update
 
-from server import ssh_keys
+from server import auto_launch, ssh_keys
 from server.deps import CurrentUser, DbSession
 from server.models import TailscaleProfile, VpnProfile, Workspace
 from server.net import client_ip
 from server.schemas import (
     _UNSET,
+    AutoLaunchIn,
     SshKeyOut,
     SshKeyUpdate,
     TailscaleProfileIn,
     TailscaleProfileOut,
+    UserOut,
     VpnProfileIn,
     VpnProfileOut,
     VpnProviderOut,
@@ -424,3 +426,15 @@ def delete_my_ssh(user: CurrentUser, db: DbSession, request: Request):
     db.refresh(user)
     _audit(db, "user.ssh.clear", user=user, request=request)
     return _masked_ssh(user)
+
+
+# ── Sign-in workspace ──────────────────────────────────────────────────────────
+
+@router.put("/me/auto-launch", response_model=UserOut)
+def set_my_auto_launch(body: AutoLaunchIn, user: CurrentUser, db: DbSession, request: Request):
+    """Pick the workspace Cove opens right after you sign in (null: the dashboard)."""
+    if user.auto_launch_locked:
+        raise HTTPException(status_code=403, detail=auto_launch.LOCKED_DETAIL)
+    ws = auto_launch.set_choice(db, user, body.workspace_id)
+    _audit(db, "user.auto_launch", detail=ws.public_id if ws else "dashboard", user=user, request=request)
+    return user

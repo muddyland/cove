@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { SshKeyConfig, TailscaleProfile, VpnProfile, VpnProvider, VpnType } from '@/types'
+import type { SshKeyConfig, TailscaleProfile, User, VpnProfile, VpnProvider, VpnType } from '@/types'
 
 // Secrets use "omit to keep, '' to clear, value to replace".
 export interface TailscaleProfileInput {
@@ -26,6 +26,9 @@ export interface VpnProfileInput {
 }
 
 export const usersApi = {
+  /** The workspace Cove opens right after you sign in (null: the dashboard). */
+  setAutoLaunch: (workspaceId: string | null) =>
+    api.put<User>('/users/me/auto-launch', { workspace_id: workspaceId }),
   listTailscaleProfiles: () => api.get<TailscaleProfile[]>('/users/me/tailscale-profiles'),
   createTailscaleProfile: (payload: TailscaleProfileInput) =>
     api.post<TailscaleProfile>('/users/me/tailscale-profiles', payload),

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Sign-in workspace: open a workspace right after signing in, per account.**
+  Auto-opening a workspace was a thin client setting only, so it followed the
+  screen rather than the person. An account can now have a sign-in workspace
+  that opens as soon as it signs in, on any browser or thin client, started
+  first if it's halted (once per sign-in, so the dashboard stays reachable,
+  and a session you already had still lands on the dashboard). Users pick it
+  under **Preferences → Sign-in workspace**. Admins set it under
+  **Admin → Users → Workspace**, where they can also **lock** it (the user
+  can then neither change it nor delete that workspace) and create a workspace
+  for an account that has none, so it's waiting at the first sign-in (created
+  as the account's, checked against its zones but not its workspace limits).
+  It comes before a thin client's **After sign-in** setting, which now covers
+  accounts without one. Deleting the workspace clears the choice. The OIDC
+  callback now lands on `/app?signed_in=1` so SSO sign-ins count too. New
+  endpoints: `PUT /api/users/me/auto-launch`, and `GET/POST
+  /api/admin/users/{id}/workspaces` and `PUT /api/admin/users/{id}/auto-launch`.
+  **Operator action:** none (control plane only; the new `user` columns are
+  added by the startup migrations).
+
 - **Security: fixes from the post-1.4.0 review.** An external review found one
   critical and several high-severity bugs; all were in released versions.
   - *The file browser could write anywhere as root through a planted symlink

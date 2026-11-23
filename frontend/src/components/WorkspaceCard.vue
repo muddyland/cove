@@ -140,8 +140,9 @@
             type="button"
             role="menuitem"
             class="action-item danger"
-            :disabled="ws.status === 'migrating'"
-            :title="ws.status === 'migrating' ? 'Wait for the migration to finish before deleting' : ''"
+            :disabled="ws.status === 'migrating' || lockedSignIn"
+            :title="ws.status === 'migrating' ? 'Wait for the migration to finish before deleting'
+              : lockedSignIn ? 'Your administrator set this workspace to open when you sign in' : ''"
             @click="act(openPurge)"
           ><Trash2 :size="14" /> Delete</button>
         </div>
@@ -182,6 +183,7 @@ import { useWorkspacesStore } from '@/stores/workspaces'
 import { useZonesStore } from '@/stores/zones'
 import { useUiStore } from '@/stores/ui'
 import { usePreviewsStore } from '@/stores/previews'
+import { useAuthStore } from '@/stores/auth'
 import StatusBadge from './StatusBadge.vue'
 import NeonButton from './NeonButton.vue'
 import ConfirmModal from './ConfirmModal.vue'
@@ -216,6 +218,12 @@ const store = useWorkspacesStore()
 const zonesStore = useZonesStore()
 const ui = useUiStore()
 const router = useRouter()
+const auth = useAuthStore()
+// The workspace an admin locked this account to opening at sign-in: the API
+// refuses to delete it (admins aren't held to it).
+const lockedSignIn = computed(() =>
+  !auth.isAdmin && !!auth.user?.auto_launch_locked && auth.user.auto_launch_workspace_id === props.ws.public_id,
+)
 
 // A VPN profile allows a single connection, so a stopped/errored VPN
 // workspace can't start while another workspace on the same profile is active.

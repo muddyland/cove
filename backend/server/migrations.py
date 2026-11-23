@@ -292,6 +292,15 @@ _MIGRATIONS: list[tuple[str, str]] = [
         "0061_user_require_2fa",
         "ALTER TABLE user ADD COLUMN require_2fa BOOLEAN NOT NULL DEFAULT 0",
     ),
+    # The workspace opened right after sign-in (server.auto_launch).
+    (
+        "0062_user_auto_launch_workspace_id",
+        "ALTER TABLE user ADD COLUMN auto_launch_workspace_id TEXT",
+    ),
+    (
+        "0063_user_auto_launch_locked",
+        "ALTER TABLE user ADD COLUMN auto_launch_locked BOOLEAN NOT NULL DEFAULT 0",
+    ),
 ]
 
 

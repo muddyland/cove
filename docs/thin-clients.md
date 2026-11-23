@@ -181,7 +181,9 @@ The card shows the current volume, and whether it's muted.
 - **After sign-in**: show the dashboard; open the workspace if exactly one is
   running (the "start upstairs, carry on downstairs" case); or open a **pinned
   workspace**. A pinned workspace opens only for its owner, and is started first
-  if it's halted.
+  if it's halted. An account with a **sign-in workspace** of its own
+  (Preferences, or set by an admin in Admin → Users) gets that one instead, on
+  every screen; this setting covers everyone else.
 
 **Browser**
 

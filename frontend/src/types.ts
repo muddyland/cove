@@ -15,9 +15,24 @@ export interface User {
   totp_enabled: boolean
   passkey_count: number
   require_2fa: boolean
+  /** The workspace (public_id) Cove opens right after sign-in; null: the dashboard. */
+  auto_launch_workspace_id: string | null
+  /** Set by an admin: the user can't change it or delete that workspace. */
+  auto_launch_locked: boolean
   auth_provider: string
   created_at: string
   last_login_at: string | null
+}
+
+/** An admin creating a workspace for an account (Admin → Users). */
+export interface AdminWorkspaceCreate {
+  name: string
+  image_id: number
+  zone_id: number
+  target_url?: string | null
+  /** Make it the account's sign-in workspace (default), and lock that. */
+  auto_launch: boolean
+  locked: boolean
 }
 
 /** What the admin user form submits (password only when set). */

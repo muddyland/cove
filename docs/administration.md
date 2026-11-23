@@ -84,6 +84,17 @@ reported only as present/absent — never shown.
   dashboard shows the account "2 of 3 running" and disables **Launch** when it
   has all the workspaces it may. Admins are never limited, and an admin can
   still start a user's workspace past that user's limit.
+- **Workspace** (sign-in workspace): the workspace the account opens right
+  after it signs in, on any browser or thin client, started first if it's
+  halted. Pick one of the account's workspaces, or **New workspace…** to create
+  one for it (name, image, and a zone the account may use; it's created under
+  the account, started right away with the default launch options, and isn't
+  held to the account's workspace limits). With **Lock it**, the user can't
+  change the choice in Preferences or delete that workspace; without it, it's a
+  starting point they can change. The list shows **sign-in workspace** or
+  **locked to a workspace** next to the role. Deleting the workspace clears
+  the choice, lock included. An account's sign-in workspace comes before a
+  thin client's **After sign-in** setting.
 ![Admin → Users: alice and carol with 2FA set up and a Reset 2FA button, bob limited to the Local zone, lanuser marked LAN only](../screenshots/admin-users-2fa.png)
 
 - Usernames may not begin with `.`, `_` or `cove-` — those prefixes name Cove's

@@ -3,15 +3,17 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 
-from server import integration, lan_access, net, settings_store, zone_access
+from server import auto_launch, integration, lan_access, net, settings_store, zone_access
 from server import thin_clients as tc
 from server.config import get_settings
 from server.deps import AdminUser, DbSession
 from server.models import AuditLog, User, Workspace, Zone
 from server.net import client_ip
 from server.schemas import (
+    AdminAutoLaunchIn,
     AdminUserCreate,
     AdminUserUpdate,
+    AdminWorkspaceCreate,
     AppSettingsOut,
     AppSettingsUpdate,
     AuditFacetsOut,
@@ -25,6 +27,7 @@ from server.schemas import (
     StorageCategory,
     StorageOut,
     UserOut,
+    WorkspaceCreate,
     WorkspaceOut,
     ZoneStorageOut,
 )
@@ -176,6 +179,63 @@ def _revoke_integration_tokens(db, username: str, why: str, admin, request: Requ
     when that authority does."""
     for name in integration.revoke_tokens_of(db, username):
         _audit(db, "admin.integration_token.revoke", detail=f"{name} ({username} {why})", user=admin, request=request)
+
+
+def _user_or_404(db, user_id: int) -> User:
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    return target
+
+
+def _audit_auto_launch(db, target: User, ws: Workspace | None, admin, request: Request) -> None:
+    lock = " (locked)" if target.auto_launch_locked else ""
+    detail = f"{target.username}: {ws.public_id if ws else 'dashboard'}{lock}"
+    _audit(db, "admin.user.auto_launch", detail=detail, user=admin, request=request)
+
+
+@router.get("/users/{user_id}/workspaces", response_model=list[WorkspaceOut])
+def list_user_workspaces(user_id: int, admin: AdminUser, db: DbSession):
+    """One account's workspaces, for picking its sign-in workspace."""
+    target = _user_or_404(db, user_id)
+    rows = db.scalars(
+        select(Workspace).where(Workspace.user_id == target.id).order_by(Workspace.created_at.desc())
+    ).all()
+    return [WorkspaceOut.from_workspace(ws) for ws in rows]
+
+
+@router.put("/users/{user_id}/auto-launch", response_model=UserOut)
+def set_user_auto_launch(user_id: int, body: AdminAutoLaunchIn, admin: AdminUser, db: DbSession, request: Request):
+    """Set (and optionally lock) the workspace an account opens right after
+    signing in; null: the dashboard."""
+    target = _user_or_404(db, user_id)
+    ws = auto_launch.set_choice(db, target, body.workspace_id, locked=body.locked)
+    _audit_auto_launch(db, target, ws, admin, request)
+    return target
+
+
+@router.post("/users/{user_id}/workspaces", response_model=WorkspaceOut, status_code=status.HTTP_201_CREATED)
+def create_user_workspace(
+    user_id: int, body: AdminWorkspaceCreate, admin: AdminUser, db: DbSession,
+    bg: BackgroundTasks, request: Request,
+):
+    """Create a workspace for an account (so it has one waiting at its first
+    sign-in), and by default make it the account's sign-in workspace. It is
+    checked as the owner's (zones, Docker grant), but not held to the
+    account's workspace caps: an admin is placing it there on purpose."""
+    target = _user_or_404(db, user_id)
+    from server.routers.workspaces import create_for
+
+    spec = WorkspaceCreate(
+        name=body.name.strip(), image_id=body.image_id, zone_id=body.zone_id, target_url=body.target_url,
+    )
+    ws = create_for(db, target, admin, spec, bg)
+    _audit(db, "admin.workspace.create", detail=f"{ws.public_id} for {target.username}", user=admin, request=request)
+    if body.auto_launch:
+        auto_launch.set_choice(db, target, ws.public_id, locked=body.locked)
+        _audit_auto_launch(db, target, ws, admin, request)
+    db.refresh(ws)
+    return WorkspaceOut.from_workspace(ws)
 
 
 @router.post("/users/{user_id}/reset-2fa", response_model=UserOut)

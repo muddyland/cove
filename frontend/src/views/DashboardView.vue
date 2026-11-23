@@ -92,7 +92,8 @@ import { Plus, MonitorOff, Activity, PowerOff, AlertTriangle, Cpu, MemoryStick, 
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useZonesStore } from '@/stores/zones'
 import { useThinClientStore } from '@/stores/thinClient'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { fmtBytes, parseTs } from '@/utils/workspaceStatus'
 import { workspacesApi } from '@/api/workspaces'
 import type { WorkspaceLimits } from '@/types'
@@ -101,6 +102,8 @@ const store = useWorkspacesStore()
 const zonesStore = useZonesStore()
 const thinClient = useThinClientStore()
 const router = useRouter()
+const route = useRoute()
+const auth = useAuthStore()
 const showLaunch = ref(false)
 
 // Live/transitioning workspaces float to the top (with stats); errors get their
@@ -145,7 +148,14 @@ const totals = computed(() => {
 
 onMounted(() => {
   store.startPolling()
-  // On a thin client the device policy may open a workspace straight away.
+  // The OIDC callback lands here as ?signed_in=1: a fresh sign-in, like the
+  // password form's. Drop the flag so a reload doesn't count as another.
+  if (route.query.signed_in) {
+    auth.markFreshSignIn()
+    router.replace({ query: { ...route.query, signed_in: undefined } })
+  }
+  // Right after sign-in (or on a thin client) open the account's sign-in
+  // workspace, or the one the device policy names.
   store
     .fetch()
     .then(() => thinClient.maybeAutoOpen(store.items, router, id => store.start(id)))

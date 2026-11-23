@@ -11,8 +11,10 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
+    update,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -62,6 +64,15 @@ class User(Base):
     totp_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     totp_last_step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     require_2fa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # The workspace Cove opens right after this account signs in, started first
+    # if it's halted (server.auto_launch). Its public_id; None: the dashboard.
+    # The user sets it in Preferences, or an admin does in Admin -> Users, and
+    # an admin can lock it: the user can then neither change it nor delete that
+    # workspace. Cleared when the workspace is deleted (see the listener below).
+    auto_launch_workspace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    auto_launch_locked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
 
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"
@@ -704,3 +715,15 @@ class RecoveryCode(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+@event.listens_for(Workspace, "after_delete")
+def _forget_auto_launch(mapper, connection, target: Workspace) -> None:
+    """A deleted workspace stops being anyone's sign-in workspace, lock and all.
+    Every delete path (the owner's, the stop of an auto-remove workspace, the
+    manager's teardown) goes through the ORM, so this one hook covers them."""
+    connection.execute(
+        update(User.__table__)
+        .where(User.__table__.c.auto_launch_workspace_id == target.public_id)
+        .values(auto_launch_workspace_id=None, auto_launch_locked=False)
+    )
