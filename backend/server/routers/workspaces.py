@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, s
 from fastapi.responses import Response
 from sqlalchemy import select
 
-from server import stream_leases, workspace_limits, zone_access
+from server import auto_launch, stream_leases, workspace_limits, zone_access
 from server.config import get_settings
 from server.deps import CurrentUser, DbSession
 from server.favicons import refresh_workspace_favicon
@@ -435,6 +435,17 @@ def list_workspaces(user: CurrentUser, db: DbSession):
 
 @router.post("", response_model=WorkspaceOut, status_code=status.HTTP_201_CREATED)
 def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg: BackgroundTasks, request: Request):
+    ws = create_for(db, user, user, body, bg)
+    _audit(db, "workspace.launch", detail=ws.public_id, user=user, request=request)
+    return WorkspaceOut.from_workspace(ws)
+
+
+def create_for(db, user, actor, body: WorkspaceCreate, bg: BackgroundTasks) -> Workspace:
+    """Create and launch a workspace owned by ``user``. ``actor`` is who asked:
+    the owner, or an admin creating it for them (Admin -> Users), which skips
+    the account's caps like any admin action on someone else's workspaces.
+    Everything else is checked as the owner: their zones, profiles and Docker
+    grant. The caller writes the audit entry."""
     image = db.get(WorkspaceImage, body.image_id)
     if not image or not image.enabled:
         raise HTTPException(status_code=404, detail="Image not found or disabled")
@@ -507,12 +518,10 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
     # Check and take the slot under the account's lock, so two launches racing
     # each other can't both get the last one.
     with workspace_limits.guard(user.id):
-        workspace_limits.require_room_for_new(db, user, user)
+        workspace_limits.require_room_for_new(db, user, actor)
         db.add(ws)
         db.commit()
     db.refresh(ws)
-
-    _audit(db, "workspace.launch", detail=ws.public_id, user=user, request=request)
 
     from server.docker_manager import get_docker_manager
     bg.add_task(get_docker_manager(ws.zone_id).launch_workspace, ws.id)
@@ -521,7 +530,7 @@ def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: DbSession, bg
         # delays nothing. The card shows the browser logo until the icon lands.
         bg.add_task(refresh_workspace_favicon, ws.id)
 
-    return WorkspaceOut.from_workspace(ws)
+    return ws
 
 
 @router.get("/stats", response_model=dict[int, WorkspaceStats])
@@ -1484,6 +1493,11 @@ def delete_workspace(
     if ws.status == "migrating":
         raise HTTPException(
             status_code=409, detail="Workspace is migrating — wait for it to finish before purging."
+        )
+    if not user.is_admin and auto_launch.locks(user, ws):
+        raise HTTPException(
+            status_code=409,
+            detail="Your administrator set this workspace to open when you sign in, so it can't be deleted",
         )
     public_id = ws.public_id
     _audit(

@@ -11,6 +11,9 @@ export const useAuthStore = defineStore('auth', () => {
   // session from the httpOnly refresh cookie instead (see init()).
   const token = ref<string | null>(null)
   const config = ref<AuthConfig | null>(null)
+  // Set by a sign-in in this page (or the OIDC callback's ?signed_in=1), and
+  // used up by the dashboard: it opens the account's sign-in workspace once.
+  let freshSignIn = false
 
   const isAuthenticated = computed(() => !!user.value)
   const isAdmin = computed(() => user.value?.is_admin ?? false)
@@ -26,6 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clear() {
     user.value = null
     token.value = null
+    freshSignIn = false
     // Drop a token a pre-1.1 build may have left behind.
     try { localStorage.removeItem('cove_token') } catch {}
     // Screen previews are pictures of the user's desktops — drop them (and
@@ -68,6 +72,15 @@ export const useAuthStore = defineStore('auth', () => {
   async function completeSignIn(accessToken: string) {
     setToken(accessToken)
     user.value = await authApi.me()
+    freshSignIn = true
+  }
+
+  function markFreshSignIn() { freshSignIn = true }
+  /** Was there a sign-in since the last call? (Answers true once.) */
+  function takeFreshSignIn(): boolean {
+    const was = freshSignIn
+    freshSignIn = false
+    return was
   }
 
   /** Password step. Returns null when signed in, or what the next step needs
@@ -100,5 +113,6 @@ export const useAuthStore = defineStore('auth', () => {
     user, token, config,
     isAuthenticated, isAdmin, needsSetup, oidcEnabled, oidcProviderName, oidcOnly,
     setToken, clear, loadConfig, init, login, completeSignIn, setup, logout,
+    markFreshSignIn, takeFreshSignIn,
   }
 })

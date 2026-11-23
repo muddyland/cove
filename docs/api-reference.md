@@ -130,6 +130,7 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 | PUT | `/api/users/me/ssh` | auth | Upload (or clear) an SSH private key. |
 | POST | `/api/users/me/ssh/generate` | auth | Generate a fresh Ed25519 keypair. |
 | DELETE | `/api/users/me/ssh` | auth | Clear your SSH key. |
+| PUT | `/api/users/me/auto-launch` | auth | `{workspace_id}`: the public id of one of your workspaces to open right after sign-in, or `null` for the dashboard. `403` when an admin locked it; `400` for an auto-remove workspace. |
 
 ## Admin — `/api/admin` (all admin)
 
@@ -139,6 +140,9 @@ The `proot-apps` endpoints run a short command inside the workspace, so each wor
 | PATCH / DELETE | `/api/admin/users/{id}` | Update / delete a user. `zones_restricted` + `allowed_zone_ids` set the user's zone limit (either may be sent alone; unknown zone ids are a `400`). `lan_only`: local network only. `require_2fa`: set up two-factor sign-in at the next sign-in. `max_workspaces` / `max_running`: a number caps it, `0` is no limit, an explicit `null` follows the default, and leaving the field out keeps it. |
 | POST | `/api/admin/users/{id}/reset-2fa` | Remove the user's authenticator app, passkeys and recovery codes, and sign them out everywhere. |
 | POST | `/api/admin/users/{id}/revoke-sessions` | Sign the user out everywhere (every token issued before now stops working). |
+| GET | `/api/admin/users/{id}/workspaces` | The account's own workspaces. |
+| PUT | `/api/admin/users/{id}/auto-launch` | `{workspace_id, locked}`: set the account's sign-in workspace (one of its own, or `null`). Locked, the user can't change it or delete that workspace. |
+| POST | `/api/admin/users/{id}/workspaces` | `{name, image_id, zone_id, target_url?, auto_launch=true, locked=false}`: create and start a workspace owned by the account (checked against its zones, not its workspace limits), by default as its sign-in workspace. |
 | GET | `/api/admin/sessions` | List every user's running/starting workspaces. |
 | DELETE | `/api/admin/sessions/{id}` | Stop one of them (the workspace is kept; it used to be deleted). `400` unless running/starting. |
 | GET | `/api/admin/audit` | Audit entries, newest first. Filters: `user`, `action` (exact, or a prefix ending in `.`), `since`/`until` (ISO), `q` (detail substring), `limit` (≤1000, default 200), `offset`. Workspace entries carry `workspace_id`/`workspace_name` while the workspace exists. |

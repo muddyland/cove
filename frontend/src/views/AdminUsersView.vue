@@ -29,11 +29,19 @@
               <span v-if="u.lan_only" class="muted" title="Local network only"> · LAN only</span>
               <span v-if="u.totp_enabled || u.passkey_count" class="muted" title="Two-factor sign-in set up"> · 2FA</span>
               <span v-else-if="u.require_2fa" class="warn" title="Sets up two-factor sign-in at the next sign-in"> · 2FA pending</span>
+              <span v-if="u.auto_launch_workspace_id" class="muted" title="Opens a workspace right after sign-in">
+                · {{ u.auto_launch_locked ? 'locked to a workspace' : 'sign-in workspace' }}
+              </span>
             </td>
             <td :class="{ muted: !u.zones_restricted || u.is_admin }">{{ zoneSummary(u) }}</td>
             <td>{{ u.last_login_at ? formatDate(u.last_login_at) : '—' }}</td>
             <td class="actions">
               <NeonButton variant="ghost" @click="openEdit(u)"><Pencil :size="13" /> Edit</NeonButton>
+              <NeonButton
+                variant="ghost"
+                title="The workspace this user opens right after signing in (create one for them, or lock it)"
+                @click="openSignIn(u)"
+              ><MonitorPlay :size="13" /> Workspace</NeonButton>
               <NeonButton
                 v-if="u.id !== auth.user?.id"
                 variant="ghost"
@@ -58,6 +66,7 @@
     </div>
 
     <UserFormModal v-model="showForm" :editUser="editTarget" :on-submit="handleSubmit" />
+    <SignInWorkspaceModal v-model="showSignIn" :user="signInTarget" @saved="onSignInSaved" />
     <ConfirmModal
       v-model="showConfirm"
       title="Delete User"
@@ -91,9 +100,10 @@ import { ref, onMounted } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import UserFormModal from '@/components/UserFormModal.vue'
+import SignInWorkspaceModal from '@/components/SignInWorkspaceModal.vue'
 import { zonesApi } from '@/api/zones'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { Plus, Pencil, Trash2, LogOut, ShieldOff } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, LogOut, ShieldOff, MonitorPlay } from 'lucide-vue-next'
 import { adminApi } from '@/api/admin'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
@@ -154,6 +164,17 @@ async function handleReset() {
     ui.toast(`${updated.username}'s two-factor sign-in was reset`, 'success')
   } catch (e: any) { ui.toast(e.message, 'error') }
   finally { resetting.value = false }
+}
+const showSignIn = ref(false)
+const signInTarget = ref<User | null>(null)
+function openSignIn(u: User) { signInTarget.value = u; showSignIn.value = true }
+function onSignInSaved(updated: User) {
+  const idx = users.value.findIndex(u => u.id === updated.id)
+  if (idx !== -1) users.value[idx] = updated
+  if (updated.id === auth.user?.id) auth.user = updated
+  ui.toast(updated.auto_launch_workspace_id
+    ? `${updated.username} opens that workspace when they sign in${updated.auto_launch_locked ? ' (locked)' : ''}`
+    : `${updated.username} sees the dashboard when they sign in`, 'success')
 }
 function openCreate() { editTarget.value = null; showForm.value = true }
 function openEdit(u: User) { editTarget.value = u; showForm.value = true }

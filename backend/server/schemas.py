@@ -49,11 +49,25 @@ class UserOut(BaseModel):
     totp_enabled: bool = False
     passkey_count: int = 0
     require_2fa: bool = False
+    # The workspace (public_id) opened right after sign-in; locked: set by an
+    # admin, and the user can't change it.
+    auto_launch_workspace_id: Optional[str] = None
+    auto_launch_locked: bool = False
     auth_provider: str
     created_at: datetime
     last_login_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
+
+class AutoLaunchIn(BaseModel):
+    # A workspace's public_id, or null for the dashboard.
+    workspace_id: Optional[str] = Field(default=None, max_length=64)
+
+
+class AdminAutoLaunchIn(AutoLaunchIn):
+    # The user can neither change the choice nor delete the workspace.
+    locked: bool = False
 
 
 class MfaCodeIn(BaseModel):
@@ -516,6 +530,18 @@ class AdminUserUpdate(BaseModel):
     max_running: Optional[int] = Field(default=None, ge=0, le=1000)
     lan_only: Optional[bool] = None
     require_2fa: Optional[bool] = None
+
+
+class AdminWorkspaceCreate(BaseModel):
+    """An admin creating a workspace for a user (Admin -> Users). The rest of
+    the launch options keep their defaults; the owner can change them later."""
+    name: str = Field(min_length=1, max_length=128)
+    image_id: int
+    zone_id: int = 0
+    target_url: Optional[str] = Field(default=None, max_length=4096)
+    # Make it the account's sign-in workspace, and lock that.
+    auto_launch: bool = True
+    locked: bool = False
 
 
 class WorkspaceLimitsOut(BaseModel):

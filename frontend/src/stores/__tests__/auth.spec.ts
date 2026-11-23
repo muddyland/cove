@@ -33,6 +33,8 @@ const adminUser: User = {
   totp_enabled: false,
   passkey_count: 0,
   require_2fa: false,
+  auto_launch_workspace_id: null,
+  auto_launch_locked: false,
   auth_provider: 'local',
   created_at: '2026-01-01T00:00:00Z',
   last_login_at: null,

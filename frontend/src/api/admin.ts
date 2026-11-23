@@ -1,6 +1,6 @@
 import { api } from './client'
 import type {
-  AppSettings, AuditEntry, AuditFacets, AuditQuery, EnvSummary, NetworkCheck, PruneResult, StorageInfo, User,
+  AdminWorkspaceCreate, AppSettings, AuditEntry, AuditFacets, AuditQuery, EnvSummary, NetworkCheck, PruneResult, StorageInfo, User,
   UserFormPayload, Workspace,
 } from '@/types'
 
@@ -14,6 +14,14 @@ export const adminApi = {
     revokeSessions: (id: number) => api.post<void>(`/admin/users/${id}/revoke-sessions`),
     // Remove the user's authenticator app, passkeys and recovery codes, and sign them out.
     reset2fa: (id: number) => api.post<User>(`/admin/users/${id}/reset-2fa`),
+    /** The account's own workspaces (for its sign-in workspace). */
+    workspaces: (id: number) => api.get<Workspace[]>(`/admin/users/${id}/workspaces`),
+    /** Set (and optionally lock) the workspace the account opens after sign-in. */
+    setAutoLaunch: (id: number, workspaceId: string | null, locked: boolean) =>
+      api.put<User>(`/admin/users/${id}/auto-launch`, { workspace_id: workspaceId, locked }),
+    /** Create a workspace owned by the account (launched right away). */
+    createWorkspace: (id: number, payload: AdminWorkspaceCreate) =>
+      api.post<Workspace>(`/admin/users/${id}/workspaces`, payload),
   },
   sessions: {
     list: () => api.get<Workspace[]>('/admin/sessions'),
