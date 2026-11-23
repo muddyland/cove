@@ -251,6 +251,9 @@ import type {
 } from '@/types'
 
 const open = defineModel<boolean>({ default: false })
+// Where the new workspace's stream lives: '/app' from the dashboard app, ''
+// from a standalone /workspace/:id page (its quick-switch menu launches too).
+const props = withDefaults(defineProps<{ routePrefix?: string }>(), { routePrefix: '/app' })
 
 type StepKey = 'kind' | 'choose' | 'basics' | 'network' | 'access' | 'apps' | 'review'
 const STEPS: { key: StepKey; label: string }[] = [
@@ -610,7 +613,7 @@ async function launch() {
     open.value = false
     ui.toast(`Launching ${name}…`, 'info')
     resetForm()
-    router.push(`/app/workspace/${ws.id}`)
+    router.push(`${props.routePrefix}/workspace/${ws.id}`)
   } catch (e: any) {
     error.value = e.message
   } finally {
