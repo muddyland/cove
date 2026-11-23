@@ -39,8 +39,9 @@ describe('WorkspaceCard actions row', () => {
     // Their tooltips (titles, drawn by TooltipLayer).
     expect(buttons.map(b => b.attributes('title'))).toEqual(['Connect', 'Stop', 'Actions'])
     for (const b of buttons) expect(b.text().trim()).toBe('')
-    expect(buttons[0].classes()).toContain('half-action')
-    expect(buttons[1].classes()).toContain('half-action')
+    expect(buttons[0].classes()).toContain('connect-action')
+    // Stop is amber (warn), not the grey of Actions.
+    expect(buttons[1].classes()).toEqual(expect.arrayContaining(['stop-action', 'warn']))
     // Stop isn't offered twice.
     expect(card.findAll('.action-item').map(b => b.text())).not.toContain('Stop')
   })

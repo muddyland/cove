@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Warn before taking over a stream that's open elsewhere; amber Stop; Connect
+  half, Stop and Actions a quarter each.** Opening a workspace whose stream is
+  open on another screen (another browser, window or thin client) used to
+  take it over silently, disconnecting that screen. The stream page now asks
+  first: **Already in use** names the screen and since when, with **Take over
+  here** or **Back**. It applies however the page was reached (card, quick
+  switch, link, sign-in workspace); **Take it back here** after losing the
+  stream counts as the choice. A new `peek` on `GET
+  /api/workspaces/{id}/stream-lease` asks without claiming anything. A stream
+  page also now lets go when its tab closes or reloads (`pagehide`, with a
+  keepalive request), where before the workspace read as in use by a gone tab
+  for up to 2½ minutes, which would have set the new warning off. On the
+  dashboard, a running card's Stop is amber and the row is Connect half, Stop
+  and Actions a quarter each (laid out as a grid, so the quarters are equal).
+  **Operator action:** none.
+
 - **Dashboard cards: Stop next to Connect, and a clearer Connect icon.** A
   running workspace's card now has Connect and Stop side by side (three
   eighths of the row each) with the Actions menu in the last quarter; Stop

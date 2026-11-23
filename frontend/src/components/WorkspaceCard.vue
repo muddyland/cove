@@ -101,23 +101,23 @@
     <div v-if="vpnHolder" class="vpn-lock-msg">
       <Lock :size="11" /> VPN profile{{ ws.routing_profile_name ? ` “${ws.routing_profile_name}”` : '' }} is connected in {{ vpnHolder.name }}
     </div>
-    <div class="card-actions" @click.stop>
-      <!-- Icon-only, the row split in eighths: a running workspace gets
-           Connect and Stop (three each), anything else one primary button
-           (six): Start / Restart, or a disabled progress button while it's
-           changing state, which keeps its label. Actions always takes the
-           last two. -->
+    <div class="card-actions" :class="{ split: ws.status === 'running' && ws.connectable }" @click.stop>
+      <!-- Icon-only, the row in quarters: a running workspace gets Connect
+           (half) and Stop (a quarter), anything else one primary button
+           (three quarters): Start / Restart, or a disabled progress button
+           while it's changing state, which keeps its label. Actions always
+           takes the last quarter. -->
       <template v-if="ws.status === 'running' && ws.connectable">
         <NeonButton
           variant="primary"
-          class="half-action"
+          class="connect-action"
           aria-label="Connect"
           title="Connect"
           @click="open"
         ><LogIn :size="16" /></NeonButton>
         <NeonButton
-          variant="secondary"
-          class="half-action stop-action"
+          variant="warn"
+          class="stop-action"
           :loading="acting"
           aria-label="Stop"
           :title="ws.auto_remove ? 'Stop (deletes this workspace)' : ws.ephemeral ? 'Stop (its data is discarded)' : 'Stop'"
@@ -730,9 +730,9 @@ async function handleRemove() {
 }
 
 /* Pin the action row to the bottom so cards of varying body length keep
-   their buttons aligned across the row. Buttons share the width equally and
-   stay on a single line so every card has an identical full-width footer. */
-.card-actions { display: flex; gap: 6px; margin-top: auto; }
+   their buttons aligned across the row, on a single line so every card has an
+   identical full-width footer. */
+.card-actions { gap: 6px; margin-top: auto; }
 .card-actions :deep(.btn) {
   min-width: 0;
   justify-content: center;
@@ -740,13 +740,15 @@ async function handleRemove() {
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
-/* Icon-only buttons, the row in eighths: one primary action takes six, or
-   Connect and Stop three each; the Actions menu always takes the last two. */
-.card-actions :deep(.primary-action) { flex: 6 1 0; }
-.card-actions :deep(.half-action) { flex: 3 1 0; }
+/* Icon-only buttons, the row in quarters: one primary action takes three, or
+   Connect two and Stop one; the Actions menu always takes the last one. A grid,
+   not flex: flex-basis 0 still adds each button's padding and border on top of
+   its share, which left the Actions quarter narrower than Stop's. */
+.card-actions { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); }
+.card-actions.split { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
 
 /* Actions dropdown */
-.actions-dd { position: relative; display: flex; flex: 2 1 0; min-width: 0; }
+.actions-dd { position: relative; display: flex; min-width: 0; }
 .actions-trigger { width: 100%; }
 .actions-menu {
   position: absolute;

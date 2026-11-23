@@ -1259,10 +1259,20 @@ def claim_stream_lease(ws_id: int, body: StreamLeaseIn, request: Request, user: 
 
 @router.get("/{ws_id}/stream-lease", response_model=StreamLeaseOut)
 def check_stream_lease(
-    ws_id: int, request: Request, user: CurrentUser, db: DbSession, viewer_id: str = _VIEWER_ID
+    ws_id: int, request: Request, user: CurrentUser, db: DbSession, viewer_id: str = _VIEWER_ID,
+    peek: bool = False,
 ):
-    """Polled by an open stream page: does it still hold the workspace?"""
+    """Polled by an open stream page: does it still hold the workspace?
+
+    With ``peek``, asked before the page opens its stream: ``holder`` is false
+    only when another live page holds it (and says where), and nothing is
+    claimed, so the page can warn that opening it takes it over."""
     ws = _get_workspace_or_404(ws_id, user, db)
+    if peek:
+        other = stream_leases.held_elsewhere(ws.id, viewer_id)
+        if other is None:
+            return StreamLeaseOut(holder=True)
+        return StreamLeaseOut(holder=False, label=other.label, since=other.since)
     holder, lease = stream_leases.check(ws.id, viewer_id, *_viewer(request, db))
     return StreamLeaseOut(holder=holder, label=lease.label if lease else None, since=lease.since if lease else None)
 

@@ -92,6 +92,27 @@ def test_release_and_stop_forget_the_holder(client):
                       headers=auth_header(token)).json()["holder"] is True
 
 
+def test_peek_says_who_holds_it_without_claiming(client):
+    token, _ = setup_admin(client)
+    ws = _workspace(client, token)
+    h = {**auth_header(token), "User-Agent": FIREFOX}
+    peek = lambda viewer: client.get(  # noqa: E731
+        f"/api/workspaces/{ws}/stream-lease", params={"viewer_id": viewer, "peek": "true"}, headers=h
+    ).json()
+
+    # Nobody has it: fine to open, and peeking didn't take it.
+    assert peek(B) == {"holder": True, "label": None, "since": None}
+    assert stream_leases.current(ws) is None
+
+    client.post(f"/api/workspaces/{ws}/stream-lease", json={"viewer_id": A}, headers=h)
+    seen = peek(B)
+    assert seen["holder"] is False and seen["label"] == "Firefox on Linux" and seen["since"]
+    # Still A's: a page that only asked (and was then sent back) took nothing.
+    assert stream_leases.current(ws).viewer_id == A
+    # The holder itself isn't warned about itself (reloading its own stream).
+    assert peek(A)["holder"] is True
+
+
 def _listed(client, token, ws):
     return next(w for w in client.get("/api/workspaces", headers=auth_header(token)).json() if w["id"] == ws)
 
