@@ -4,6 +4,13 @@ import { workspacesApi, type StreamLease } from '@/api/workspaces'
 /** How often an open stream page checks that it still holds its workspace. */
 export const LEASE_CHECK_MS = 3000
 
+/** A lease's `since` as a local time of day ("14:05"), or ''. */
+export function leaseTime(since: string | null | undefined): string {
+  if (!since) return ''
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(since) ? since : `${since}Z`)
+  return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 function newViewerId(): string {
   try { return crypto.randomUUID() } catch { /* insecure context */ }
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
@@ -21,12 +28,7 @@ function newViewerId(): string {
 export function useStreamLease(wsId: Readonly<Ref<number>>, streamUrl: Ref<string | null>) {
   const viewerId = newViewerId()
   const movedTo = ref<Pick<StreamLease, 'label' | 'since'> | null>(null)
-  const movedSince = computed(() => {
-    const since = movedTo.value?.since
-    if (!since) return ''
-    const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(since) ? since : `${since}Z`)
-    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  })
+  const movedSince = computed(() => leaseTime(movedTo.value?.since))
   let timer: ReturnType<typeof setInterval> | null = null
   let heldWs: number | null = null
 
@@ -73,8 +75,18 @@ export function useStreamLease(wsId: Readonly<Ref<number>>, streamUrl: Ref<strin
   // Background tabs check rarely (timers are throttled): check on return.
   function onVisible() { if (document.visibilityState === 'visible') check() }
   document.addEventListener('visibilitychange', onVisible)
+  // Closing the tab, reloading or leaving Cove doesn't unmount anything: let
+  // go then too (keepalive outlives the page), or the workspace reads as in
+  // use by this page for the lease's TTL and the next page to open it is
+  // warned about a screen that's already gone. Back from the bfcache, the
+  // next check re-claims it.
+  function onPageHide() {
+    if (heldWs !== null) workspacesApi.releaseStream(heldWs, viewerId, true).catch(() => {})
+  }
+  window.addEventListener('pagehide', onPageHide)
   onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisible)
+    window.removeEventListener('pagehide', onPageHide)
     stop(true)
   })
 

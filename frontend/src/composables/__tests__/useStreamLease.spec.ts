@@ -13,7 +13,7 @@ vi.mock('@/api/workspaces', () => ({
   },
 }))
 
-import { useStreamLease, LEASE_CHECK_MS } from '@/composables/useStreamLease'
+import { leaseTime, useStreamLease, LEASE_CHECK_MS } from '@/composables/useStreamLease'
 
 function setup() {
   const wsId = ref(7)
@@ -97,6 +97,14 @@ describe('useStreamLease', () => {
     expect(releaseStream).toHaveBeenCalledTimes(2)
   })
 
+  it('lets go when the page goes away (tab closed, reload), with keepalive', async () => {
+    const { streamUrl, lease } = setup()
+    streamUrl.value = '/workspace/abc/'
+    await flush()
+    window.dispatchEvent(new Event('pagehide'))
+    expect(releaseStream).toHaveBeenCalledWith(7, lease().viewerId, true)
+  })
+
   it('a failed check changes nothing', async () => {
     const { streamUrl, lease } = setup()
     streamUrl.value = '/workspace/abc/'
@@ -106,5 +114,15 @@ describe('useStreamLease', () => {
     await flush()
     expect(streamUrl.value).toBe('/workspace/abc/')
     expect(lease().movedTo.value).toBeNull()
+  })
+})
+
+describe('leaseTime', () => {
+  it('formats a naive-UTC or zoned timestamp as a time of day, and nothing for junk', () => {
+    expect(leaseTime(null)).toBe('')
+    expect(leaseTime('not a date')).toBe('')
+    const expected = new Date('2026-11-23T14:05:00Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    expect(leaseTime('2026-11-23T14:05:00')).toBe(expected)
+    expect(leaseTime('2026-11-23T14:05:00Z')).toBe(expected)
   })
 })

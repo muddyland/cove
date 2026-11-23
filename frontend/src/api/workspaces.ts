@@ -106,8 +106,11 @@ export const workspacesApi = {
     api.post<StreamLease>(`/workspaces/${id}/stream-lease`, { viewer_id: viewerId }),
   checkStream: (id: number, viewerId: string) =>
     api.get<StreamLease>(`/workspaces/${id}/stream-lease?viewer_id=${encodeURIComponent(viewerId)}`),
-  releaseStream: (id: number, viewerId: string) =>
-    api.delete(`/workspaces/${id}/stream-lease?viewer_id=${encodeURIComponent(viewerId)}`),
+  /** Before opening: is the stream open on another screen? Claims nothing. */
+  peekStream: (id: number, viewerId: string) =>
+    api.get<StreamLease>(`/workspaces/${id}/stream-lease?viewer_id=${encodeURIComponent(viewerId)}&peek=true`),
+  releaseStream: (id: number, viewerId: string, keepalive = false) =>
+    api.delete(`/workspaces/${id}/stream-lease?viewer_id=${encodeURIComponent(viewerId)}`, keepalive ? { keepalive: true } : {}),
   stop: (id: number) => api.post<Workspace>(`/workspaces/${id}/stop`),
   start: (id: number) => api.post<Workspace>(`/workspaces/${id}/start`),
   remove: (id: number, purgeStorage = false) =>

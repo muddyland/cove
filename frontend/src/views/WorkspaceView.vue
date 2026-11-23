@@ -196,6 +196,22 @@
       </div>
     </div>
 
+    <!-- About to open a stream that's open on another screen right now:
+         opening it here disconnects that one, so say so and let the user
+         choose rather than silently taking it. -->
+    <div v-else-if="takeoverFrom" class="overlay-state moved takeover">
+      <MonitorUp class="halt-icon" :size="56" />
+      <p class="boot-text">ALREADY IN USE</p>
+      <p class="boot-sub">
+        “{{ ws?.name }}” is open on <strong>{{ takeoverFrom.label || 'another screen' }}</strong>{{ takeoverSince ? ` since ${takeoverSince}` : '' }}.
+        A workspace streams to one screen at a time: opening it here takes it over and disconnects that one.
+      </p>
+      <div class="foreign-actions">
+        <NeonButton v-if="!lockedToWorkspace" variant="secondary" @click="router.push('/app')">← BACK</NeonButton>
+        <NeonButton variant="warn" :loading="connecting" @click="acceptTakeover">TAKE OVER HERE</NeonButton>
+      </div>
+    </div>
+
     <div class="frame-wrap" v-else-if="ws?.status === 'running' && streamUrl" ref="frameWrap">
       <iframe
         ref="streamFrame"
@@ -272,7 +288,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { workspacesApi } from '@/api/workspaces'
-import { useStreamLease } from '@/composables/useStreamLease'
+import { leaseTime, useStreamLease } from '@/composables/useStreamLease'
 import { useWorkspacesStore } from '@/stores/workspaces'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
@@ -516,6 +532,7 @@ watch(wsId, async () => {
   menuOpen.value = false
   streamUrl.value = null
   dismissMoved()
+  resetTakeover()
   foreignStreamPending.value = null
   streamError.value = null
   connecting.value = false
@@ -581,7 +598,7 @@ async function loadStreamUrl() {
   // mode that URL carries a one-time token that bootstraps a per-workspace stream
   // cookie; in subpath mode it is the plain same-origin path. Never reuse the SPA
   // session cookie cross-origin.
-  if (!ws.value?.connectable || streamUrl.value || connecting.value) return
+  if (!ws.value?.connectable || streamUrl.value || connecting.value || takeoverFrom.value) return
   const id = wsId.value
   connecting.value = true
   streamError.value = null
@@ -595,6 +612,20 @@ async function loadStreamUrl() {
         streamError.value = 'The stream is taking longer than usual to come up. Check the logs, or retry.'
       }
       return
+    }
+    // Open on another screen right now? Ask before taking it over (unless the
+    // user already chose to, here or with "Take it back").
+    if (!takeoverOk) {
+      try {
+        const lease = await workspacesApi.peekStream(id, viewerId)
+        if (id !== wsId.value) return
+        if (!lease.holder) {
+          takeoverFrom.value = { label: lease.label, since: lease.since }
+          return
+        }
+      } catch {
+        // Can't tell (older server, blip): open it as before.
+      }
     }
     const { url, consent_required } = await workspacesApi.streamAuth(id)
     if (id !== wsId.value) return
@@ -640,12 +671,30 @@ function retryStream() {
 // ── Stream hand-off ──────────────────────────────────────────────────────
 // Opening this workspace on another screen disconnects this page's stream
 // (Selkies serves one); useStreamLease notices and says where it went.
-const { movedTo, movedSince, dismissMoved } = useStreamLease(wsId, streamUrl)
+const { viewerId, movedTo, movedSince, dismissMoved } = useStreamLease(wsId, streamUrl)
+
+// Set when the stream is open on another screen as this page is about to
+// open it (see loadStreamUrl); takeoverOk once the user chose to take it.
+// Both are per workspace: switching nodes resets them.
+const takeoverFrom = ref<{ label: string | null; since: string | null } | null>(null)
+const takeoverSince = computed(() => leaseTime(takeoverFrom.value?.since))
+let takeoverOk = false
+function resetTakeover() {
+  takeoverFrom.value = null
+  takeoverOk = false
+}
+function acceptTakeover() {
+  takeoverOk = true
+  takeoverFrom.value = null
+  streamError.value = null
+  loadStreamUrl()
+}
 
 // "Take it back here": open the stream again; claiming it moves the other screen
-// to this same message.
+// to this same message. Choosing that is the warning, so no second one.
 function takeBack() {
   dismissMoved()
+  takeoverOk = true
   streamError.value = null
   loadStreamUrl()
 }
@@ -679,6 +728,7 @@ watch(() => [ws.value?.status, ws.value?.connectable] as const, ([s, connectable
     streamUrl.value = null
     streamError.value = null
     dismissMoved()
+    resetTakeover()
   }
   if ((s === 'running' && connectable) || s === 'error' || s === 'stopped') {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
@@ -1326,6 +1376,9 @@ async function handleStop() {
 .overlay-state.moved .halt-icon { filter: drop-shadow(0 0 10px rgba(255, 0, 170, 0.5)); }
 .overlay-state.moved .boot-sub { max-width: 52ch; line-height: 1.6; text-align: center; }
 .overlay-state.moved strong { color: var(--text); font-weight: normal; }
+.overlay-state.takeover .halt-icon,
+.overlay-state.takeover .boot-text { color: var(--amber); }
+.overlay-state.takeover .halt-icon { filter: drop-shadow(0 0 10px rgba(255, 170, 0, 0.45)); }
 .overlay-state.error { color: var(--red); }
 .foreign-actions { display: flex; gap: 12px; margin-top: 18px; }
 .error-text { font-family: var(--font-mono); font-size: 13px; max-width: 70ch; text-align: center; padding: 0 16px; }

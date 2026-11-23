@@ -86,6 +86,14 @@ def forget(ws_id: int) -> None:
         _leases.pop(ws_id, None)
 
 
+def held_elsewhere(ws_id: int, viewer_id: str) -> Optional[Lease]:
+    """The live lease if a page other than ``viewer_id`` holds the workspace.
+    Claims nothing: a page asks before opening the stream, so it can warn that
+    opening it takes it over from that screen."""
+    lease = current(ws_id)
+    return lease if lease is not None and lease.viewer_id != viewer_id else None
+
+
 def current(ws_id: int) -> Optional[Lease]:
     """The live lease on a workspace (who has its stream open now), if any."""
     with _lock:

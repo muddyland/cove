@@ -42,9 +42,9 @@ Each card shows:
 - **In use by** on a running workspace whose stream is open somewhere: the
   browser ("Firefox on Linux") or thin client that has it. Connecting takes the
   stream over from there (one screen at a time).
-- Icon buttons. A running workspace has **Connect** (→]) and **Stop** (■)
-  side by side; a stopped or failed one has one wide **Start** (⏻) /
-  **Restart** (↻). The narrow ⚙ on the right is the **Actions** menu, with
+- Icon buttons. A running workspace has **Connect** (→], half the row) and an
+  amber **Stop** (■, a quarter); a stopped or failed one has one wide
+  **Start** (⏻) / **Restart** (↻). The narrow ⚙ on the right is the **Actions** menu, with
   **Edit**, **Apps**, **Logs** (also on a failed workspace), **Stop** (while
   it's still starting), **Clone**, **Migrate** and **Delete**. Hovering (or
   tabbing to) a button shows its name; a Start blocked by a busy VPN profile
@@ -123,6 +123,12 @@ that had it says so: **Session moved** names where it went ("Desk (thin
 client)", "Firefox on Linux") and since when. **Take it back here** moves the
 stream back, and the other screen then shows the same message. The workspace
 keeps running throughout; only the screen showing it changes.
+
+Opening a workspace whose stream is open on another screen right now (the card
+says **In use by …**) asks first: **Already in use** names that screen and
+since when, with **Take over here** or **Back**, so you don't disconnect
+someone (or your own other window) by surprise. Closing a stream's tab or
+leaving Cove lets go of it at once, so a screen that's gone never counts.
 
 <img src="../screenshots/session-moved.png" width="70%" alt="Session moved: the workspace is now open on Chrome on Linux since 12:35 AM, with Back and Take it back here buttons" />
 
