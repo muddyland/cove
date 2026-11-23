@@ -91,23 +91,39 @@
       </span>
     </div>
 
+    <!-- Which screen has the stream open (the stream lease), so you know
+         before connecting that it'll take it from there. -->
+    <div v-if="ws.status === 'running' && ws.in_use_by" class="in-use" :title="inUseTitle">
+      <MonitorPlay :size="11" /><span class="in-use-text">In use by {{ ws.in_use_by }}</span>
+    </div>
+
     <div v-if="ws.error_message" class="error-msg" role="alert">{{ ws.error_message }}</div>
     <div v-if="vpnHolder" class="vpn-lock-msg">
       <Lock :size="11" /> VPN profile{{ ws.routing_profile_name ? ` “${ws.routing_profile_name}”` : '' }} is connected in {{ vpnHolder.name }}
     </div>
     <div class="card-actions" @click.stop>
-      <!-- Primary: Connect (running), Start (stopped/error), or a disabled
-           progress button while the workspace is transitioning. -->
-      <NeonButton v-if="ws.status === 'running' && ws.connectable" variant="primary" @click="open"><Play :size="14" /> CONNECT</NeonButton>
+      <!-- Primary (three quarters of the row, icon only): Connect (running),
+           Start / Restart (stopped / error), or a disabled progress button
+           while the workspace is transitioning, which keeps its label. -->
+      <NeonButton
+        v-if="ws.status === 'running' && ws.connectable"
+        variant="primary"
+        class="primary-action"
+        aria-label="Connect"
+        title="Connect"
+        @click="open"
+      ><Play :size="16" /></NeonButton>
       <NeonButton
         v-else-if="isStopped"
         variant="success"
+        class="primary-action"
         :loading="acting"
         :disabled="vpnLocked"
-        :title="vpnHolder ? `${vpnHolder.name} is using this VPN profile — one connection per profile. Stop it, or switch this workspace to another profile in Edit.` : ''"
+        :aria-label="ws.status === 'error' ? 'Restart' : 'Start'"
+        :title="vpnHolder ? `${vpnHolder.name} is using this VPN profile — one connection per profile. Stop it, or switch this workspace to another profile in Edit.` : ws.status === 'error' ? 'Restart' : 'Start'"
         @click="handleStart"
-      ><component :is="vpnLocked ? Lock : Power" :size="14" /> {{ ws.status === 'error' ? 'RESTART' : 'START' }}</NeonButton>
-      <NeonButton v-else variant="secondary" disabled :loading="true">{{ transientLabel }}</NeonButton>
+      ><component :is="vpnLocked ? Lock : ws.status === 'error' ? RotateCcw : Power" :size="16" /></NeonButton>
+      <NeonButton v-else variant="secondary" class="primary-action" disabled :loading="true">{{ transientLabel }}</NeonButton>
 
       <!-- Everything else lives in the Actions menu. -->
       <div ref="actionsDd" class="actions-dd" :class="{ open: actionsOpen }">
@@ -115,10 +131,12 @@
           variant="secondary"
           class="actions-trigger"
           aria-haspopup="menu"
+          aria-label="Actions"
+          title="Actions"
           :aria-expanded="actionsOpen"
           @click="actionsOpen = !actionsOpen"
         >
-          <Settings2 :size="13" /> ACTIONS <ChevronDown :size="12" class="chev" />
+          <Settings2 :size="16" />
         </NeonButton>
         <div v-show="actionsOpen" class="actions-menu" role="menu">
           <button
@@ -192,7 +210,7 @@ import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
 import ProotAppsModal from './ProotAppsModal.vue'
-import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, ChevronDown, Settings2, MonitorPlay, Package, Clock, Timer, Flame, HardDrive, Router, KeyRound, Container, Zap } from 'lucide-vue-next'
+import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, Settings2, MonitorPlay, RotateCcw, Package, Clock, Timer, Flame, HardDrive, Router, KeyRound, Container, Zap } from 'lucide-vue-next'
 import { workspaceIconUrl } from '@/utils/workspaceIcon'
 import {
   absoluteTime,
@@ -264,6 +282,11 @@ const transientLabel = computed(() => {
 
 // --- Time -------------------------------------------------------------------
 const now = useNow()
+const inUseTitle = computed(() =>
+  props.ws.in_use_since
+    ? `The stream is open on ${props.ws.in_use_by} (since ${relativeTime(props.ws.in_use_since, now.value)}). Connecting here takes it over.`
+    : undefined,
+)
 const stopAt = computed(() => autoStopAt(props.ws, store.maxRuntimeHours))
 const stopIn = computed(() => (stopAt.value === null ? null : Math.max(0, stopAt.value - now.value)))
 const stopAtText = computed(() => (stopAt.value ? new Date(stopAt.value).toLocaleString() : ''))
@@ -590,6 +613,13 @@ async function handleRemove() {
 .link-btn:disabled { opacity: 0.5; cursor: wait; }
 .card.errored { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
 .card.errored::before { background: var(--red); }
+.in-use {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--green);
+  min-width: 0;
+}
+.in-use svg { flex-shrink: 0; }
+.in-use-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vpn-lock-msg {
   font-size: 11px; color: var(--amber); font-family: var(--font-mono);
   display: inline-flex; align-items: center; gap: 5px;
@@ -663,19 +693,19 @@ async function handleRemove() {
    stay on a single line so every card has an identical full-width footer. */
 .card-actions { display: flex; gap: 6px; margin-top: auto; }
 .card-actions :deep(.btn) {
-  flex: 1 1 0;
   min-width: 0;
   justify-content: center;
   padding: 8px 8px;
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
+/* Icon-only buttons: the primary action takes three quarters of the row, the
+   Actions menu the last quarter. */
+.card-actions :deep(.primary-action) { flex: 3 1 0; }
 
 /* Actions dropdown */
 .actions-dd { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
 .actions-trigger { width: 100%; }
-.actions-trigger .chev { transition: transform 0.15s; margin-left: 2px; }
-.actions-dd.open .actions-trigger .chev { transform: rotate(180deg); }
 .actions-menu {
   position: absolute;
   bottom: calc(100% + 6px);   /* open upward — cards sit in a grid */

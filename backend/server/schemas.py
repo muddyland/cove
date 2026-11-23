@@ -425,16 +425,22 @@ class WorkspaceOut(BaseModel):
     pull_progress: Optional[PullProgressOut] = None
     # When the user last extended the max-runtime auto-halt (see /extend).
     runtime_extended_at: Optional[datetime] = None
+    # Where the stream is open right now ("Firefox on Linux", "Desk (thin
+    # client)") and since when, from the stream leases; None when nobody has it.
+    in_use_by: Optional[str] = None
+    in_use_since: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def from_workspace(cls, ws) -> "WorkspaceOut":
+        from server import stream_leases
         from server.catalog import browser_features
         from server.config import get_settings
         from server.preview import is_connectable
 
         stream_url = None
+        lease = stream_leases.current(ws.id) if ws.status == "running" else None
         if ws.status == "running":
             settings = get_settings()
             if settings.workspace_domain:
@@ -498,6 +504,8 @@ class WorkspaceOut(BaseModel):
             browser=BrowserFeatures(**browser_features(ws.image.url_env if ws.image else None)),
             pull_progress=_pull_progress_for(ws),
             runtime_extended_at=getattr(ws, "runtime_extended_at", None),
+            in_use_by=lease.label if lease else None,
+            in_use_since=lease.since if lease else None,
         )
 
 

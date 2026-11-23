@@ -86,6 +86,15 @@ def forget(ws_id: int) -> None:
         _leases.pop(ws_id, None)
 
 
+def current(ws_id: int) -> Optional[Lease]:
+    """The live lease on a workspace (who has its stream open now), if any."""
+    with _lock:
+        lease = _leases.get(ws_id)
+        if lease is None or _now() - lease.last_seen > LEASE_TTL:
+            return None
+        return lease
+
+
 def by_device() -> dict[str, tuple[int, datetime]]:
     """Thin client public id -> ``(workspace id, since)`` for every live lease
     held on a thin client: what each device is showing right now."""
