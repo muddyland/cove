@@ -6,6 +6,7 @@ import type { Workspace } from '@/types'
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 import WorkspaceCard from '@/components/WorkspaceCard.vue'
+import { useWorkspacesStore } from '@/stores/workspaces'
 
 function ws(over: Partial<Workspace> = {}): Workspace {
   return {
@@ -20,7 +21,8 @@ function ws(over: Partial<Workspace> = {}): Workspace {
 
 const STUBS = {
   EditWorkspaceModal: true, CloneModal: true, MigrateModal: true, DiagnosticsModal: true,
-  ProotAppsModal: true, ConfirmModal: true,
+  ProotAppsModal: true,
+  ConfirmModal: { name: 'ConfirmModal', props: ['modelValue', 'title', 'message'], template: '<div />' },
 }
 
 function mountCard(w: Workspace) {
@@ -30,17 +32,42 @@ function mountCard(w: Workspace) {
 describe('WorkspaceCard actions row', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
-  it('shows icon-only Connect and Actions buttons, named for screen readers', () => {
-    const buttons = mountCard(ws()).findAll('.card-actions > .btn, .card-actions .actions-trigger')
-    expect(buttons.map(b => b.attributes('aria-label'))).toEqual(['Connect', 'Actions'])
+  it('shows icon-only Connect, Stop and Actions on a running workspace', () => {
+    const card = mountCard(ws())
+    const buttons = card.findAll('.card-actions > .btn, .card-actions .actions-trigger')
+    expect(buttons.map(b => b.attributes('aria-label'))).toEqual(['Connect', 'Stop', 'Actions'])
     // Their tooltips (titles, drawn by TooltipLayer).
-    expect(buttons.map(b => b.attributes('title'))).toEqual(['Connect', 'Actions'])
+    expect(buttons.map(b => b.attributes('title'))).toEqual(['Connect', 'Stop', 'Actions'])
     for (const b of buttons) expect(b.text().trim()).toBe('')
-    expect(buttons[0].classes()).toContain('primary-action')
+    expect(buttons[0].classes()).toContain('half-action')
+    expect(buttons[1].classes()).toContain('half-action')
+    // Stop isn't offered twice.
+    expect(card.findAll('.action-item').map(b => b.text())).not.toContain('Stop')
+  })
+
+  it('stops a plain workspace at once, and asks first when that would lose something', async () => {
+    const plain = mountCard(ws())
+    const stop = vi.spyOn(useWorkspacesStore(), 'stop').mockResolvedValue(undefined as never)
+    await plain.find('.stop-action').trigger('click')
+    expect(stop).toHaveBeenCalledWith(1)
+
+    stop.mockClear()
+    const busy = mountCard(ws({ in_use_by: 'Desk (thin client)', ephemeral: true }))
+    await busy.find('.stop-action').trigger('click')
+    expect(stop).not.toHaveBeenCalled()
+    const confirm = busy.findAllComponents({ name: 'ConfirmModal' }).find(m => m.props('title') === 'Stop workspace')!
+    expect(confirm.props('modelValue')).toBe(true)
+    expect(confirm.props('message')).toContain('open on Desk (thin client)')
+    expect(confirm.props('message')).toContain('ephemeral')
+    confirm.vm.$emit('confirm')
+    await Promise.resolve()
+    expect(stop).toHaveBeenCalledWith(1)
   })
 
   it('names Start and Restart the same way', () => {
-    expect(mountCard(ws({ status: 'stopped', connectable: false })).find('.primary-action').attributes('aria-label')).toBe('Start')
+    const stopped = mountCard(ws({ status: 'stopped', connectable: false }))
+    expect(stopped.find('.primary-action').attributes('aria-label')).toBe('Start')
+    expect(stopped.find('.stop-action').exists()).toBe(false)
     expect(mountCard(ws({ status: 'error', connectable: false })).find('.primary-action').attributes('title')).toBe('Restart')
   })
 

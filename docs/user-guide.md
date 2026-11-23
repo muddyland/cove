@@ -42,12 +42,14 @@ Each card shows:
 - **In use by** on a running workspace whose stream is open somewhere: the
   browser ("Firefox on Linux") or thin client that has it. Connecting takes the
   stream over from there (one screen at a time).
-- Two icon buttons: the wide one is **Connect** (▶) on a running workspace, or
-  **Start** (⏻) / **Restart** (↻) on a stopped or failed one; the narrow ⚙ one is
-  the **Actions** menu, with **Edit**, **Apps**, **Logs** (also on a failed
-  workspace), **Stop**, **Clone**, **Migrate** and **Delete**. Hovering (or
-  tabbing to) either shows its name; a Start blocked by a busy VPN profile
-  says why.
+- Icon buttons. A running workspace has **Connect** (→]) and **Stop** (■)
+  side by side; a stopped or failed one has one wide **Start** (⏻) /
+  **Restart** (↻). The narrow ⚙ on the right is the **Actions** menu, with
+  **Edit**, **Apps**, **Logs** (also on a failed workspace), **Stop** (while
+  it's still starting), **Clone**, **Migrate** and **Delete**. Hovering (or
+  tabbing to) a button shows its name; a Start blocked by a busy VPN profile
+  says why. **Stop** asks first when it would lose something: the workspace
+  is ephemeral or auto-remove, or its stream is open on another screen.
 
 **Launch** at the top opens the one launcher for everything: it asks what you
 want — a **Desktop**, a **Browser**, or an **App** — then shows only the images of
