@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Dashboard cards: Stop next to Connect, and a clearer Connect icon.** A
+  running workspace's card now has Connect and Stop side by side (three
+  eighths of the row each) with the Actions menu in the last quarter; Stop
+  leaves the menu there. Connect's icon is now "enter" rather than a play
+  triangle. Since Stop is now one click from Connect, it asks first when the
+  stop would lose something: an ephemeral workspace's data, an auto-remove
+  workspace itself, or a stream open on another screen (it says which).
+  **Operator action:** none.
+
 - **Styled tooltips everywhere.** Every hint in the app (the `title` text on
   buttons, badges, chips and links) now shows in a Cove-styled tooltip after a
   short hover or on keyboard focus, instead of the browser's own after about a

@@ -102,17 +102,28 @@
       <Lock :size="11" /> VPN profile{{ ws.routing_profile_name ? ` “${ws.routing_profile_name}”` : '' }} is connected in {{ vpnHolder.name }}
     </div>
     <div class="card-actions" @click.stop>
-      <!-- Primary (three quarters of the row, icon only): Connect (running),
-           Start / Restart (stopped / error), or a disabled progress button
-           while the workspace is transitioning, which keeps its label. -->
-      <NeonButton
-        v-if="ws.status === 'running' && ws.connectable"
-        variant="primary"
-        class="primary-action"
-        aria-label="Connect"
-        title="Connect"
-        @click="open"
-      ><Play :size="16" /></NeonButton>
+      <!-- Icon-only, the row split in eighths: a running workspace gets
+           Connect and Stop (three each), anything else one primary button
+           (six): Start / Restart, or a disabled progress button while it's
+           changing state, which keeps its label. Actions always takes the
+           last two. -->
+      <template v-if="ws.status === 'running' && ws.connectable">
+        <NeonButton
+          variant="primary"
+          class="half-action"
+          aria-label="Connect"
+          title="Connect"
+          @click="open"
+        ><LogIn :size="16" /></NeonButton>
+        <NeonButton
+          variant="secondary"
+          class="half-action stop-action"
+          :loading="acting"
+          aria-label="Stop"
+          :title="ws.auto_remove ? 'Stop (deletes this workspace)' : ws.ephemeral ? 'Stop (its data is discarded)' : 'Stop'"
+          @click="askStop"
+        ><Square :size="15" /></NeonButton>
+      </template>
       <NeonButton
         v-else-if="isStopped"
         variant="success"
@@ -151,7 +162,7 @@
           <!-- Logs matter most when something went wrong, so offer them for
                error/starting too (the exited container's logs are still there). -->
           <button v-if="ws.status !== 'stopped'" type="button" role="menuitem" class="action-item" @click="act(() => (showDiag = true))"><Activity :size="14" /> Logs</button>
-          <button v-if="ws.status === 'running' || ws.status === 'creating'" type="button" role="menuitem" class="action-item" @click="act(handleStop)"><Square :size="14" /> Stop</button>
+          <button v-if="ws.status === 'creating' || (ws.status === 'running' && !ws.connectable)" type="button" role="menuitem" class="action-item" @click="act(askStop)"><Square :size="14" /> Stop</button>
           <button v-if="isStopped" type="button" role="menuitem" class="action-item" @click="act(() => (showClone = true))"><CopyPlus :size="14" /> Clone</button>
           <button v-if="isStopped && zonesStore.hasRemote" type="button" role="menuitem" class="action-item" @click="act(() => (showMigrate = true))"><ArrowRightLeft :size="14" /> Migrate</button>
           <button
@@ -167,6 +178,14 @@
       </div>
     </div>
   </div>
+  <ConfirmModal
+    v-model="showStopConfirm"
+    title="Stop workspace"
+    :message="stopMessage"
+    confirm-label="STOP"
+    :loading="acting"
+    @confirm="confirmStop"
+  />
   <ConfirmModal
     v-model="showConfirm"
     title="Delete workspace"
@@ -210,7 +229,7 @@ import CloneModal from './CloneModal.vue'
 import MigrateModal from './MigrateModal.vue'
 import DiagnosticsModal from './DiagnosticsModal.vue'
 import ProotAppsModal from './ProotAppsModal.vue'
-import { Globe, Network, Server, ArrowRightLeft, Play, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, Settings2, MonitorPlay, RotateCcw, Package, Clock, Timer, Flame, HardDrive, Router, KeyRound, Container, Zap } from 'lucide-vue-next'
+import { Globe, Network, Server, ArrowRightLeft, LogIn, Power, Square, Trash2, Pencil, Cpu, MemoryStick, Copy, CopyPlus, ShieldCheck, Lock, Activity, Settings2, MonitorPlay, RotateCcw, Package, Clock, Timer, Flame, HardDrive, Router, KeyRound, Container, Zap } from 'lucide-vue-next'
 import { workspaceIconUrl } from '@/utils/workspaceIcon'
 import {
   absoluteTime,
@@ -428,6 +447,28 @@ function truncateUrl(url: string) {
 
 function open() {
   if (props.ws.status === 'running' && props.ws.connectable) router.push(`/app/workspace/${props.ws.id}`)
+}
+
+// Stop is one click next to Connect, so ask first when that click would lose
+// something: an ephemeral workspace's data, an auto-remove workspace itself,
+// or a stream open on another screen right now.
+const showStopConfirm = ref(false)
+const stopMessage = computed(() => {
+  const w = props.ws
+  const parts: string[] = []
+  if (w.in_use_by) parts.push(`It's open on ${w.in_use_by} right now.`)
+  if (w.auto_remove) parts.push('It deletes itself when it stops.')
+  else if (w.ephemeral) parts.push("It's ephemeral: everything in it is discarded.")
+  return `Stop '${w.name}'? ${parts.join(' ')}`.trim()
+})
+function askStop() {
+  const w = props.ws
+  if (w.in_use_by || w.ephemeral || w.auto_remove) showStopConfirm.value = true
+  else handleStop()
+}
+async function confirmStop() {
+  await handleStop()
+  showStopConfirm.value = false
 }
 
 async function handleStop() {
@@ -699,12 +740,13 @@ async function handleRemove() {
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
-/* Icon-only buttons: the primary action takes three quarters of the row, the
-   Actions menu the last quarter. */
-.card-actions :deep(.primary-action) { flex: 3 1 0; }
+/* Icon-only buttons, the row in eighths: one primary action takes six, or
+   Connect and Stop three each; the Actions menu always takes the last two. */
+.card-actions :deep(.primary-action) { flex: 6 1 0; }
+.card-actions :deep(.half-action) { flex: 3 1 0; }
 
 /* Actions dropdown */
-.actions-dd { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
+.actions-dd { position: relative; display: flex; flex: 2 1 0; min-width: 0; }
 .actions-trigger { width: 100%; }
 .actions-menu {
   position: absolute;
