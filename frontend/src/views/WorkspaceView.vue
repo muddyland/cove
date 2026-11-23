@@ -32,6 +32,16 @@
               <Power v-if="w.status !== 'running'" :size="12" class="switch-boot" />
             </button>
             <p v-if="!switchable.length" class="switch-empty">No workspaces</p>
+            <button
+              type="button"
+              class="switch-item switch-new"
+              :disabled="atTotalCap"
+              :title="atTotalCap ? `Your account may have at most ${limits?.max_workspaces} workspaces` : undefined"
+              @click="openLaunch"
+            >
+              <Plus :size="13" class="switch-plus" />
+              <span class="switch-name">New workspace…</span>
+            </button>
           </div>
         </div>
         <StatusBadge v-if="ws" :status="displayStatus(ws)" class="ws-status" />
@@ -127,6 +137,8 @@
     <SystemInfoModal v-if="ws" v-model="showSysInfo" :ws="ws" :extending="extending" @extend="handleExtend" />
 
     <DocsModal v-model="showHelp" initial="__quick" />
+    <!-- Mounted on first use: the wizard loads images, zones and profiles. -->
+    <LaunchWizard v-if="launchMounted" v-model="showLaunch" :route-prefix="inAppRoute ? '/app' : ''" />
 
     <!-- Stopped takeover for a per-workspace PWA: it's a single-purpose app, so
          on stop there's nowhere to go back to — just confirm it's safe to close. -->
@@ -270,9 +282,11 @@ import DiagnosticsModal from '@/components/DiagnosticsModal.vue'
 import ProotAppsModal from '@/components/ProotAppsModal.vue'
 import SystemInfoModal from '@/components/SystemInfoModal.vue'
 import DocsModal from '@/components/DocsModal.vue'
+import LaunchWizard from '@/components/LaunchWizard.vue'
+import type { WorkspaceLimits } from '@/types'
 import { promptInstall, isStandalone } from '@/pwa'
 import { workspaceIconUrl, type IconSource } from '@/utils/workspaceIcon'
-import { ScanLine, Maximize, Minimize, ChevronDown, MonitorUp, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package, Timer, FolderOpen, Upload } from 'lucide-vue-next'
+import { ScanLine, Maximize, Minimize, ChevronDown, MonitorUp, Power, PowerOff, Square, Download, Lock, Network, Activity, Gauge, Menu, HelpCircle, Package, Timer, FolderOpen, Upload, Plus } from 'lucide-vue-next'
 import WorkspaceFilesModal from '@/components/WorkspaceFilesModal.vue'
 import WsTransferList from '@/components/WsTransferList.vue'
 import { useWsTransfersStore } from '@/stores/wsTransfers'
@@ -446,6 +460,20 @@ const switchable = computed(() => {
 })
 function closeMenu() { menuOpen.value = false }
 
+// "New workspace…" at the bottom of the menu: the dashboard's launch wizard,
+// without leaving this stream. It goes to the new workspace's stream once
+// launched. The account's total cap is re-read each time the menu opens, as
+// on the dashboard (the API refuses past it anyway).
+const showLaunch = ref(false)
+const launchMounted = ref(false)
+const limits = ref<WorkspaceLimits | null>(null)
+const atTotalCap = computed(() => !!limits.value?.max_workspaces && store.items.length >= limits.value.max_workspaces)
+function openLaunch() {
+  menuOpen.value = false
+  launchMounted.value = true
+  showLaunch.value = true
+}
+
 async function selectNode(w: { id: number; name: string; status: string }) {
   menuOpen.value = false
   if (w.id === wsId.value) return  // already viewing it
@@ -465,6 +493,7 @@ async function selectNode(w: { id: number; name: string; status: string }) {
 watch(menuOpen, (open) => {
   if (open) document.addEventListener('click', closeMenu)
   else document.removeEventListener('click', closeMenu)
+  if (open) workspacesApi.limits().then(l => { limits.value = l }).catch(() => {})
 })
 
 // Top-bar actions hamburger (CRT / Fullscreen / Logs / Halt).
@@ -1060,6 +1089,10 @@ async function handleStop() {
   font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%;
 }
+.switch-new { border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; padding-top: 9px; }
+.switch-new .switch-name, .switch-plus { color: var(--accent); }
+.switch-new:disabled { opacity: 0.45; cursor: not-allowed; }
+.switch-new:disabled:hover { background: none; }
 .switch-empty {
   font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
   padding: 8px; text-align: center;

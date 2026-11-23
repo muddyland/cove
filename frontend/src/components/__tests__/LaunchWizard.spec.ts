@@ -36,7 +36,8 @@ const zonesState = vi.hoisted(() => ({
 }))
 vi.mock('@/stores/zones', () => ({ useZonesStore: () => zonesState }))
 vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ toast: vi.fn() }) }))
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+const pushMock = vi.hoisted(() => vi.fn())
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: pushMock }) }))
 vi.mock('@/components/BaseModal.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 
 import { imagesApi } from '@/api/images'
@@ -96,6 +97,21 @@ describe('LaunchWizard', () => {
     expect(payload.workspace_type).toBe('desktop')
     expect(payload.use_tailscale).toBe(false)
     expect(payload).not.toHaveProperty('ts_exit_node')
+  })
+
+  it('opens the new workspace in the dashboard app, or beside a standalone stream', async () => {
+    let wrapper = mount(LaunchWizard, { props: { modelValue: true } })
+    await toBasics(wrapper)
+    await clickBtn(wrapper, 'Launch')
+    await flushPromises()
+    expect(pushMock).toHaveBeenLastCalledWith('/app/workspace/99')
+
+    // The stream page's quick-switch menu on /workspace/:id keeps that context.
+    wrapper = mount(LaunchWizard, { props: { modelValue: true, routePrefix: '' } })
+    await toBasics(wrapper)
+    await clickBtn(wrapper, 'Launch')
+    await flushPromises()
+    expect(pushMock).toHaveBeenLastCalledWith('/workspace/99')
   })
 
   it('launches on the only zone a zone-limited user may use', async () => {

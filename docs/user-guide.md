@@ -97,7 +97,7 @@ URLs — a lightweight way to deliver a web app:
 
 While viewing a running workspace, a top bar provides:
 
-- **Quick-switch menu** — a dropdown next to the workspace name listing all your workspaces (running first). Jump between them, and **start a stopped one in place** without returning to the dashboard.
+- **Quick-switch menu** — a dropdown next to the workspace name listing all your workspaces (running first). Jump between them, **start a stopped one in place** without returning to the dashboard, or pick **New workspace…** to launch another with the same dialog as the dashboard's (it opens the new one's stream once launched; greyed out when your account has all the workspaces it may).
 - **Fullscreen** (`FULL` / `WINDOW`) — expand the stream to fill the window.
 - **CRT** — a retro scanline/flicker overlay (cosmetic; per-user toggle).
 - **Apps** — on a desktop workspace, manage its proot-apps and AppImages (see [above](#managing-apps-in-a-workspace)).
